@@ -1,0 +1,27 @@
+# Segreti — MAI committare
+.env
+.env.local
+.env.*.local
+supabase/.env
+supabase/.temp/
+signing_keys.json
+
+# Supabase
+supabase/.branches/
+**/.temp/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Deno (edge functions)
+**/deno.lock
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

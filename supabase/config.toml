@@ -413,6 +413,37 @@ verify_jwt = true
 [functions.aura-recompute]
 verify_jwt = false
 
+# send-push: invio notifiche push Expo. Invocata da pg_cron -> pg_net
+# (dispatch_push) ogni minuto. Niente JWT utente -> protetta da x-cron-secret.
+[functions.send-push]
+verify_jwt = false
+
+# moderate-text: analisi tossicità (Perspective API) -> richiede JWT utente.
+# Degrada con grazia se PERSPECTIVE_API_KEY è assente (revisione umana).
+[functions.moderate-text]
+verify_jwt = true
+
+# process-tip: invio Vibe simbolica (attivo) -> richiede JWT utente.
+[functions.process-tip]
+verify_jwt = true
+
+# create-vibe-purchase: acquisto Vibes reali (18+, Stripe). Inerte senza chiavi.
+[functions.create-vibe-purchase]
+verify_jwt = true
+
+# stripe-webhook: conferma pagamenti Stripe. verify_jwt=false: l'autenticità
+# arriva dalla verifica della firma Stripe, non dal JWT utente.
+[functions.stripe-webhook]
+verify_jwt = false
+
+# gdpr-export: diritto di accesso (art. 15) -> richiede JWT utente.
+[functions.gdpr-export]
+verify_jwt = true
+
+# gdpr-delete: diritto alla cancellazione (art. 17) -> richiede JWT utente.
+[functions.gdpr-delete]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

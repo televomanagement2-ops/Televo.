@@ -1,0 +1,281 @@
+# Televo — Backend (handoff per Claude)
+
+> **Leggimi per primo.** Questo file ti dà il contesto completo per continuare il
+> progetto senza ripartire da zero. È un documento di handoff: cosa è Televo,
+> com'è costruito il backend, cosa è stato fatto, cosa manca, e le regole da
+> rispettare. L'utente comunica in **italiano** e i commenti nel codice sono in
+> italiano: mantieni questo stile.
+
+---
+
+## 1. Cos'è Televo (lo scopo)
+
+**Televo** = social network mobile-first per la **Gen Z (16+)**, lancio
+**invite-only a Terni (settembre 2026)**. Non è "un altro social": è costruito su
+tre **pilastri** non negoziabili, che guidano ogni decisione tecnica.
+
+1. **Proof of Human** — presenza umana reale, live e non falsificabile. Niente
+   bot, niente profili finti, niente vetrine patinate. Le **Stanze Live** (audio,
+   LiveKit) sono il cuore: la prova che dietro c'è una persona vera, ora.
+2. **Aura** — la **reputazione vivente** dell'utente. NON popolarità, NON
+   follower, NON ore di utilizzo. Misura la **qualità della presenza**: sale con
+   le connessioni autentiche, la gentilezza, l'accoglienza, l'umorismo
+   apprezzato, il contributo; scende con tossicità, spam e uso compulsivo. È un
+   **anello luminoso** che cambia colore in base al tratto dominante della
+   settimana. Classifiche **per carattere** (Most Chill / Welcoming / Humor /
+   Helpful) e per scuola.
+3. **Anti-doomscroll by design** — niente feed infinito, niente vanity-count,
+   niente meccaniche d'ansia. I "post" sono **drop** effimeri (24h). Le streak
+   non puniscono (hanno i "freeze"). L'uso compulsivo abbassa l'Aura: il prodotto
+   spinge verso un uso **sano**.
+
+Pubblico: adolescenti. Quindi **la safety dei minori è un requisito di prodotto**,
+non un extra. Ogni scelta (vedi §6) è orientata a proteggerli.
+
+**Fuori scope per ora**: frontend Expo/React Native (round successivo, UI
+definita dall'utente), Stripe reale + payout creator (2027), self-host LiveKit,
+Momenti Salienti AI, sponsor brand-safe.
+
+---
+
+## 2. Dove sono le cose
+
+- **Repo backend**: questa cartella (`C:\Users\telev\Desktop\televo`). Git su
+  `master`, **repo locale senza remote** (commit diretti su master, un commit per
+  blocco — è la convenzione del progetto).
+- **Piano fondante**: `C:\Users\telev\.claude\plans\vai-curried-canyon.md`
+  (design dettagliato Fasi 4–8 + GDPR, incl. il ragionamento sull'Aura v2).
+- **Stack**: Supabase hosted **regione EU/Frankfurt** (Postgres 17 + RLS + Edge
+  Functions Deno). LiveKit **Cloud** (free tier). Perspective API (moderazione).
+  Stripe **rimandato al 2027**. Expo Push per le notifiche.
+
+```
+supabase/
+  config.toml          # progetto + storage buckets + registrazione Edge Functions
+  migrations/          # 21 file SQL, applicati in ordine cronologico per nome
+  functions/           # 10 Edge Functions (Deno)
+    _shared/           # cors.ts (corsHeaders, jsonResponse) + clients.ts (adminClient, userClient)
+  tests/               # rls_smoke.test.sql (pgTAP, 82 invarianti)
+  seed.sql             # dati di test
+.env.example           # template variabili (NON committare .env)
+README.md              # guida operativa (setup, deploy, Vault, sicurezza)
+```
+
+---
+
+## 3. Stato del lavoro (cosa è fatto / cosa manca)
+
+### ✅ Fasi 0–3 — GIÀ LIVE sul Supabase hosted
+Scaffold, core/identità/inviti (age-gate ≥16 hard nel trigger `handle_new_user`),
+Aura v1 (ledger + classifiche), Stanze Live + token LiveKit. Edge Functions
+`verify-invite`, `livekit-token`, `aura-recompute` deployate. Cron pg_cron
+(`recompute_aura`, `rotate_spotlight`, `expire_content`).
+
+### ✅ Fasi 4–8 + GDPR — SCRITTE e committate in locale, **NON ancora `db push`ate** sul remoto
+Sei commit, uno per blocco (da `c4315a5` a `4e970cd`). Vedi §4 per i dettagli.
+
+### ⏳ Prossimi passi per andare live (lato utente, hosted — NON c'è Docker locale)
+1. `supabase db push` → applica le migrazioni 155000→210000 (le estensioni
+   `pg_net` e `supabase_vault` si auto-abilitano nella migrazione notifiche).
+2. `supabase functions deploy` → pubblica le 7 nuove Edge Functions.
+3. Registra in **Vault** i 3 segreti per il push (vedi README → "Segreti per le
+   notifiche push"): `edge_base_url`, `service_role_key`, `cron_secret`.
+4. (Opzionale) `PERSPECTIVE_API_KEY` per la moderazione AI. Senza, degrada con
+   grazia. Stripe resta inerte finché non ci sono `STRIPE_*` (lancio 2027).
+5. `supabase test db` → pgTAP (82 invarianti).
+
+> ⚠️ Le migrazioni 4–8/GDPR sono **verificate per coerenza ma non ancora
+> applicate** su Postgres reale (niente Docker locale, il remoto è live). Al primo
+> `db push` potrebbe servire un fix: se compare un errore, leggilo e correggi la
+> migrazione interessata.
+
+---
+
+## 4. Com'è costruito il backend, dominio per dominio
+
+Ordine di applicazione = ordine alfabetico dei file (timestamp). Le dipendenze
+seguono quest'ordine.
+
+### Infra trasversale
+- `20260628155000_audit.sql` — `audit_log` append-only + `log_audit()`. RLS
+  attiva **senza policy di scrittura** (solo SECURITY DEFINER/service_role). La
+  policy di **lettura per i moderatori** è aggiunta in Fase 7.
+- `20260628155100_aura_helpers.sql` — `emit_aura(user, type, delta, src_type,
+  src_id)`: **unico punto** di scrittura del ledger `aura_events` (salta utenti
+  cancellati). Aggiunge il valore enum `participation` ad `aura_event_type`.
+
+### Fase 4 — Social/Chat + Aura v2 + Drops
+- `160000_social_friendships.sql` — amicizie a **mutuo consenso** (no follow).
+  Coppia **normalizzata** (`user_id < friend_id`) → una sola riga simmetrica. Le
+  mutazioni passano da **RPC SECURITY DEFINER**: `send_friend_request`,
+  `accept_friend_request`, `remove_friend`, `block_user`, `unblock_user`. Helper
+  `are_friends(a,b)` e `is_blocked_pair(a,b)`. `top_friends` (cerchia 1–8).
+  L'amicizia accettata emette Aura `welcoming` a entrambi.
+- `160100_conversations.sql` — `conversations` (`dm`/`group`/`house`) +
+  `conversation_members`. **DM solo tra amici accettati** (`get_or_create_dm`
+  richiede `are_friends`, una DM unica per coppia via `dm_key`).
+  `create_group_conversation`, `add_conversation_member` (group=amici,
+  house=stessa scuola), `leave_conversation`, `mark_conversation_read`. Helper
+  `is_conv_member` / `is_conv_admin` (SECURITY DEFINER → rompono la ricorsione RLS).
+- `160200_messages.sql` — `messages` (text/audio/voice_thread, `reply_to`,
+  `expires_at` per i vocali effimeri max 24h, soft-delete). Trigger forza
+  `sender_id`, esige membership, valida reply/expiry. **Storage**: la policy
+  `voice-messages` dà accesso ai **membri della conversazione** (path
+  `"<conversation_id>/<user_id>/<file>"`) — voce dei minori MAI pubblica.
+- `160300_streaks.sql` — `streaks` (per conversazione, con **freeze** che salvano
+  la striscia; reset **senza penalità**). `usage_daily` + `record_session()`
+  alimentano l'Aura: `consistency` (presenza sana) e `compulsive_use` negativo
+  oltre 3h/giorno. Cron `streak-rollover-daily`.
+- `160400_props_aura_v2.sql` — **cuore dell'Aura**. `props` = riconoscimenti
+  peer-to-peer (gentile/divertente/accogliente/utile…), **unici** per
+  `(donatore, destinatario, tratto, contenuto)` + cap giornaliero (anti-gaming).
+  Ogni prop → Aura al destinatario sul tratto + micro `kindness` al donatore.
+  `aura_decay(ts)` = decadimento esponenziale **half-life 14 giorni**.
+  `vibe_color(trait)` = mappa tratto→colore anello. **`recompute_aura()`
+  ridefinito (v2)**: `aura_score` come **somma decaduta** del ledger,
+  `aura_color` dal tratto dominante della settimana, snapshot settimanali con
+  `character_breakdown`, classifiche su somme decadute.
+- `160500_drops.sql` — `drops` (momenti effimeri 24h, audience `friends`/`school`,
+  **niente posizione**). `drop_reactions` → diventano `props` all'autore.
+  Postare un drop dà Aura `participation` a **rendimenti decrescenti**
+  (`1/n` nel giorno) → premia la qualità, non il volume. `expire_content()`
+  esteso a drop + messaggi effimeri.
+
+> **Aura — il modello (perché funzioni tra i giovani)**: reputazione **viva**
+> (decadimento, non cumulo), **multi-tratto** (i caratteri alimentano le
+> classifiche), **ibrida** (props peer-to-peer + segnali comportamentali +
+> partecipazione pubblica), **anti-gaming** (unicità props, cap, rendimenti
+> decrescenti). "Numero di post / interazioni pubbliche" = drop + partecipazione
+> alle live, con rendimenti decrescenti.
+
+### Fase 5 — Mappa Vibe
+- `170000_map.sql` — **deviazione consapevole dal piano**: NON ho messo
+  `geohash5` su `rooms` (pubbliche → la posizione trapelerebbe a tutti). Invece
+  tabelle dedicate: `live_presence` ("sono in zona", effimera 15min, opt-in
+  `share_location`) e `room_locations` (posizione coarse della stanza solo mentre
+  è live). `geohash5` = ~5km. Vista **`vibe_map`** con `security_invoker = true`
+  → eredita la RLS **friends-only** delle tabelle base: un estraneo non vede
+  nulla. `expire_content()` esteso (v3) alla pulizia mappa.
+
+### Fase 6 — Gamification & Notifiche
+- `180000_notifications.sql` — `devices` (token Expo multi-device, upsert via
+  `register_device`) + `notifications` (ledger owner-only). `enqueue_notification`
+  centralizza l'accodamento; trigger su eventi reali (richiesta/accettazione
+  amicizia, messaggio, prop). **`dispatch_push()`** (cron ogni minuto) invoca la
+  Edge `send-push` via **pg_net**, leggendo URL/chiavi da **Vault** → **no-op
+  sicuro** finché non configurato. Qui si abilitano `pg_net` e `supabase_vault`.
+- `180100_achievements.sql` — catalogo `achievements` + `user_achievements`.
+  `unlock_achievement()` idempotente (notifica al primo sblocco). Sbloccati da
+  trigger sugli eventi reali (primo drop/messaggio/live/amicizia, streak 7/30,
+  milestone Aura 100/250/500, badge di carattere su props ricevuti). **I badge
+  NON toccano l'Aura** (layer separato: badge ≠ reputazione).
+- Edge `send-push` (verify_jwt=false, x-cron-secret): preleva le notifiche
+  `pushed_at is null`, invia via Expo, marca. Idempotente per batch.
+
+### Fase 7 — Moderazione & Safety
+- `190000_moderation.sql` — `moderators` (+ `is_moderator`), `reports`,
+  `moderation_queue` (punteggi AI), `moderation_actions`. **Scelta chiave**:
+  `mute`/`ban` implementati **ridefinendo `is_active_user()`** (aggiunge
+  `banned_at is null` e `muted_until <= now()`) → un **unico punto di
+  enforcement** blocca tutta la creazione di contenuti (le insert policy già
+  usano `is_active_user`), lasciando la lettura. RPC: `file_report`,
+  `take_moderation_action` (warn/mute/ban), `lift_sanctions`, `resolve_report`.
+  Azioni confermate → Aura `toxicity` + `log_audit`. Aggiunge la policy di
+  **lettura `audit_log` per i moderatori**.
+- Edge `moderate-text` (verify_jwt=true): Perspective API, scrive in
+  `moderation_queue` via `enqueue_moderation` (mute soft automatico oltre soglia
+  critica). **Degrada con grazia** se manca `PERSPECTIVE_API_KEY` (revisione
+  umana, niente crash).
+
+### Fase 8 — Economia Vibes (simbolica attiva, Stripe inerte)
+- `200000_economy.sql` — `wallets` (`balance_symbolic` per **tutti**,
+  `balance_real` **gated 18+** a livello DB), `vibe_transactions` (con
+  `idempotency_key` UNIQUE), `stripe_customers`, `creator_earnings`. **Gate 18+
+  ridondante** (trigger su wallet e su transazioni reali). `process_symbolic_tip`
+  = trasferimento **simbolico atomico e idempotente** (lock deterministico dei
+  wallet, attivo dal lancio, sicuro per i minori). Dotazione iniziale +
+  `grant_weekly_vibes` (cron). Le righe `real` le scrive SOLO service_role/Stripe.
+- Edge `process-tip` (attivo, simbolico; reale → `stripe_not_configured`),
+  `create-vibe-purchase` e `stripe-webhook` (gate 18+, firma HMAC + idempotenza
+  **già pronte**, ma rispondono `stripe_not_configured` senza chiavi `STRIPE_*`).
+
+### Trasversale — GDPR
+- `210000_gdpr.sql` — `consents` + `record_consent` (ogni cambio in `audit_log`),
+  `gdpr_requests` + `request_gdpr`. `process_account_deletion` =
+  **anonimizzazione immediata** (profilo, `birth_date` privata, contenuti,
+  dispositivi). `purge_due_deletions` (cron) = **hard-delete dopo 30 giorni**,
+  incl. `auth.users` (l'email è dato personale) con guard sui privilegi.
+- Edge `gdpr-export` (art. 15: esporta tutti i dati dell'utente) e `gdpr-delete`
+  (art. 17: anonimizza subito + banna l'identità auth; hard-delete dopo retention).
+
+---
+
+## 5. Edge Functions e Cron (riepilogo)
+
+| Funzione | verify_jwt | Note |
+|----------|-----------|------|
+| verify-invite, livekit-token | true | Fase 0-3 |
+| aura-recompute | false | x-cron-secret |
+| send-push | false | x-cron-secret; via dispatch_push (pg_cron+pg_net) |
+| moderate-text | true | Perspective; degrada senza chiave |
+| process-tip | true | tip simbolico attivo |
+| create-vibe-purchase | true | inerte senza STRIPE_SECRET_KEY |
+| stripe-webhook | false | firma Stripe; inerte senza STRIPE_WEBHOOK_SECRET |
+| gdpr-export, gdpr-delete | true | art. 15 / 17 |
+
+**Cron (pg_cron)**: `aura-recompute-weekly`, `spotlight-daily`, `expire-content`
+(5 min), `streak-rollover-daily`, `dispatch-push-minutely`,
+`vibes-weekly-allowance`, `gdpr-retention-daily`.
+
+---
+
+## 6. Sicurezza & regole d'oro (DA RISPETTARE)
+
+Vincoli di safety minori + GDPR, validi su tutto:
+- Age-gate **≥16** hard nel trigger signup; `birth_date` isolata in
+  `profiles_private` (mai esposta). Maggiore età (18+) calcolata via `is_adult`.
+- **DM solo tra amici accettati**; blocchi reciproci a DB.
+- Voce dei minori **mai pubblica** (bucket privati + RLS path-based).
+- **Posizione** sempre coarse, effimera, **friends-only**, opt-in.
+- **Saldo reale gated 18+** a livello DB; i minori usano solo Vibes simboliche
+  non monetizzabili. Le righe monetarie le scrive solo il server.
+- Token LiveKit / Stripe firmati **solo server-side**. `SERVICE_ROLE_KEY` e i
+  secret **mai** nel client; vivono in Supabase secrets / Vault.
+- `mute`/`ban` disattivano la creazione contenuti via `is_active_user()`; ogni
+  azione di moderazione è in `audit_log`.
+
+**Convenzioni del repo (seguile alla lettera quando aggiungi codice):**
+- Migrazioni: `supabase/migrations/YYYYMMDDHHMMSS_dominio.sql`, header
+  `=== … ===` con razionale **in italiano**.
+- Funzioni: `language sql|plpgsql … security definer set search_path = ''`,
+  sempre schema-qualificate (`public.`, `extensions.`, `storage.`, `vault.`,
+  `net.`).
+- RLS: `enable row level security` su OGNI tabella; policy nominate
+  `<tabella>_<azione>_<scope>`; predicati con `(select auth.uid())`
+  (ottimizzazione initplan).
+- Grant **espliciti** (auto-expose OFF): `grant select` per lettura,
+  `grant update (col, …)` per-colonna solo sui campi utente; i campi di sistema
+  si forzano nei trigger `*_before_write` / `*_before_insert`.
+- Scrittura ledger/sistema (aura, wallet reali, moderazione, audit, notifiche):
+  SOLO service_role / SECURITY DEFINER.
+- Mutazioni complesse via **RPC** (pattern `redeem_invite`).
+- Edge Functions: `Deno.serve`, gestione `OPTIONS`, usa `_shared/cors.ts` e
+  `_shared/clients.ts`, errori come stringhe-codice, registra in `config.toml`.
+- pgTAP: estendi `supabase/tests/rls_smoke.test.sql` con le nuove invarianti
+  (ricordati di aggiornare `plan(N)`).
+
+---
+
+## 7. Come continuare (suggerimenti per il prossimo round)
+
+- **Per andare in produzione il backend**: esegui i 5 passi del §3 sul progetto
+  hosted e, al primo `db push`, correggi eventuali errori segnalati da Postgres.
+- **Possibili migliorie backend**: `MANUAL_TESTING.md` con scenari end-to-end
+  delle nuove fasi; rilevazione collusion/reciprocità nei props; tuning dei pesi
+  Aura su dati reali; notifica "amico in live"; inviti stanza.
+- **Frontend** (round successivo): app Expo/React Native sopra questo backend.
+  Tutte le mutazioni delicate sono già RPC/Edge: il client chiama quelle, non
+  scrive direttamente le tabelle di sistema.
+
+Se ti serve il dettaglio di un singolo file, **leggi il file** (è la fonte di
+verità) — questo documento è la mappa, non il territorio.

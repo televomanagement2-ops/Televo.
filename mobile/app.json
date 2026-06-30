@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "Televo",
+    "slug": "televo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "televo",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#04030a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.televo.mobile",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Televo usa il microfono per le Stanze Live e i messaggi vocali.",
+        "NSLocationWhenInUseUsageDescription": "Televo mostra le live vicine a te sulla Mappa Vibe, solo se attivi la condivisione."
+      }
+    },
+    "android": {
+      "package": "app.televo.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#04030a"
+      },
+      "permissions": [
+        "RECORD_AUDIO",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#04030a",
+          "image": "./assets/images/splash.png",
+          "resizeMode": "contain"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Televo usa le tue foto per impostare l'immagine del profilo."
+        }
+      ],
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "supabaseUrl": "https://mmunnybytyfybncohkky.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tdW5ueWJ5dHlmeWJuY29oa2t5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2NDc1MjcsImV4cCI6MjA5ODIyMzUyN30.j2vqy1fZ9GaGRnLUAh7kwU_e6euAQ6xCwzAEVex11Ns",
+      "googleWebClientId": "",
+      "googleIosClientId": "",
+      "router": {},
+      "eas": {
+        "projectId": "4087043e-ef5a-4d73-907d-f98615c28f94"
+      }
+    }
+  }
+}

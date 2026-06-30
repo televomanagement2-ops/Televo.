@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Televo — now.md: stato frontend</title>
+    <style>
+        :root {
+            --bg-color: #09090b;
+            --card-bg: #141416;
+            --border-color: #27272a;
+            --text-main: #e4e4e7;
+            --text-muted: #a1a1aa;
+            --accent-purple: #a855f7;
+            --accent-blue: #3b82f6;
+            --accent-orange: #f97316;
+            --danger-bg: #451a03;
+            --danger-border: #78350f;
+            --danger-text: #fde047;
+            --code-bg: #18181b;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+            margin: 0;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 850px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            color: #ffffff;
+            margin-bottom: 5px;
+            font-weight: 700;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            color: #f4f4f5;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+            margin-top: 40px;
+            margin-bottom: 20px;
+        }
+
+        h3 {
+            font-size: 1.15rem;
+            color: #ffffff;
+            margin-top: 25px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        blockquote {
+            background: linear-gradient(to right, #2e1065, #1e1b4b);
+            border-left: 4px solid var(--accent-purple);
+            margin: 20px 0 30px 0;
+            padding: 16px 20px;
+            border-radius: 4px;
+            color: #f3e8ff;
+            font-style: italic;
+        }
+
+        hr {
+            border: 0;
+            height: 1px;
+            background: var(--border-color);
+            margin: 40px 0;
+        }
+
+        ul {
+            list-style-type: none;
+            padding-left: 0;
+            margin: 0 0 20px 0;
+        }
+
+        li {
+            margin-bottom: 10px;
+            position: relative;
+            padding-left: 20px;
+            color: var(--text-main);
+        }
+
+        li::before {
+            content: "•";
+            color: var(--accent-purple);
+            font-weight: bold;
+            position: absolute;
+            left: 0;
+            top: 0;
+        }
+
+        li ul {
+            margin-top: 8px;
+            margin-bottom: 5px;
+            padding-left: 10px;
+        }
+
+        li ul li::before {
+            content: "-";
+            color: var(--text-muted);
+        }
+
+        code {
+            background-color: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.9em;
+            color: #f4f4f5;
+            border: 1px solid #27272a;
+        }
+
+        .badge {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: bold;
+            letter-spacing: 0.05em;
+        }
+
+        .badge-purple { background-color: #6b21a8; color: #f3e8ff; }
+        .badge-orange { background-color: #9a3412; color: #ffedd5; }
+        .badge-blue { background-color: #1e3a8a; color: #dbeafe; }
+        .badge-green { background-color: #064e3b; color: #dcfce7; }
+
+        .bloccante {
+            background-color: var(--danger-bg);
+            border: 1px solid var(--danger-border);
+            color: var(--text-main);
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin: 12px 0;
+        }
+        
+        .bloccante strong {
+            color: var(--danger-text);
+        }
+
+        .section-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .highlight-text {
+            color: #ffffff;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <h1>Televo — now.md: cosa manca per finire il frontend</h1>
+    
+    <blockquote>
+        Mappa puntuale dello stato reale del mobile, verificata leggendo i file (non la roadmap a parole). OAuth Google/Facebook rimandato a fine progetto per scelta dell'utente (serve dominio/redirect pubblico) — non è nel percorso critico ora. Aggiornare questo file via via che si chiudono i blocchi.
+    </blockquote>
+
+    <hr>
+
+    <h2>0. Metodo di verifica usato</h2>
+    <div class="section-card">
+        <ul>
+            <li>Letti tutti i file in <code>mobile/app/**</code> e <code>mobile/src/**</code>.</li>
+            <li>Contate le righe reali dei file feature (<code>src/components/{aura,stanze,chat,drops,mappa,notifiche}</code>, <code>src/hooks/*</code>, <code>src/store/{aura,stanze,chat}Store.ts</code>, <code>src/lib/{livekit,expo-push}.ts</code>): <span class="highlight-text">tutti a 0 righe</span> → file scaffolded ma vuoti.</li>
+            <li>Controllato <code>mobile/package.json</code>: <span class="highlight-text">LiveKit e react-native-maps NON sono installati</span> (la roadmap li cita nello stack ma non sono dipendenze reali).</li>
+            <li><code>supabase migration list</code> non eseguibile da qui (CLI crasha su Windows in questo ambiente, <code>spawnSync ... UNKNOWN</code>) → stato migrazione 22 da verificare a mano in dashboard, non assumere.</li>
+        </ul>
+    </div>
+
+    <h2>1. Cosa è REALMENTE completo</h2>
+    
+    <h3><span class="badge badge-green">Backend</span> Live, invariato</h3>
+    <ul>
+        <li>21 migrazioni + 10 Edge Functions + 82 pgTAP su Supabase hosted. Vedi <code>CLAUDE.md</code>.</li>
+        <li><strong>Eccezione</strong>: migrazione 22 (<code>20260629120000_onboarding_oauth.sql</code>) scritta in locale, <span class="highlight-text">stato push non verificabile da qui</span> — va controllata a mano (vedi §3.1).</li>
+    </ul>
+
+    <h3><span class="badge badge-blue">Mobile</span> Bootstrap (M0)</h3>
+    <ul>
+        <li><code>app/_layout.tsx</code>, <code>app/index.tsx</code>, <code>authStore</code>, <code>useAuth</code>, <code>queryClient</code>, provider.</li>
+        <li>L'app parte e reindirizza correttamente tra auth/main.</li>
+    </ul>
+
+    <h3><span class="badge badge-blue">Mobile</span> Auth/Onboarding (M1) — pixel-perfect sulla welcome</h3>
+    <ul>
+        <li><code>welcome.tsx</code> ricostruita identica al mockup (logo immagine, 3 metodi Facebook/Google/Email, sfondo foto), vedi <code>[[mobile-login-rebuild]]</code>.</li>
+        <li><code>email.tsx</code>, <code>verifica.tsx</code> (OTP), <code>registrazione.tsx</code> (wizard: Invito → Nascita ≥16 → Username → Consensi → Notifiche), <code>invito.tsx</code> (prefill da deep link).</li>
+        <li><code>telefono.tsx</code> esiste ma è <strong>morto</strong>: rotta non raggiungibile dalla UI (bottone rimosso), nessuna chiamata reale a SMS OTP.</li>
+        <li><strong>Google</strong>: codice presente (<code>signInWithProvider</code>, <code>@react-native-google-signin</code> <span class="highlight-text">non installato</span> — verificare, vedi §2) ma <span class="highlight-text">non attivabile finché non c'è dominio</span> (richiesto per redirect OAuth) → per scelta esplicita dell'utente, rimandato.</li>
+        <li><strong>Facebook</strong>: stesso discorso, stessa decisione.</li>
+    </ul>
+
+    <h3><span class="badge badge-blue">Mobile</span> Shell (M2) — SOLO scheletro, non "fatto"</h3>
+    <ul>
+        <li>La Tab bar a 5 voci esiste (<code>(tabs)/_layout.tsx</code>): Home / Live / Mappa / Notifiche / Profilo.</li>
+        <li><strong>Home</strong>: placeholder reale minimo — solo "Sei dentro @username" + bottone logout. Nessun dato, nessun hub.</li>
+        <li><strong>Live, Mappa, Notifiche, Profilo</strong>: tab che renderizzano tutte lo stesso <code>&lt;Placeholder /&gt;</code> generico ("Prossimamente"). Zero contenuto.</li>
+    </ul>
+
+    <h2>2. Cosa manca — per ogni verticale (M3→M11)</h2>
+    <p>Tutti i file sotto esistono già come <strong>scheletro vuoto (0 righe)</strong>: sono stub creati ma da scrivere da zero, nessuna logica presente.</p>
+
+    <h3><span class="badge badge-purple">M3</span> Profilo + Aura (prossimo blocco logico, è un pilastro)</h3>
+    <ul>
+        <li><code>src/components/aura/{AuraRing,AuraScore,Classifica,PropCard}.tsx</code> — 0 righe.</li>
+        <li><code>app/(main)/(tabs)/profilo.tsx</code>, <code>profilo/[id].tsx</code>, <code>profilo/modifica.tsx</code>, <code>profilo/aura.tsx</code>, <code>profilo/achievement.tsx</code> — le rotte <code>profilo/*</code> <span class="highlight-text">non esistono nemmeno come file</span> (solo il tab placeholder).</li>
+        <li><code>src/hooks/useAura.ts</code>, <code>useProfilo.ts</code>, <code>src/store/auraStore.ts</code> — 0 righe.</li>
+        <li>Dipende da: query su <code>aura_score</code>, <code>aura_color</code>, <code>character_breakdown</code>, classifiche (<code>leaderboard_*</code>), <code>props</code> — tutto già esposto dal backend, solo da collegare.</li>
+    </ul>
+
+    <h3><span class="badge badge-orange">M4</span> Stanze Live (secondo pilastro, Proof of Human)</h3>
+    <div class="bloccante">
+        <strong>Bloccante hard:</strong> Il <code>LiveKit</code> SDK <strong>non è una dipendenza installata</strong> (<code>@livekit/react-native</code> assente da <code>package.json</code>) + serve una <strong>Development Build EAS</strong> (non gira in Expo Go) + servono le chiavi <code>LIVEKIT_API_KEY</code>/<code>SECRET</code> lato Supabase (volutamente non configurate finché non si arriva a questo blocco).
+    </div>
+    <ul>
+        <li><code>src/lib/livekit.ts</code> — 0 righe.</li>
+        <li><code>app/.../stanza/[id].tsx</code>, <code>stanza/crea.tsx</code>, <code>(tabs)/live.tsx</code> — non esistono come file reali (solo placeholder).</li>
+        <li><code>src/components/stanze/{StanzaCard,BollaViva,Partecipante,VibeChain}.tsx</code> — 0 righe.</li>
+        <li><code>src/hooks/useStanze.ts</code>, <code>src/store/stanzeStore.ts</code> — 0 righe.</li>
+    </ul>
+
+    <h3><span class="badge badge-purple">M5</span> Social + Chat</h3>
+    <ul>
+        <li><code>app/.../chat/index.tsx</code>, <code>chat/[id].tsx</code> — non esistono come file.</li>
+        <li><code>src/components/chat/{BollaParlante,MessaggioRow,StreakBadge}.tsx</code> — 0 righe.</li>
+        <li><code>src/hooks/useChat.ts</code>, <code>src/store/chatStore.ts</code> — 0 righe.</li>
+        <li>UI amicizie (richiesta/accetta/rimuovi/blocca) — assente, anche se le RPC backend esistono già (<code>send_friend_request</code> ecc.).</li>
+        <li>I vocali effimeri richiedono <code>expo-av</code>/registrazione audio — <code>expo-av</code> è installato ma non ancora usato in nessun componente chat.</li>
+    </ul>
+
+    <h3><span class="badge badge-purple">M6</span> Drops</h3>
+    <ul>
+        <li><code>src/components/drops/{DropCard,DropFeed}.tsx</code> — 0 righe.</li>
+        <li><code>src/hooks/useDrops.ts</code> — 0 righe.</li>
+        <li>Nessuna integrazione in home.</li>
+    </ul>
+
+    <h3><span class="badge badge-orange">M7</span> Mappa Vibe</h3>
+    <div class="bloccante">
+        <strong>Bloccante hard:</strong> <code>react-native-maps</code> <strong>non installato</strong>, serve un <strong>Mapbox/Google Maps token</strong> + una <strong>Development Build EAS</strong> (non gira in Expo Go).
+    </div>
+    <ul>
+        <li><code>app/.../mappa/index.tsx</code> — non esiste come file (solo tab placeholder).</li>
+        <li><code>src/components/mappa/{BollaLive,AuraPin}.tsx</code> — 0 righe.</li>
+        <li><code>src/hooks/useMappa.ts</code> — 0 righe. La vista backend <code>vibe_map</code> è già pronta.</li>
+    </ul>
+
+    <h3><span class="badge badge-purple">M8</span> Notifiche push</h3>
+    <ul>
+        <li><code>src/lib/expo-push.ts</code> — 0 righe (RPC <code>register_device</code> da chiamare).</li>
+        <li><code>app/.../(tabs)/notifiche.tsx</code> — solo placeholder.</li>
+        <li><code>src/components/notifiche/NotificaRow.tsx</code>, <code>src/hooks/useNotifiche.ts</code> — 0 righe.</li>
+        <li><code>expo-notifications</code> è installato ma non configurato/usato.</li>
+        <li>Edge Function <code>send-push</code> già deployata e funzionante lato backend.</li>
+    </ul>
+
+    <h3><span class="badge badge-purple">M9</span> Economia Vibes (simbolica)</h3>
+    <ul>
+        <li>Nessun file UI esiste ancora (non scaffolded). Tip simbolici via Edge <code>process-tip</code> (già attiva e idempotente lato backend), saldo wallet da mostrare, gate 18+ già imposto a DB.</li>
+    </ul>
+
+    <h3><span class="badge badge-purple">M10</span> Moderazione & Safety UI</h3>
+    <ul>
+        <li>Nessun file UI esiste ancora. RPC <code>file_report</code>, block/unblock già pronte lato backend; manca solo il flow client.</li>
+    </ul>
+
+    <h3><span class="badge badge-purple">M11</span> GDPR UI</h3>
+    <ul>
+        <li>Nessun file UI esiste ancora. Consensi da agganciare in onboarding (<code>record_consent</code> — verificare se già chiamata in <code>StepConsensi.tsx</code>, da controllare), export/delete account da Edge <code>gdpr-export</code>/<code>gdpr-delete</code> in Impostazioni (Impostazioni stessa non esiste ancora come schermata).</li>
+    </ul>
+
+    <h3><span class="badge badge-purple">♻️</span> Trasversale (mai iniziato)</h3>
+    <ul>
+        <li><code>src/components/ui/{Badge,BottomSheet}.tsx</code> — esistono ma <strong>0 righe</strong>.</li>
+        <li>Font reali: solo Poppins bundlato finora; Inter/Clash Display citati in roadmap ma non verificati come assets presenti.</li>
+        <li>Asset reali: icon/splash/adaptive-icon sono ancora <strong>placeholder generici</strong>, non branded.</li>
+        <li>Stati loading/empty/error: assenti ovunque (nessun componente li gestisce).</li>
+        <li>Accessibilità: non affrontata.</li>
+        <li><strong>EAS Dev Build</strong>: non configurato (<code>eas.json</code> da verificare/creare) — necessario per sbloccare LiveKit (M4) e Maps (M7), oltre che Google Sign-In nativo.</li>
+        <li>Testing: nessun test scritto sul mobile (solo pgTAP lato backend).</li>
+    </ul>
+
+    <h2>3. Cose da verificare/sbloccare prima di proseguire</h2>
+    
+    <h3>3.1 Migrazione 22 — stato sconosciuto da qui</h3>
+    <p><code>20260629120000_onboarding_oauth.sql</code> è scritta e committata in locale, ma la CLI Supabase crasha in questo ambiente (<code>migration list</code> → <code>spawnSync UNKNOWN</code> su Windows). <span class="highlight-text">Verificare a mano dalla dashboard</span> (Database → Migrations, o ed eseguire <code>SELECT version FROM supabase_migrations.schema_migrations ORDER BY version DESC LIMIT 3;</code> nel SQL Editor) se è già applicata. Senza di essa, <strong>l'onboarding non funziona end-to-end</strong> (RPC <code>complete_onboarding</code>/<code>check_invite</code> mancano sul DB live).</p>
+
+    <h3>3.2 Dipendenze mancanti da installare quando si apre il blocco</h3>
+    <ul>
+        <li>M4: <code>@livekit/react-native</code> (o equivalente SDK ufficiale) + EAS Dev Build.</li>
+        <li>M7: <code>react-native-maps</code> + token Mapbox/Google Maps + EAS Dev Build.</li>
+        <li>Verificare se <code>@react-native-google-signin/google-signin</code> è davvero installato (la roadmap lo dà per fatto ma non risulta in <code>package.json</code> attuale — controllo rapido da fare prima di riattivare Google OAuth a fine progetto).</li>
+    </ul>
+
+    <h3>3.3 OAuth Google/Facebook — confermato rimandato</h3>
+    <p>Per decisione esplicita dell'utente: serve un dominio (redirect URL pubblico stabile) prima che abbia senso configurarli su Supabase dashboard + Google Cloud Console + Meta for Developers. Il codice client (<code>signInWithProvider</code> in <code>src/lib/auth.ts</code>) è già pronto e degrada con grazia — nessuna azione richiesta finché non si arriva in fondo alla roadmap.</p>
+
+    <h2>4. Nuovo piano: Home "tecnica" come frame, design dopo</h2>
+    
+    <p><strong>Approccio</strong>: costruire la <strong>Home SUBITO</strong> come hub di navigazione funzionante (non design-heavy), senza spendere ore su UI/UX. È il frame dove piazzerai i pezzi di feature man mano che li finisci. <strong>Design della Home rimandato a dopo</strong>, quando tutti i pilastri (Aura, Stanze, Chat, Drops, Mappa) esistono — a quel punto saprai cosa mostrare e come.</p>
+    
+    <p><strong>Perché funziona così:</strong></p>
+    <ul>
+        <li>Un utente che esce da onboarding atterra in Home e <strong>DEVE poter navigare</strong> verso Profilo / Live / Chat / Mappa / Notifiche. Se quelle schermate sono ancora placeholder, va bene, ma il frame di navigazione deve esistere.</li>
+        <li>Costruisci il Profilo (con l'Aura vero dentro), e la navigazione dalla Home già lo raggiunge — nessuna riscrittura di Home, lo infili dentro il tab "Profilo" e basta.</li>
+        <li>Quando arriva l'Aura vero, metti un preview dell'Aura ring nella Home se vuoi; quando arrivano i Drops, metti una lista; quando arrivano le Live, metti "live in corso" — ma il <strong>frame di navigazione esiste già e non cambia</strong>.</li>
+        <li>Il design della Home è l'ultimo passo: a quel punto sai cosa metterci dentro, e lo fai bello una sola volta.</li>
+    </ul>
+
+    <h3>4.1 M2 reale — Home "tecnica" (subito, ore, non giorni)</h3>
+    <ul>
+        <li><code>app/(main)/(tabs)/home.tsx</code> — <strong>non placeholder</strong>, ma "vuota di contenuto sensato": mostra solo il wordmark + greeting + bottoni di navigazione verso le altre tab (oppure card placeholder "Aura (presto)", "Live in corso (presto)", ecc.). Lo scopo <strong>non è farla bella</strong>, è farla <strong>navigabile</strong>.</li>
+        <li>Nessuna query costosa, nessun Reanimated, nessun dettaglio di design — solo struttura e testo.</li>
+    </ul>
+
+    <h3>4.2 M3 — Profilo + Aura (prossimo blocco concreto)</h3>
+    <ul>
+        <li>Dentro <code>app/(main)/(tabs)/profilo.tsx</code> metti il vero <code>AuraRing</code>, le classifiche, i prop ricevuti — una volta pronto, lo navighiamo dalla Home con un tap, finito.</li>
+        <li><code>src/components/aura/{AuraRing,Classifica,PropCard}.tsx</code> — componenti veri.</li>
+        <li><code>src/hooks/useAura.ts</code>, <code>src/store/auraStore.ts</code> — dati veri da DB.</li>
+    </ul>
+
+    <h3>4.3 Ordine per gli altri blocchi (parallelo, nessun vincolo)</h3>
+    <ol style="padding-left: 20px; color: var(--text-main); margin-bottom: 20px;">
+        <li style="margin-bottom: 8px;"><strong>M5 — Chat/Social</strong>: tab Chat pronta, dentro navigazione a <code>chat/[id]</code>.</li>
+        <li style="margin-bottom: 8px;"><strong>M6 — Drops</strong>: piccolo, infila un feed nella Home o in una tab.</li>
+        <li style="margin-bottom: 8px;"><strong>M8 — Notifiche</strong>: <code>expo-notifications</code> cablato, tab notifiche popolare.</li>
+        <li style="margin-bottom: 8px;"><strong>EAS Dev Build</strong> → <strong>M4 Stanze Live</strong> + <strong>M7 Mappa</strong> (dipendenze native).</li>
+        <li style="margin-bottom: 8px;"><strong>M9/M10/M11</strong> (economia, moderazione, GDPR): bassa priorità.</li>
+        <li style="margin-bottom: 8px;"><strong>Design completo della Home</strong> + <strong>OAuth reale</strong> + <strong>asset branded</strong> + <strong>EAS prod</strong>: tutto insieme a fine progetto.</li>
+    </ol>
+
+    <h3>4.4 Verifiche preliminari (prima di toccare Home)</h3>
+    <ol style="padding-left: 20px; color: var(--text-main);">
+        <li style="margin-bottom: 8px;"><strong>Migrazione 22 live?</strong> — Controllare in Supabase dashboard se <code>complete_onboarding</code> / <code>check_invite</code> sono applicate. Senza, l'onboarding attuale non chiude end-to-end (vedi §3.1).</li>
+        <li style="margin-bottom: 8px;">Una volta confermato, <strong>la Home "tecnica" si scrive in poche ore</strong> e il progetto ha il suo frame di navigazione stabile.</li>
+    </ol>
+
+    <h2>5. Nota sulla fonte di verità</h2>
+    <p><code>roadmap.md</code> (root) descrive lo stack come se LiveKit/Maps/Google-Signin fossero già installati — <span class="highlight-text">non lo sono</span>, verificato da <code>package.json</code>. Questo file (<code>now.md</code>) riflette lo stato reale dei file al 2026-06-30; se divergerà da <code>roadmap.md</code> in futuro, fidarsi del codice (<code>ls</code>/<code>wc -l</code>/<code>grep</code>), non del testo della roadmap, e poi aggiornare entrambi i documenti.</p>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,35 @@
+# Dipendenze
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+/ios
+/android
+
+# Metro
+.metro-health-check*
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# Env locali
+.env
+.env.local
+.env.*.local
+
+# Typegen
+nativewind-env.d.ts
+
+# IDE
+desktop.ini

@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(82);
+select plan(86);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -141,6 +141,19 @@ select ok((select count(*)::int from pg_indexes
 select ok((select count(*)::int from pg_indexes
            where schemaname='public' and indexname='conversations_dm_key_uidx') = 1,
   'conversations ha indice unico dm_key');
+
+-- =============================================================================
+-- Onboarding differito + inviti a catena (migrazione onboarding_oauth)
+-- =============================================================================
+select has_function('public', 'check_invite', array['text'],
+  'check_invite(text) esiste');
+select has_function('public', 'complete_onboarding', array['text','text','date','text'],
+  'complete_onboarding(text,text,date,text) esiste');
+select has_function('public', 'create_invite',
+  'create_invite() esiste');
+-- Invito school-free: school_id non più obbligatorio.
+select col_is_null('public', 'invites', 'school_id',
+  'invites.school_id è nullable (invito school-free)');
 
 select * from finish();
 rollback;

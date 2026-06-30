@@ -5,8 +5,10 @@
 // schermate restano "stupide". Tutte le mutazioni delicate (età, invito,
 // username, birth_date) passano dalla RPC complete_onboarding (atomica, lato DB).
 //
-// Email = OTP passwordless (signInWithOtp → verifyOtp) — unico metodo attivo,
-// funziona in Expo Go. Google nativo è disattivato (vedi signInWithGoogle).
+// Email = accesso/registrazione con PASSWORD (signInWithPassword / signUp). Il
+// canale OTP (signInWithOtp → verifyOtp) resta vivo SOLO come recupero password:
+// si verifica il codice e poi si imposta la nuova password (updateUser). Tutto
+// gira in Expo Go. Google/Facebook usano l'OAuth di Supabase (da abilitare).
 
 import { decode as decodeBase64 } from 'base64-arraybuffer';
 import * as WebBrowser from 'expo-web-browser';
@@ -49,6 +51,36 @@ export async function verifyEmailOtp(email: string, token: string): Promise<void
     token: token.trim(),
     type: 'email',
   });
+  if (error) throw error;
+}
+
+// --- Email + password --------------------------------------------------------
+// La password è gestita interamente da Supabase Auth (hash/storage server-side):
+// il nostro DB non la tocca mai. signUp crea l'utente → il trigger handle_new_user
+// genera lo scheletro profilo (age_verified=false → onboarding). signIn accede a
+// un account esistente. Il recupero password usa il canale OTP (vedi più sotto).
+
+/** Accede con email + password a un account ESISTENTE. */
+export async function signInWithPassword(email: string, password: string): Promise<void> {
+  const { error } = await supabase.auth.signInWithPassword({
+    email: normEmail(email),
+    password,
+  });
+  if (error) throw error;
+}
+
+/** Crea un NUOVO account con email + password (poi prosegue con l'onboarding). */
+export async function signUpWithPassword(email: string, password: string): Promise<void> {
+  const { error } = await supabase.auth.signUp({
+    email: normEmail(email),
+    password,
+  });
+  if (error) throw error;
+}
+
+/** Imposta una nuova password per l'utente CON SESSIONE attiva (post-OTP reset). */
+export async function updatePassword(password: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password });
   if (error) throw error;
 }
 
@@ -243,6 +275,12 @@ export async function signOut(): Promise<void> {
 
 // --- Mappa errori → messaggi IT ---------------------------------------------
 
+/** True se l'errore è "credenziali non valide" (email sconosciuta o pwd errata). */
+export function isInvalidCredentials(error: unknown): boolean {
+  const raw = ((error as { message?: string })?.message ?? String(error)).toLowerCase();
+  return raw.includes('invalid login credentials');
+}
+
 /** Estrae il codice-stringa da un errore RPC/Supabase (es. 'age_below_minimum'). */
 export function authErrorCode(error: unknown): string {
   const msg = (error as { message?: string })?.message ?? String(error);
@@ -261,6 +299,22 @@ export function authErrorMessage(error: unknown): string {
   }
   if (raw.includes('sms') || raw.includes('phone')) {
     return 'L’accesso via SMS non è ancora attivo. Per ora usa l’email.';
+  }
+  // Password: messaggi di Supabase Auth (gauntlet di casi noti).
+  if (raw.includes('invalid login credentials')) {
+    return 'Email o password non corretti.';
+  }
+  if (raw.includes('user already registered') || raw.includes('already been registered')) {
+    return 'Esiste già un account con questa email. Inserisci la password per accedere.';
+  }
+  if (raw.includes('password should be at least') || raw.includes('weak') || code === 'weak_password') {
+    return 'La password deve avere almeno 8 caratteri.';
+  }
+  if (raw.includes('email not confirmed')) {
+    return 'Devi confermare l’email prima di accedere. Controlla la posta.';
+  }
+  if (raw.includes('rate limit') || raw.includes('too many')) {
+    return 'Troppi tentativi. Riprova tra un minuto.';
   }
 
   switch (code) {

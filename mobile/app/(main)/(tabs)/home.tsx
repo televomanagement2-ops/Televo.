@@ -1,44 +1,93 @@
 // =============================================================================
-// Home (placeholder) — chiude il loop dopo l'onboarding: conferma "sei dentro" e
-// permette il logout. La vera home arriva con M2.
+// Home — l'hub dell'app. Header (avatar→profilo · "televo" · ricerca) + barra
+// categorie + corpo del feed che cambia in base alla categoria selezionata.
 // =============================================================================
+// "Discover" (default) = mix di tutto: per ora SCHELETRO visivo (i dati reali —
+// drops + stanze live — si collegano nei round successivi). Reels/Sport non
+// hanno backend: stato "Prossimamente". Live/Map/Aura avranno dati reali (M3/M4/
+// M7): per ora segnaposto coerente. L'importante è che il frame sia navigabile.
 
-import { StyleSheet, Text, View } from 'react-native';
-import { SafeScreen } from '@/components/ui/SafeScreen';
-import { Wordmark } from '@/components/brand/Wordmark';
-import { Button } from '@/components/ui/Button';
-import { useAuth } from '@/hooks/useAuth';
-import { colors, fontFamily, fontSize, spacing } from '@/constants/theme';
+import { useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { HomeHeader } from '@/components/navigation/HomeHeader';
+import { CategoryBar } from '@/components/feed/CategoryBar';
+import { FeedSkeleton } from '@/components/feed/FeedSkeleton';
+import { ComingSoon } from '@/components/feed/ComingSoon';
+import { DEFAULT_FEED_CATEGORY, type FeedCategoryKey } from '@/constants/feed';
+import { colors } from '@/constants/theme';
 
 export default function Home() {
-  const { profile, signOut } = useAuth();
+  const [category, setCategory] = useState<FeedCategoryKey>(DEFAULT_FEED_CATEGORY);
 
   return (
-    <SafeScreen>
-      <View style={styles.hero}>
-        <Wordmark size={fontSize['3xl']} />
-        <Text style={styles.hi}>
-          Sei dentro{profile?.username ? `, @${profile.username}` : ''} 👋
-        </Text>
-        <Text style={styles.sub}>
-          La tua home arriverà presto. Per ora conta una cosa sola: ci sei, e sei reale.
-        </Text>
-      </View>
-      <View style={styles.footer}>
-        <Button label="Esci" variant="secondary" onPress={signOut} />
-      </View>
-    </SafeScreen>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <HomeHeader />
+      <CategoryBar selected={category} onSelect={setCategory} />
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <FeedBody category={category} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
+/** Corpo del feed in base alla categoria. Tutto placeholder in questo round. */
+function FeedBody({ category }: { category: FeedCategoryKey }) {
+  switch (category) {
+    case 'discover':
+      // Mix di tutto: scheletro finché non colleghiamo drops + stanze live.
+      return <FeedSkeleton count={5} />;
+    case 'live':
+      return (
+        <ComingSoon
+          icon="radio-outline"
+          title="Stanze Live in arrivo"
+          subtitle="Qui vedrai chi è live ora. La voce, in tempo reale: la prova che dietro c'è una persona vera."
+        />
+      );
+    case 'map':
+      return (
+        <ComingSoon
+          icon="map-outline"
+          title="La Mappa Vibe arriva presto"
+          subtitle="Scoprirai dove sono i tuoi amici e le stanze live vicine. Sempre approssimativa, solo tra amici, sempre opt-in."
+        />
+      );
+    case 'aura':
+      return (
+        <ComingSoon
+          icon="sparkles-outline"
+          title="La tua Aura arriva presto"
+          subtitle="La reputazione viva: gentilezza, umorismo, presenza. Non follower, non like."
+        />
+      );
+    case 'reels':
+      return (
+        <ComingSoon
+          icon="film-outline"
+          title="Reels"
+          subtitle="Prossimamente."
+        />
+      );
+    case 'sport':
+      return (
+        <ComingSoon
+          icon="football-outline"
+          title="Sport"
+          subtitle="Prossimamente."
+        />
+      );
+    default:
+      return <View />;
+  }
+}
+
 const styles = StyleSheet.create({
-  hero: { flex: 1, justifyContent: 'center', gap: spacing.sm },
-  hi: {
-    color: colors.ink,
-    fontSize: fontSize['2xl'],
-    fontFamily: fontFamily.displayBold,
-    marginTop: spacing.lg,
-  },
-  sub: { color: colors.muted, fontSize: fontSize.base, fontFamily: fontFamily.sans, lineHeight: 23 },
-  footer: { marginBottom: spacing.lg },
+  safe: { flex: 1, backgroundColor: colors.base },
+  flex: { flex: 1 },
+  content: { paddingBottom: 24, flexGrow: 1 },
 });

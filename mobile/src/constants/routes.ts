@@ -8,27 +8,28 @@
 
 export const ROUTES = {
   // --- Auth (gruppo (auth)) ---
-  splash: '/splash',
+  welcome: '/welcome',
+  email: '/email',
+  password: '/password',
+  nuovaPassword: '/nuova-password',
+  verifica: '/verifica',
+  telefono: '/telefono',
   invito: '/invito',
   registrazione: '/registrazione',
-  login: '/login',
 
-  // --- Tabs (gruppo (main)/(tabs)) ---
+  // --- Tabs (gruppo (main)/(tabs)) — la bottom bar a 5 voci ---
   home: '/home',
-  live: '/live',
-  mappa: '/mappa',
+  messages: '/messages',
+  crea: '/crea',
   notifiche: '/notifiche',
-  profilo: '/profilo',
+  menu: '/menu',
 
-  // --- Stack interni (gruppo (main)) ---
-  creaStanza: '/stanza/crea',
-  chatLista: '/chat',
-  profiloModifica: '/profilo/modifica',
-  profiloAura: '/profilo/aura',
-  profiloAchievement: '/profilo/achievement',
+  // --- Stack interni (gruppo (main)) — aperti dall'header, non dai tab ---
+  profilo: '/profilo',
+  cerca: '/cerca',
 } as const;
 
-/** Route dinamiche: costruttori tipizzati per gli id. */
+/** Route dinamiche: costruttori tipizzati per gli id (in arrivo nei prossimi M). */
 export const dynamicRoutes = {
   stanza: (id: string) => `/stanza/${id}` as const,
   chat: (id: string) => `/chat/${id}` as const,

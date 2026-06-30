@@ -1,7 +1,7 @@
 // =============================================================================
-// Email — inserimento email per l'accesso passwordless. Invia un codice OTP a 6
-// cifre e passa alla schermata di verifica. Tastiera-safe: niente autofocus
-// durante la transizione, campo dentro a uno ScrollView con persistTaps.
+// Email — inserimento email per l'accesso. Non invia più un OTP: salva l'email e
+// passa alla schermata password (accesso o creazione). Tastiera-safe: niente
+// autofocus durante la transizione, campo dentro a uno ScrollView con persistTaps.
 // =============================================================================
 
 import { useState } from 'react';
@@ -11,7 +11,6 @@ import { SafeScreen } from '@/components/ui/SafeScreen';
 import { AuthHeader } from '@/components/auth/AuthHeader';
 import { Input } from '@/components/ui/Input';
 import { GlassButton } from '@/components/ui/GlassButton';
-import { sendEmailOtp, authErrorMessage } from '@/lib/auth';
 import { useOnboardingStore } from '@/store/onboardingStore';
 import { colors, fontFamily, fontSize, spacing } from '@/constants/theme';
 
@@ -23,23 +22,17 @@ export default function EmailScreen() {
   const patch = useOnboardingStore((s) => s.patch);
   const [value, setValue] = useState(stored);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
   const valid = EMAIL_RE.test(value.trim());
 
-  const submit = async () => {
-    if (!valid) return;
-    setLoading(true);
-    setError(null);
-    try {
-      await sendEmailOtp(value);
-      patch({ email: value.trim().toLowerCase(), method: 'email' });
-      router.push('/verifica');
-    } catch (e) {
-      setError(authErrorMessage(e));
-    } finally {
-      setLoading(false);
+  const submit = () => {
+    if (!valid) {
+      setError('Inserisci un indirizzo email valido.');
+      return;
     }
+    // Niente OTP qui: salviamo l'email e proseguiamo con la password.
+    patch({ email: value.trim().toLowerCase(), method: 'email', resetFlow: false });
+    router.push('/password');
   };
 
   return (
@@ -49,7 +42,7 @@ export default function EmailScreen() {
       <View style={styles.body}>
         <Text style={styles.title}>Qual è la tua email?</Text>
         <Text style={styles.subtitle}>
-          Ti mandiamo un codice di verifica, niente password da ricordare.
+          Inseriscila per accedere o registrarti. Al passo dopo scegli la password.
         </Text>
         <View style={styles.field}>
           <Input
@@ -75,12 +68,7 @@ export default function EmailScreen() {
           Continuando accetti i nostri <Text style={styles.link}>Termini di servizio</Text> e
           l’<Text style={styles.link}>Informativa sulla privacy</Text>.
         </Text>
-        <GlassButton
-          label="Invia codice di verifica"
-          onPress={submit}
-          loading={loading}
-          disabled={!valid}
-        />
+        <GlassButton label="Continua" onPress={submit} disabled={!valid} />
       </View>
     </SafeScreen>
   );

@@ -22,6 +22,8 @@ export const ONBOARDING_ORDER: OnboardingStep[] = [
 interface OnboardingData {
   /** Metodo di accesso scelto (per ora solo email; 'phone' arriverà con l'SMS). */
   method: 'email' | 'phone';
+  /** True quando l'OTP è usato per RESET password (non per accesso normale). */
+  resetFlow: boolean;
   inviteCode: string;
   birthDate: string | null; // YYYY-MM-DD
   email: string;
@@ -45,6 +47,7 @@ interface OnboardingState extends OnboardingData {
 
 const INITIAL: OnboardingData = {
   method: 'email',
+  resetFlow: false,
   inviteCode: '',
   birthDate: null,
   email: '',

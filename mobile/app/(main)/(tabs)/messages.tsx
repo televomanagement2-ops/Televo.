@@ -1,7 +1,6 @@
 // =============================================================================
-// Notifiche — voce della bottom bar. Placeholder reale finché non colleghiamo il
-// ledger notifiche e i permessi push (Edge send-push già pronta lato backend):
-// è la feature M8.
+// Messaggi — voce della bottom bar. Placeholder reale finché non costruiamo la
+// chat (DM tra amici + vocali effimeri): è la feature M5.
 // =============================================================================
 
 import { StyleSheet, Text, View } from 'react-native';
@@ -9,17 +8,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ComingSoon } from '@/components/feed/ComingSoon';
 import { colors, fontFamily, spacing } from '@/constants/theme';
 
-export default function Notifiche() {
+export default function Messages() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Avvisi</Text>
+        <Text style={styles.title}>Messaggi</Text>
       </View>
       <View style={styles.body}>
         <ComingSoon
-          icon="notifications-outline"
-          title="Le notifiche arrivano presto"
-          subtitle="Saprai chi ti ha mandato un prop, chi è entrato in live e le richieste di amicizia."
+          icon="chatbubbles-outline"
+          title="Le chat arrivano presto"
+          subtitle="Scriverai e manderai vocali ai tuoi amici. I vocali sono effimeri: spariscono entro 24 ore."
         />
       </View>
     </SafeAreaView>

@@ -4,7 +4,7 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-06-29
+> **Ultimo aggiornamento:** 2026-06-30
 
 ---
 
@@ -131,27 +131,41 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
 - Asset placeholder (`icon.png`, `splash.png`, `adaptive-icon.png`).
 - **Verifica:** l'app parte e mostra lo splash/redirect senza crash.
 
-### ✅ M1 — Auth flow (invite-only + age-gate) — FATTO (con scelte aggiornate)
+### ✅ M1 — Auth flow (invite-only + age-gate) — FATTO (login a PASSWORD)
 *Obiettivo: un utente con codice invito valido e ≥16 anni crea l'account.*
-> Realizzato con: **email OTP passwordless** (niente password) + **Google nativo**;
-> **onboarding differito** (RPC `complete_onboarding`); invito **school-free**
-> validato prima via `check_invite`. Anello neon **solo al launch**, onboarding
-> con wordmark "Televo" (no anello). Vedi piano
-> `~/.claude/plans/allora-vedi-tutte-queste-imperative-fairy.md`.
-- `(auth)/_layout.tsx`, `splash.tsx` (welcome), `invito.tsx` (prefill da deep
-  link), `registrazione.tsx` (wizard a step), `login.tsx`.
-- Componenti UI minimi: `Button`, `Input`, `OtpInput`, `SafeScreen`.
+> **Aggiornamento 2026-06-30**: il login email è passato da OTP passwordless a
+> **email → password**. Flusso unico in `password.tsx`: si tenta l'accesso
+> (`signInWithPassword`); su credenziali invalide si propone di creare l'account
+> (`signUpWithPassword`). **Recupero password via OTP**: "Password dimenticata?"
+> invia il codice (`sendEmailOtp`) → `verifica.tsx` in modalità reset
+> (`resetFlow`) → `nuova-password.tsx` (`updateUser({password})`). L'OTP resta
+> quindi vivo solo come canale di reset. Google/Facebook rimandati (serve dominio).
+> **Onboarding differito** (RPC `complete_onboarding`) raccoglie username, nome,
+> foto (preview, opzionale) ed età (≥16); invito **school-free** via `check_invite`.
+- `(auth)/_layout.tsx`, `welcome.tsx`, `email.tsx`, `password.tsx`,
+  `nuova-password.tsx`, `verifica.tsx` (solo reset), `invito.tsx` (prefill da deep
+  link), `registrazione.tsx` (wizard a step). `telefono.tsx` resta morto (SMS off).
+- Componenti UI minimi: `Button`/`GlassButton`, `Input`, `OtpInput`, `SafeScreen`.
 - **Verifica:** invito reale → profilo creato; birth_date <16 → bloccato dal
-  trigger DB; login utente esistente OK.
+  trigger DB; login utente esistente OK; reset password via OTP OK.
 
-### 🟢 M2 — Shell + Home
+### ✅ M2 — Shell + Home — FATTO (frame tecnico)
 *Obiettivo: la tab bar naviga; la home è l'hub.*
-- `(main)/_layout.tsx`, `(main)/(tabs)/_layout.tsx` (bottom tab bar custom dark),
-  `(tabs)/home.tsx`.
-- Componenti UI: `Card`, `Avatar`, `LoadingSpinner`.
-- **Verifica:** swap fra le 5 tab; la home carica dati reali.
+> Frame di navigazione reale (non design-heavy, come da piano). Il design
+> definitivo della Home resta per fine progetto, quando i pilastri esistono.
+- `(main)/_layout.tsx`, `(main)/(tabs)/_layout.tsx` con **bottom bar custom**
+  (`BottomBar.tsx`) a 5 voci: Home · Messaggi · **+** (crea, FAB centrale) ·
+  Notifiche · Menu. `(tabs)/home.tsx` con `HomeHeader` (avatar→profilo, wordmark
+  "televo", ricerca) + `CategoryBar` (Discover/Reels/Live/Map/Aura/Sport).
+- Categorie da `src/constants/feed.ts`: Discover = `FeedSkeleton` (dati dopo);
+  Reels/Sport = `ComingSoon` (categorie UI senza backend); Live/Map/Aura =
+  `ComingSoon` (backend reale, da collegare in M3/M4/M7).
+- Schermate: `messages`/`crea`/`notifiche` = `ComingSoon`; `menu` con Logout reale;
+  rotte stack `profilo`/`cerca` dall'header. Componenti UI: `Card`, `Avatar`.
+- **Verifica:** swap fra le 5 voci; `tsc`/`eslint` puliti; gira in Expo Go. I dati
+  reali si collegano categoria per categoria nelle milestone successive.
 
-### 🟣 M3 — Profilo + Aura (il fossato)
+### 🟣 M3 — Profilo + Aura (il fossato) — PROSSIMO
 *Obiettivo: l'anello Aura vivo e le classifiche.*
 - `AuraRing.tsx` (SVG + Reanimated, "respiro", colore dal tratto dominante),
   `AuraScore.tsx`, `Classifica.tsx` (per carattere + per scuola), `PropCard.tsx`.

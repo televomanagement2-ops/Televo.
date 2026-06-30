@@ -28,6 +28,7 @@ export default function VerificaScreen() {
   const method = useOnboardingStore((s) => s.method);
   const email = useOnboardingStore((s) => s.email);
   const phone = useOnboardingStore((s) => s.phone);
+  const resetFlow = useOnboardingStore((s) => s.resetFlow);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -42,7 +43,12 @@ export default function VerificaScreen() {
     try {
       if (isPhone) await verifyPhoneOtp(phone, value);
       else await verifyEmailOtp(email, value);
-      // Sessione attiva: instrada secondo lo stato del profilo.
+      // Sessione attiva. Se è un reset password, vai a impostare la nuova password.
+      if (resetFlow) {
+        router.replace('/nuova-password');
+        return;
+      }
+      // Altrimenti instrada secondo lo stato del profilo.
       const { data } = await supabase.auth.getUser();
       const profile = data.user ? await fetchMyProfile(data.user.id) : null;
       router.replace(profile?.age_verified ? '/home' : '/registrazione');
@@ -69,7 +75,10 @@ export default function VerificaScreen() {
 
       <View style={styles.body}>
         <Text style={styles.title}>Inserisci il codice</Text>
-        <Text style={styles.subtitle}>Lo abbiamo mandato a {destination}</Text>
+        <Text style={styles.subtitle}>
+          {resetFlow ? 'Codice per reimpostare la password, mandato a ' : 'Lo abbiamo mandato a '}
+          {destination}
+        </Text>
         <View style={styles.field}>
           <OtpInput
             value={code}

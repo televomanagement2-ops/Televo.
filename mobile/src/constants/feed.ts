@@ -3,12 +3,13 @@
 // =============================================================================
 // La Home ha una barra di categorie: "Discover" (mix di tutto, default) + le
 // verticali. ATTENZIONE allo stato `backed`: nel backend esistono dati SOLO per
-// drops/stanze live/mappa/aura. NON esistono "reels" né "sport" (nessuna tabella
-// video/sport): quelle categorie restano visibili ma in stato "Prossimamente"
-// finché non avranno un backend dedicato. `discover/live/map/aura` avranno dati
-// reali (collegati nei round M3/M4/M7); per ora il corpo del feed è scheletro.
+// drops/stanze live/mappa/aura. NON esiste "sport" (nessuna tabella dedicata):
+// resta visibile ma in stato "Prossimamente" finché non avrà un backend.
+// `discover/live/map/aura` avranno dati reali (collegati nei round M3/M4/M7);
+// "discover" mostra già un mix di card placeholder (vedi constants/feedItems.ts).
+// NB: "Reels" è stato RIMOSSO — il concept dell'app non lo contempla.
 
-export type FeedCategoryKey = 'discover' | 'reels' | 'live' | 'map' | 'aura' | 'sport';
+export type FeedCategoryKey = 'discover' | 'live' | 'map' | 'aura' | 'sport';
 
 export interface FeedCategory {
   key: FeedCategoryKey;
@@ -20,9 +21,8 @@ export interface FeedCategory {
 /** Ordine canonico mostrato nella barra (Discover sempre primo e di default). */
 export const FEED_CATEGORIES: readonly FeedCategory[] = [
   { key: 'discover', label: 'Discover', backed: true },
-  { key: 'reels', label: 'Reels', backed: false },
   { key: 'live', label: 'Live', backed: true },
-  { key: 'map', label: 'Mappa', backed: true },
+  { key: 'map', label: 'Map', backed: true },
   { key: 'aura', label: 'Aura', backed: true },
   { key: 'sport', label: 'Sport', backed: false },
 ] as const;

@@ -15,13 +15,14 @@ export const colors = {
   elevated: '#14161c',
   border: '#23262e',
 
-  // Accento UI — VIOLETTO (bottoni outline, link, focus, stati attivi). Come
-  // l'immagine di riferimento: stessa famiglia dell'anello del logo.
-  accent: '#a78bfa',
-  accentSoft: '#c4b5fd',
-  accentDeep: '#8b5cf6',
+  // Accento UI — BLU (bottoni, outline, link, focus, stati attivi, underline,
+  // dots). Allineato a tailwind.config.js. NIENTE viola nella UI.
+  accent: '#3b82f6',
+  accentSoft: '#60a5fa',
+  accentDeep: '#2563eb',
 
-  // Brand — viola → fucsia: l'anello del logo (LaunchRing/BrandLockup)
+  // Brand — viola → fucsia: SOLO l'anello/wordmark del logo (LaunchRing/
+  // BrandLockup). È l'unica eccezione: non usarli come accento UI.
   viola: '#a855f7',
   fucsia: '#d946ef',
 
@@ -36,14 +37,14 @@ export const colors = {
   danger: '#fb7185',
 } as const;
 
-/** Gradient. `brand` = l'anello del logo. `accent` = UI (violetto). */
+/** Gradient. `brand` = l'anello del logo (viola). `accent` = UI (blu). */
 export const gradients = {
-  // viola → fucsia: il marchio (come l'immagine)
+  // viola → fucsia: il marchio (come l'immagine) — SOLO logo
   brand: ['#a855f7', '#d946ef'] as const,
-  // violetto: accento della UI
-  accent: ['#a78bfa', '#8b5cf6'] as const,
-  // "alone" morbido violetto per i glow attenuati
-  glow: ['rgba(167,139,250,0.35)', 'rgba(139,92,246,0.10)'] as const,
+  // blu: accento della UI
+  accent: ['#60a5fa', '#2563eb'] as const,
+  // "alone" morbido blu per i glow attenuati
+  glow: ['rgba(96,165,250,0.35)', 'rgba(37,99,235,0.10)'] as const,
 } as const;
 
 /** Spaziatura base 4pt — respiro, niente rumore visivo. */

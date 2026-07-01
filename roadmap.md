@@ -4,7 +4,7 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-06-30
+> **Ultimo aggiornamento:** 2026-07-01
 
 ---
 
@@ -17,11 +17,12 @@ Progetto Supabase hosted `mmunnybytyfybncohkky` ("Televo Project"), org
 
 | Area | Stato |
 |------|-------|
-| 21 migrazioni (Fasi 0–8 + GDPR) | ✅ applicate (`migration list`: locale = remoto) |
-| 10 Edge Functions | ✅ deployate |
+| 22 migrazioni (Fasi 0–8 + GDPR + onboarding) | ✅ applicate (`migration list`: locale = remoto) |
+| Migrazioni 23–24 (Aura v3) | ⏳ scritte in locale, **da `db push`** (vedi `now.md` §3.1bis) |
+| 10 Edge Functions | ✅ deployate (Aura v3 non ne aggiunge) |
 | 3 Vault secrets (`edge_base_url`, `service_role_key`, `cron_secret`) | ✅ impostati |
-| 82 invarianti pgTAP | ✅ tutte passate |
-| 7 cron job pg_cron | ✅ attivi |
+| 99 invarianti pgTAP | ✅ 82 passate + 13 nuove (Aura v3) da eseguire |
+| 7 cron job pg_cron (`aura-recompute` ora **daily**) | ✅ attivi |
 
 **Domini coperti dal backend** (dettaglio in `CLAUDE.md` §4): identità + inviti +
 age-gate ≥16 · Aura v2 (props, decadimento half-life 14gg, classifiche) · Stanze
@@ -149,31 +150,59 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
 - **Verifica:** invito reale → profilo creato; birth_date <16 → bloccato dal
   trigger DB; login utente esistente OK; reset password via OTP OK.
 
-### ✅ M2 — Shell + Home — FATTO (frame tecnico)
+### ✅ M2 — Shell + Home — FATTO (frame tecnico + design completo Discover)
 *Obiettivo: la tab bar naviga; la home è l'hub.*
-> Frame di navigazione reale (non design-heavy, come da piano). Il design
-> definitivo della Home resta per fine progetto, quando i pilastri esistono.
+> Frame di navigazione reale + **design completo della Home (Discover)** fatto in
+> anticipo sul mockup `assets/images/homepage-goal.png` (2026-06-30, pausa dalla
+> roadmap su richiesta utente). Le altre categorie restano `ComingSoon`.
 - `(main)/_layout.tsx`, `(main)/(tabs)/_layout.tsx` con **bottom bar custom**
-  (`BottomBar.tsx`) a 5 voci: Home · Messaggi · **+** (crea, FAB centrale) ·
-  Notifiche · Menu. `(tabs)/home.tsx` con `HomeHeader` (avatar→profilo, wordmark
-  "televo", ricerca) + `CategoryBar` (Discover/Reels/Live/Map/Aura/Sport).
-- Categorie da `src/constants/feed.ts`: Discover = `FeedSkeleton` (dati dopo);
-  Reels/Sport = `ComingSoon` (categorie UI senza backend); Live/Map/Aura =
-  `ComingSoon` (backend reale, da collegare in M3/M4/M7).
-- Schermate: `messages`/`crea`/`notifiche` = `ComingSoon`; `menu` con Logout reale;
+  (`BottomBar.tsx`) a 5 voci: Home · Messaggi · **+** (crea, quadrato scuro
+  centrale) · Notifiche · Menu. Solo icone (niente label), puntino viola sull'attiva.
+  `(tabs)/home.tsx` con `HomeHeader` (avatar+anello→profilo, wordmark "Televo",
+  ricerca) + `CategoryBar` testuale con underline viola (Discover/Live/Map/Aura/
+  Sport — **"Reels" rimosso**).
+- **Discover = feed design completo**: card grandi sociali (`FeedCard` +
+  `MediaPlaceholder`/`FeedActionRail`/`FeedPaginationDots`) come MIX di tutti i
+  tipi (drop/live/map/aura/sport), media grigio placeholder, dati statici in
+  `src/constants/feedItems.ts`; card LIVE in fondo (`FeedLiveCard`). Sport/Live/
+  Map/Aura come categorie → `ComingSoon` (dati reali in M4/M7).
+- **Crea (+)**: `crea.tsx` + `src/constants/createTypes.ts` elencano TUTTI i tipi
+  creabili dal backend (Drop, Stanza Live, Media, Nota vocale, Dai Aura, Gruppo)
+  come frame "presto" — nessuna logica di creazione ancora.
+- Schermate: `messages`/`notifiche` = `ComingSoon`; `menu` con Logout reale;
   rotte stack `profilo`/`cerca` dall'header. Componenti UI: `Card`, `Avatar`.
-- **Verifica:** swap fra le 5 voci; `tsc`/`eslint` puliti; gira in Expo Go. I dati
-  reali si collegano categoria per categoria nelle milestone successive.
+- **Verifica:** `tsc`/`eslint` puliti, `expo export` (bundle iOS) OK; gira in Expo
+  Go. I dati reali del feed si collegano nelle milestone successive (M4/M6/M7).
 
-### 🟣 M3 — Profilo + Aura (il fossato) — PROSSIMO
+### 🟣 M3 — Profilo + Aura (il fossato) — ✅ FATTO (logica), ⚠️ design da rivedere
 *Obiettivo: l'anello Aura vivo e le classifiche.*
 - `AuraRing.tsx` (SVG + Reanimated, "respiro", colore dal tratto dominante),
-  `AuraScore.tsx`, `Classifica.tsx` (per carattere + per scuola), `PropCard.tsx`.
-- `(tabs)/profilo.tsx`, `profilo/[id].tsx`, `profilo/modifica.tsx`,
-  `profilo/aura.tsx` (grafico da `aura_snapshots`), `profilo/achievement.tsx`.
-- `src/hooks/useAura.ts`, `useProfilo.ts`; `src/store/auraStore.ts`.
-- **Verifica:** anello col colore reale, classifiche dalle leaderboard, dare un
-  prop muove l'Aura.
+  `AuraScore.tsx`, `AuraBreakdown.tsx`, `Classifica.tsx` (per carattere + per
+  scuola), `PropCard.tsx`, `AuraBadge.tsx` — tutti scritti.
+- `profilo.tsx` (proprio, completo), `profilo/modifica.tsx`, `profilo/aura.tsx`
+  (grafico da `aura_snapshots`). Scope solo profilo PROPRIO: `profilo/[id]`
+  (altrui) e `profilo/achievement.tsx` (vista dedicata) restano per dopo.
+- `src/hooks/useAura.ts`, `useProfilo.ts`, `useAchievement.ts` — scritti, niente
+  `auraStore.ts` (TanStack Query basta, nessuno stato condiviso necessario).
+- Corretti in corsa diversi disallineamenti tra `src/types/supabase.ts` (tipi a
+  mano) e le migrazioni reali (achievements, friendships, drops, RPC amicizie) —
+  senza il fix le query sarebbero fallite a runtime.
+- **Verificato**: `tsc --noEmit`/`eslint` puliti, bundle Metro esportato senza
+  errori. **Non ancora testato a runtime** con login reale su device.
+- **⚠️ Resa visiva da rivedere**: score numerico grande, progress bar "prossimo
+  traguardo", badge "esclusivo", classifiche #N in evidenza — troppo gamification
+  rispetto al concept di reputazione vivente. La logica dati resta valida.
+- **✅ ALGORITMO AURA v3 RISCRITTO** (backend, 2026-07-01): sostituito il modello
+  v2 (ledger decaduto, ~0–500) con **ricalcolo deterministico a finestra mobile
+  7gg, 0–100%** — statici (proof-of-human=≥1 live, profilo completo, badge; cap
+  300) + dinamici (drop audio/media/testo, reazioni, minuti live con cap e
+  rendimenti decrescenti; cap 700) − penalità (segnalazioni*50 + mute*25). Cron
+  **giornaliero** + notifiche `aura_upgrade`/`aura_downgrade` (±5%). Drop esteso col
+  formato **media**. Migrazioni 23–24 (`aura_v3_enums` + `aura_v3`), **da `db
+  push`are** (vedi `now.md` §3.1bis). `aura_events`/`props` restano (storico +
+  colore tratti). **Frontend M3 da riadattare** alla scala 0–100 (hook `useAura.ts`
+  e milestone) in un round dedicato; milestone achievement e classifiche non ancora
+  riallineate (deciso "solo Aura ora").
 
 ### 🔥 M4 — Stanze Live (Proof of Human)
 *Obiettivo: audio live reale.* **Richiede LiveKit keys + Development Build.**

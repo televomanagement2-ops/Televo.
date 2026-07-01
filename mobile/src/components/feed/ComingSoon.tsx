@@ -1,7 +1,7 @@
 // =============================================================================
 // ComingSoon — stato "Prossimamente" INLINE per il corpo del feed (non una
 // schermata intera, a differenza di ui/Placeholder). Usato per le categorie
-// senza contenuto ancora collegato (reels/sport) o non ancora costruite.
+// senza contenuto ancora collegato (sport) o non ancora costruite (live/map/aura).
 // =============================================================================
 
 import { StyleSheet, Text, View } from 'react-native';

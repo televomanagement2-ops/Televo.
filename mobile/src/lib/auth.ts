@@ -211,7 +211,9 @@ export async function completeOnboarding(input: CompleteOnboardingInput): Promis
 
 /** Registra un consenso GDPR (privacy/tos). */
 export async function recordConsent(kind: string, granted: boolean): Promise<void> {
-  await callRpc('record_consent', { kind, granted });
+  // PostgREST risolve le RPC per NOME di argomento: i parametri della funzione
+  // record_consent sono p_type/p_granted (vedi migrazione gdpr), non kind/granted.
+  await callRpc('record_consent', { p_type: kind, p_granted: granted });
 }
 
 // --- Foto profilo (facoltativa) ----------------------------------------------
@@ -279,6 +281,12 @@ export async function signOut(): Promise<void> {
 export function isInvalidCredentials(error: unknown): boolean {
   const raw = ((error as { message?: string })?.message ?? String(error)).toLowerCase();
   return raw.includes('invalid login credentials');
+}
+
+/** True se in fase di registrazione l'email risulta già registrata. */
+export function isUserAlreadyRegistered(error: unknown): boolean {
+  const raw = ((error as { message?: string })?.message ?? String(error)).toLowerCase();
+  return raw.includes('user already registered') || raw.includes('already been registered');
 }
 
 /** Estrae il codice-stringa da un errore RPC/Supabase (es. 'age_below_minimum'). */

@@ -28,13 +28,21 @@ export type AuraEventType =
   | 'consistency'
   | 'participation'
   | 'toxicity'
-  | 'compulsive_use'
-  | 'spam';
+  | 'compulsive_use';
 
-export type ConversationKind = 'dm' | 'group' | 'house';
-export type MessageKind = 'text' | 'audio' | 'voice_thread';
+export type ConversationType = 'dm' | 'group' | 'house';
+export type ConversationRole = 'admin' | 'member';
+export type MessageType = 'text' | 'audio' | 'voice_thread' | 'media';
+export type NotificationType =
+  | 'friend_request'
+  | 'friend_accepted'
+  | 'message'
+  | 'prop'
+  | 'achievement';
+export type ModerationTarget = 'user' | 'room' | 'message' | 'drop';
+export type DropType = 'text' | 'audio' | 'media';
 export type DropAudience = 'friends' | 'school';
-export type FriendshipStatus = 'pending' | 'accepted';
+export type FriendshipStatus = 'pending' | 'accepted' | 'blocked';
 
 export interface Database {
   public: {
@@ -55,6 +63,9 @@ export interface Database {
           aura_color: string | null;
           share_location: boolean;
           expo_push_token: string | null;
+          last_active_at: string | null; // "ultimo accesso" (heartbeat via touch_presence)
+          show_last_seen: boolean; // toggle privacy: mostra l'ultimo accesso
+          show_read_receipts: boolean; // toggle privacy: spunte di lettura
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -70,6 +81,8 @@ export interface Database {
           interests?: string[];
           share_location?: boolean;
           expo_push_token?: string | null;
+          show_last_seen?: boolean; // grant update (show_last_seen, show_read_receipts)
+          show_read_receipts?: boolean;
         };
       };
       profiles_private: {
@@ -83,66 +96,155 @@ export interface Database {
         Update: never;
       };
       friendships: {
+        // Coppia normalizzata (user_id < friend_id): UNA sola riga simmetrica.
         Row: {
           user_id: string;
           friend_id: string;
-          status: FriendshipStatus;
           requested_by: string;
+          status: FriendshipStatus;
+          blocked_by: string | null;
           created_at: string;
-          accepted_at: string | null;
+          updated_at: string;
         };
-        Insert: never; // mutazioni via RPC (send/accept/remove)
+        Insert: never; // mutazioni via RPC (send/accept/remove/block)
+        Update: never;
+      };
+      top_friends: {
+        // Cerchia stretta (1–8), ordinata e gestita dall'owner.
+        Row: {
+          user_id: string;
+          friend_id: string;
+          position: number;
+          created_at: string;
+        };
+        Insert: never; // gestita dall'owner via RPC/update dedicati (M5)
         Update: never;
       };
       conversations: {
         Row: {
           id: string;
-          kind: ConversationKind;
-          title: string | null;
-          school_id: string | null;
+          type: ConversationType;
+          name: string | null;
+          topic: string | null;
+          avatar_url: string | null;
+          dm_key: string | null; // "<least>:<greatest>" solo per le DM
           created_by: string | null;
           created_at: string;
+          updated_at: string; // bumpato da ogni messaggio → ordinamento lista chat
         };
         Insert: never; // via RPC (get_or_create_dm, create_group_conversation)
         Update: never;
+      };
+      conversation_members: {
+        // Relazione utente↔conversazione. last_read_at = base di unread e spunte.
+        // Campi di organizzazione PER-UTENTE (D4): tutti null = attivo/visibile.
+        Row: {
+          conversation_id: string;
+          user_id: string;
+          role: ConversationRole;
+          joined_at: string;
+          last_read_at: string;
+          muted_until: string | null; // null=attivo, futuro=silenziato (per-conversazione)
+          archived_at: string | null; // archiviata (fuori dalla lista principale)
+          pinned_at: string | null; // fissata in cima
+          cleared_at: string | null; // nascondi i messaggi con created_at <= cleared_at
+          hidden_at: string | null; // "elimina chat" (DM): fuori dalla lista finché nuovo msg
+        };
+        Insert: never; // via RPC (get_or_create_dm / create_group / add_member)
+        Update: never; // mark_conversation_read / set_conversation_* via RPC
       };
       messages: {
         Row: {
           id: string;
           conversation_id: string;
           sender_id: string;
-          kind: MessageKind;
+          type: MessageType;
           body: string | null;
-          media_url: string | null;
+          audio_url: string | null;
+          media_url: string | null; // path nel bucket privato chat-media (foto/media, D3)
+          media_type: string | null; // es. 'image'
           reply_to: string | null;
           expires_at: string | null;
           created_at: string;
           deleted_at: string | null;
         };
+        // Grant insert: (conversation_id, type, body, audio_url, media_url, media_type, reply_to, expires_at).
         Insert: {
           conversation_id: string;
-          kind?: MessageKind;
+          type?: MessageType;
           body?: string | null;
+          audio_url?: string | null;
           media_url?: string | null;
+          media_type?: string | null;
           reply_to?: string | null;
           expires_at?: string | null;
         };
-        Update: { deleted_at?: string | null };
+        // Grant update (body, deleted_at): edit del proprio testo + soft-delete.
+        Update: { body?: string | null; deleted_at?: string | null };
+      };
+      streaks: {
+        // Streak per conversazione (giorni consecutivi, con freeze). Sola lettura.
+        Row: {
+          conversation_id: string;
+          current_streak: number;
+          longest_streak: number;
+          last_activity_date: string | null;
+          freezes_available: number;
+          updated_at: string;
+        };
+        Insert: never; // touch_streak (trigger) lato server
+        Update: never;
+      };
+      usage_daily: {
+        // Secondi attivi per giorno (anti-doomscroll). Owner-only via RLS.
+        Row: {
+          user_id: string;
+          day: string;
+          active_seconds: number;
+          compulsive_flagged: boolean;
+        };
+        Insert: never; // via RPC record_session
+        Update: never;
+      };
+      saved_messages: {
+        // Bookmark personale cross-conversazione (D4). Owner-only via RLS.
+        Row: {
+          user_id: string;
+          message_id: string;
+          created_at: string;
+        };
+        Insert: never; // via RPC save_message
+        Update: never;
+      };
+      contact_hashes: {
+        // Hash del proprio contatto (opt-in, rubrica D1). Nessuna lettura diretta
+        // (solo via RPC match_contacts): RLS attiva senza policy di select.
+        Row: {
+          user_id: string;
+          kind: 'phone' | 'email';
+          hash: string;
+          created_at: string;
+        };
+        Insert: never; // via RPC register_contact_hash
+        Update: never;
       };
       drops: {
+        // Momenti effimeri (24h): niente soft-delete, scadono via expires_at.
         Row: {
           id: string;
           author_id: string;
-          kind: MessageKind;
+          type: DropType;
           body: string | null;
+          audio_url: string | null;
           media_url: string | null;
           audience: DropAudience;
           expires_at: string;
           created_at: string;
         };
         Insert: {
-          kind?: MessageKind;
+          type?: DropType;
           body?: string | null;
+          audio_url?: string | null;
           media_url?: string | null;
           audience?: DropAudience;
         };
@@ -170,34 +272,38 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
-          kind: string;
+          type: NotificationType;
           title: string;
           body: string | null;
-          data: Json;
+          payload: Json;
           read_at: string | null;
           pushed_at: string | null;
           created_at: string;
         };
         Insert: never;
-        Update: { read_at?: string | null };
+        Update: { read_at?: string | null }; // grant update (read_at)
       };
       devices: {
         Row: {
           id: string;
           user_id: string;
           expo_push_token: string;
-          platform: string | null;
+          platform: string; // 'ios' | 'android' | 'web' (check DB)
+          last_seen: string;
           created_at: string;
         };
         Insert: never; // via RPC register_device
         Update: never;
       };
       achievements: {
+        // Catalogo statico dei traguardi (vedi seed in 180100_achievements.sql).
         Row: {
-          code: string;
-          title: string;
-          description: string | null;
-          icon: string | null;
+          key: string;
+          name: string;
+          description: string;
+          icon: string;
+          category: string;
+          created_at: string;
         };
         Insert: never;
         Update: never;
@@ -205,11 +311,12 @@ export interface Database {
       user_achievements: {
         Row: {
           user_id: string;
-          achievement_code: string;
+          achievement_key: string;
+          is_public: boolean;
           unlocked_at: string;
         };
-        Insert: never;
-        Update: never;
+        Insert: never; // sblocco server-side (unlock_achievement)
+        Update: { is_public?: boolean }; // l'owner può nascondere un badge
       };
       wallets: {
         Row: {
@@ -260,6 +367,26 @@ export interface Database {
           room_id: string | null;
         };
       };
+      // Classifica per carattere (somme DECADUTE, ultime 8 settimane). Espone solo
+      // user_id/type/score: per username/avatar serve un join con `profiles`.
+      leaderboard_character: {
+        Row: {
+          user_id: string;
+          type: AuraEventType;
+          score: number;
+        };
+      };
+      // Classifica per scuola (aggregati). `members` è un conteggio (bigint →
+      // arriva come number via PostgREST js).
+      leaderboard_school: {
+        Row: {
+          school_id: string;
+          school_name: string;
+          members: number;
+          total_aura: number;
+          avg_aura: number;
+        };
+      };
     };
     Functions: {
       // Onboarding / inviti (vedi migrazione onboarding_oauth)
@@ -280,27 +407,46 @@ export interface Database {
         Args: Record<string, never>;
         Returns: { code: string; expires_at: string };
       };
-      // Amicizie
-      send_friend_request: { Args: { target: string }; Returns: undefined };
-      accept_friend_request: { Args: { requester: string }; Returns: undefined };
-      remove_friend: { Args: { other: string }; Returns: undefined };
-      block_user: { Args: { target: string }; Returns: undefined };
-      unblock_user: { Args: { target: string }; Returns: undefined };
+      // Amicizie — le mutazioni ritornano jsonb { ok, status }.
+      send_friend_request: { Args: { p_target: string }; Returns: Json };
+      accept_friend_request: { Args: { p_other: string }; Returns: Json };
+      remove_friend: { Args: { p_other: string }; Returns: Json };
+      block_user: { Args: { p_target: string }; Returns: Json };
+      unblock_user: { Args: { p_target: string }; Returns: Json };
       are_friends: { Args: { a: string; b: string }; Returns: boolean };
-      // Conversazioni
-      get_or_create_dm: { Args: { other: string }; Returns: string };
-      create_group_conversation: { Args: { title: string }; Returns: string };
-      add_conversation_member: {
-        Args: { conv: string; member: string };
-        Returns: undefined;
+      // Conversazioni — ritornano jsonb { ok, conversation_id?, created? }.
+      get_or_create_dm: { Args: { p_other: string }; Returns: Json };
+      create_group_conversation: {
+        Args: { p_type: ConversationType; p_name: string | null; p_members?: string[] };
+        Returns: Json;
       };
-      leave_conversation: { Args: { conv: string }; Returns: undefined };
-      mark_conversation_read: { Args: { conv: string }; Returns: undefined };
+      add_conversation_member: { Args: { p_conv: string; p_user: string }; Returns: Json };
+      remove_conversation_member: { Args: { p_conv: string; p_user: string }; Returns: Json };
+      leave_conversation: { Args: { p_conv: string }; Returns: Json };
+      mark_conversation_read: { Args: { p_conv: string }; Returns: Json };
+      // Organizzazione chat per-utente (D4) — jsonb { ok }.
+      set_conversation_mute: { Args: { p_conv: string; p_until: string | null }; Returns: Json };
+      set_conversation_flag: {
+        Args: { p_conv: string; p_flag: 'archived' | 'pinned' | 'hidden'; p_on: boolean };
+        Returns: Json;
+      };
+      clear_conversation_history: { Args: { p_conv: string }; Returns: Json };
+      // Messaggi salvati (D4) — jsonb { ok }.
+      save_message: { Args: { p_message: string }; Returns: Json };
+      unsave_message: { Args: { p_message: string }; Returns: Json };
+      // Presenza "ultimo accesso" (§3.13) — jsonb { ok }.
+      touch_presence: { Args: Record<string, never>; Returns: Json };
+      // Rubrica (D1) — register: jsonb { ok }; match: righe { user_id, username, avatar_url }.
+      register_contact_hash: { Args: { p_kind: 'phone' | 'email'; p_hash: string }; Returns: Json };
+      match_contacts: {
+        Args: { p_hashes: string[] };
+        Returns: { user_id: string; username: string; avatar_url: string | null }[];
+      };
+      // Streak / presenza sana
+      record_session: { Args: { p_seconds: number }; Returns: Json };
       // Notifiche / device
-      register_device: {
-        Args: { token: string; platform: string };
-        Returns: undefined;
-      };
+      register_device: { Args: { p_token: string; p_platform?: string }; Returns: Json };
+      unregister_device: { Args: { p_token: string }; Returns: Json };
       // Economia
       process_symbolic_tip: {
         Args: {
@@ -314,21 +460,26 @@ export interface Database {
       // Moderazione / GDPR
       file_report: {
         Args: {
-          target_user: string;
-          reason: string;
-          context_type: string | null;
-          context_id: string | null;
+          p_target_type: ModerationTarget;
+          p_target_id: string;
+          p_reason: string;
+          p_details?: string | null;
         };
-        Returns: undefined;
+        Returns: Json;
       };
       record_consent: {
-        Args: { kind: string; granted: boolean };
+        Args: { p_type: string; p_granted: boolean };
         Returns: undefined;
       };
       request_gdpr: { Args: { kind: string }; Returns: undefined };
     };
     Enums: {
       aura_event_type: AuraEventType;
+      conversation_type: ConversationType;
+      message_type: MessageType;
+      notification_type: NotificationType;
+      friendship_status: FriendshipStatus;
+      moderation_target: ModerationTarget;
     };
   };
 }

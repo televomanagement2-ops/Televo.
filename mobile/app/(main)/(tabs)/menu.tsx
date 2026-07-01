@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { useAuth } from '@/hooks/useAuth';
+import { ROUTES } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 
 interface Voce {
@@ -29,9 +30,10 @@ export default function Menu() {
     ]);
   };
 
+  // Il Profilo si apre SOLO dal cerchio avatar nell'header della Home: qui il
+  // menu resta per le sezioni future (niente voce "Profilo").
   const voci: Voce[] = [
-    { icon: 'person-outline', label: 'Profilo', onPress: () => router.push('/profilo') },
-    { icon: 'sparkles-outline', label: 'La mia Aura', soon: true },
+    { icon: 'people-outline', label: 'Amici', onPress: () => router.push(ROUTES.amici) },
     { icon: 'gift-outline', label: 'Invita amici', soon: true },
     { icon: 'settings-outline', label: 'Impostazioni', soon: true },
     { icon: 'shield-checkmark-outline', label: 'Privacy e dati', soon: true },
@@ -40,14 +42,14 @@ export default function Menu() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Pressable style={styles.profile} onPress={() => router.push('/profilo')}>
+        {/* Intestazione non premibile: il profilo si apre dall'header Home. */}
+        <View style={styles.profile}>
           <Avatar uri={profile?.avatar_url} name={profile?.username} size={56} />
           <View style={styles.profileText}>
             <Text style={styles.name}>{profile?.display_name || profile?.username || 'Tu'}</Text>
             {profile?.username ? <Text style={styles.username}>@{profile.username}</Text> : null}
           </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.faint} />
-        </Pressable>
+        </View>
 
         <View style={styles.group}>
           {voci.map((v) => (
@@ -78,7 +80,7 @@ export default function Menu() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.base },
-  content: { padding: spacing.lg, gap: spacing.lg },
+  content: { padding: spacing.lg, paddingBottom: 100, gap: spacing.lg },
   profile: {
     flexDirection: 'row',
     alignItems: 'center',

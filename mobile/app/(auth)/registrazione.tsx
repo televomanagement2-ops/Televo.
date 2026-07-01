@@ -1,30 +1,21 @@
 // =============================================================================
-// Registrazione — completamento del profilo (la sessione è GIÀ attiva: ci si
-// arriva dopo email→verifica). Host a stati interni con header persistente +
-// dots; i dati raccolti vivono in onboardingStore.
+// Registrazione — completamento profilo (la sessione è GIÀ attiva: ci si arriva
+// dopo welcome→email→password in modalità sign-up). DUE step soli, look leggero:
+//   1) StepProfilo   — invito + username + nome + nascita
+//   2) StepFinalizza — foto (opz.) + consensi → complete_onboarding → Home
+// Progresso discreto ("1 di 2"), niente wizard a dots invadenti.
 // =============================================================================
-// Invito: se è già presente un codice valido (es. da deep link) lo validiamo in
-// silenzio e saltiamo lo step; altrimenti lo step "Hai un invito?" lo chiede.
 
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useEffect } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeScreen } from '@/components/ui/SafeScreen';
 import { AuthHeader } from '@/components/auth/AuthHeader';
-import { StepDots } from '@/components/auth/StepDots';
-import { StepInvito } from '@/components/auth/StepInvito';
-import { StepNascita } from '@/components/auth/StepNascita';
-import { StepUsername } from '@/components/auth/StepUsername';
-import { StepFoto } from '@/components/auth/StepFoto';
-import { StepConsensi } from '@/components/auth/StepConsensi';
-import { checkInvite } from '@/lib/auth';
+import { StepProfilo } from '@/components/auth/StepProfilo';
+import { StepFinalizza } from '@/components/auth/StepFinalizza';
 import { useAuth } from '@/hooks/useAuth';
-import {
-  ONBOARDING_ORDER,
-  useOnboardingStore,
-  type OnboardingStep,
-} from '@/store/onboardingStore';
-import { colors, spacing } from '@/constants/theme';
+import { ONBOARDING_ORDER, useOnboardingStore } from '@/store/onboardingStore';
+import { colors, fontFamily, fontSize, spacing } from '@/constants/theme';
 
 export default function Registrazione() {
   const router = useRouter();
@@ -32,62 +23,17 @@ export default function Registrazione() {
   const step = useOnboardingStore((s) => s.step);
   const goTo = useOnboardingStore((s) => s.goTo);
   const reset = useOnboardingStore((s) => s.reset);
-  const inviteCode = useOnboardingStore((s) => s.inviteCode);
-
-  const [skipInvito, setSkipInvito] = useState(false);
-  const [checking, setChecking] = useState(!!inviteCode);
 
   // Già onboardato (es. login di un account esistente) → in app.
   useEffect(() => {
     if (isOnboarded) router.replace('/home');
   }, [isOnboarded, router]);
 
-  // Invito da deep link: valida in silenzio, eventualmente salta lo step.
-  useEffect(() => {
-    let active = true;
-    if (!inviteCode) {
-      setChecking(false);
-      return;
-    }
-    (async () => {
-      try {
-        const res = await checkInvite(inviteCode);
-        if (active && res.valid) {
-          setSkipInvito(true);
-          if (useOnboardingStore.getState().step === 'invito') goTo('username');
-        }
-      } catch {
-        // codice non valido/errore: mostra lo step manuale.
-      } finally {
-        if (active) setChecking(false);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const index = Math.max(0, ONBOARDING_ORDER.indexOf(step));
 
-  const flow = useMemo<OnboardingStep[]>(
-    () => ONBOARDING_ORDER.filter((s) => !(skipInvito && s === 'invito')),
-    [skipInvito],
-  );
-
-  // Assicura che lo step corrente appartenga al flow attivo.
-  useEffect(() => {
-    if (!flow.includes(step)) goTo(flow[0] as OnboardingStep);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flow]);
-
-  const index = Math.max(0, flow.indexOf(step));
-
-  const next = () => {
-    const n = flow[index + 1];
-    if (n) goTo(n);
-  };
   const back = () => {
-    const p = flow[index - 1];
-    if (p) goTo(p);
+    const prev = ONBOARDING_ORDER[index - 1];
+    if (prev) goTo(prev);
     else router.back();
   };
   const finish = () => {
@@ -96,30 +42,25 @@ export default function Registrazione() {
   };
 
   return (
-    <SafeScreen>
+    <SafeScreen scroll>
       <AuthHeader onBack={back} />
-      <StepDots count={flow.length} index={index} />
+      <Text style={styles.progress}>{index + 1} di {ONBOARDING_ORDER.length}</Text>
 
       <View style={styles.body}>
-        {checking ? (
-          <View style={styles.loading}>
-            <ActivityIndicator color={colors.accent} />
-          </View>
-        ) : (
-          <>
-            {step === 'invito' && <StepInvito onNext={next} />}
-            {step === 'username' && <StepUsername onNext={next} />}
-            {step === 'nascita' && <StepNascita onNext={next} />}
-            {step === 'foto' && <StepFoto onNext={next} />}
-            {step === 'consensi' && <StepConsensi onNext={finish} />}
-          </>
-        )}
+        {step === 'profilo' && <StepProfilo onNext={() => goTo('finalizza')} />}
+        {step === 'finalizza' && <StepFinalizza onDone={finish} />}
       </View>
     </SafeScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  body: { flex: 1, marginTop: spacing.sm },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  progress: {
+    color: colors.faint,
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.medium,
+    letterSpacing: 1,
+    marginTop: spacing.sm,
+  },
+  body: { flex: 1 },
 });

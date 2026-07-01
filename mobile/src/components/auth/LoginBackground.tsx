@@ -66,9 +66,9 @@ export function LoginBackground() {
         </View>
       ))}
 
-      {/* Alone violaceo morbido dietro il logo, in alto */}
+      {/* Alone neutro morbido dietro il logo, in alto (niente viola nella UI). */}
       <LinearGradient
-        colors={['rgba(139,92,246,0.16)', 'rgba(139,92,246,0)']}
+        colors={['rgba(59,130,246,0.12)', 'rgba(59,130,246,0)']}
         style={[styles.halo, { width: width * 1.1, height: width * 1.1, top: -width * 0.4 }]}
       />
 

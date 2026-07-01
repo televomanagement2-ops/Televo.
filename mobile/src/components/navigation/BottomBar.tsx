@@ -1,26 +1,27 @@
 // =============================================================================
-// BottomBar — barra di navigazione inferiore custom. Cinque voci:
+// BottomBar — barra di navigazione inferiore custom, FLOATING (staccata dai bordi)
+// con look glass scuro. Cinque voci, solo icone:
 //   home · messaggi · (+) crea · notifiche · menu (hamburger)
-// Il "+" centrale è un pill accent prominente (è il punto d'accesso alla
-// creazione di contenuti). Niente tab bar di default: serve il rilievo del "+".
+// Il "+" centrale è un quadrato arrotondato in glass grigio chiaro (accesso alla
+// creazione). La voce attiva è segnalata da un puntino BLU sotto l'icona.
 // =============================================================================
 
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
+import { colors, radius, spacing } from '@/constants/theme';
 
-// Mappa nome-rotta → icone Ionicons (attiva/inattiva) ed etichetta IT.
+// Mappa nome-rotta → icone Ionicons (attiva/inattiva).
 const ICONS: Record<
   string,
-  { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap; label: string }
+  { active: keyof typeof Ionicons.glyphMap; inactive: keyof typeof Ionicons.glyphMap }
 > = {
-  home: { active: 'home', inactive: 'home-outline', label: 'Home' },
-  messages: { active: 'chatbubble', inactive: 'chatbubble-outline', label: 'Messaggi' },
-  notifiche: { active: 'notifications', inactive: 'notifications-outline', label: 'Avvisi' },
-  menu: { active: 'menu', inactive: 'menu', label: 'Menu' },
+  home: { active: 'home', inactive: 'home-outline' },
+  messages: { active: 'chatbubble', inactive: 'chatbubble-outline' },
+  notifiche: { active: 'notifications', inactive: 'notifications-outline' },
+  menu: { active: 'menu', inactive: 'menu' },
 };
 
 export function BottomBar({ state, navigation }: BottomTabBarProps) {
@@ -33,72 +34,93 @@ export function BottomBar({ state, navigation }: BottomTabBarProps) {
   };
 
   return (
-    <View style={[styles.bar, { paddingBottom: insets.bottom || spacing.sm }]}>
-      {state.routes.map((route, index) => {
-        const focused = state.index === index;
+    // Wrapper trasparente che ancora la barra in basso lasciando lo spazio per il
+    // safe-area inset; la barra vera è la pillola floating staccata dai bordi.
+    <View style={[styles.dock, { paddingBottom: (insets.bottom || spacing.sm) + spacing.sm }]} pointerEvents="box-none">
+      <View style={styles.bar}>
+        {state.routes.map((route, index) => {
+          const focused = state.index === index;
 
-        // Il "crea" è il bottone centrale prominente, non una voce normale.
-        if (route.name === 'crea') {
+          // Il "crea" è il bottone centrale: quadrato glass grigio chiaro.
+          if (route.name === 'crea') {
+            return (
+              <View key={route.key} style={styles.slot}>
+                <Pressable
+                  style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+                  onPress={() => go(route.key, route.name, focused)}
+                  hitSlop={6}
+                >
+                  <Ionicons name="add" size={28} color="#ffffff" />
+                </Pressable>
+              </View>
+            );
+          }
+
+          const meta = ICONS[route.name];
+          if (!meta) return <View key={route.key} style={styles.slot} />;
+
           return (
-            <View key={route.key} style={styles.slot}>
-              <Pressable
-                style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
-                onPress={() => go(route.key, route.name, focused)}
-                hitSlop={6}
-              >
-                <Ionicons name="add" size={30} color="#ffffff" />
-              </Pressable>
-            </View>
+            <Pressable
+              key={route.key}
+              style={styles.slot}
+              onPress={() => go(route.key, route.name, focused)}
+              hitSlop={6}
+            >
+              <Ionicons
+                name={focused ? meta.active : meta.inactive}
+                size={25}
+                color={focused ? colors.ink : colors.faint}
+              />
+              <View style={[styles.dot, focused && styles.dotActive]} />
+            </Pressable>
           );
-        }
-
-        const meta = ICONS[route.name];
-        if (!meta) return <View key={route.key} style={styles.slot} />;
-
-        return (
-          <Pressable
-            key={route.key}
-            style={styles.slot}
-            onPress={() => go(route.key, route.name, focused)}
-            hitSlop={6}
-          >
-            <Ionicons
-              name={focused ? meta.active : meta.inactive}
-              size={24}
-              color={focused ? colors.accent : colors.faint}
-            />
-            <Text style={[styles.label, focused && styles.labelActive]}>{meta.label}</Text>
-          </Pressable>
-        );
-      })}
+        })}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  dock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  // La pillola floating: glass scuro, bordo tenue, angoli molto arrotondati.
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    paddingTop: spacing.sm,
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(18,20,26,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    borderRadius: radius['2xl'],
+    paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
+    // Sollevamento morbido sotto la barra (iOS); su Android resta piatta-ish.
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 12,
   },
-  slot: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  label: { color: colors.faint, fontSize: fontSize.xs, fontFamily: fontFamily.medium },
-  labelActive: { color: colors.accent },
+  slot: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 4 },
+  // Puntino sotto l'icona: invisibile di default, BLU quando la voce è attiva.
+  dot: { width: 4, height: 4, borderRadius: radius.full, backgroundColor: 'transparent' },
+  dotActive: { backgroundColor: colors.accent },
+  // "+" glass grigio chiaro (vetro): superficie chiara translucida + bordo tenue.
   fab: {
-    width: 52,
-    height: 52,
-    borderRadius: radius.full,
-    backgroundColor: colors.accent,
+    width: 46,
+    height: 46,
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(255,255,255,0.09)',
     alignItems: 'center',
     justifyContent: 'center',
-    // Sollevamento visivo del "+" rispetto alla barra.
-    marginTop: -spacing.lg,
-    borderWidth: 3,
-    borderColor: colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
   },
-  fabPressed: { opacity: 0.9, transform: [{ scale: 0.96 }] },
+  fabPressed: { opacity: 0.85, transform: [{ scale: 0.96 }] },
 });

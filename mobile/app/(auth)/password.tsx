@@ -1,10 +1,10 @@
 // =============================================================================
-// Password — secondo passo dell'accesso via email. Si arriva qui dopo aver
-// inserito l'email. Logica a flusso unico (scelta di prodotto):
-//   1) si tenta l'ACCESSO (signInWithPassword);
-//   2) se le credenziali sono invalide → l'email potrebbe essere nuova: si
-//      propone di CREARE l'account con questa password (signUpWithPassword).
-// "Password dimenticata?" passa al canale OTP per reimpostare la password.
+// Password — secondo passo via email. Il comportamento dipende dall'INTENT scelto
+// nella welcome:
+//   • signup ("Continua con email") → CREA l'account (signUpWithPassword) e va
+//     all'onboarding. Se l'email esiste già, suggerisce di accedere.
+//   • signin ("Accedi") → ACCEDE (signInWithPassword). Se le credenziali sono
+//     errate, lo dice (niente creazione silenziosa). "Password dimenticata?" → OTP.
 // =============================================================================
 
 import { useState } from 'react';
@@ -21,6 +21,7 @@ import {
   sendEmailOtp,
   fetchMyProfile,
   isInvalidCredentials,
+  isUserAlreadyRegistered,
   authErrorMessage,
 } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -32,14 +33,15 @@ const MIN_LEN = 8;
 export default function PasswordScreen() {
   const router = useRouter();
   const email = useOnboardingStore((s) => s.email);
+  const intent = useOnboardingStore((s) => s.intent);
   const patch = useOnboardingStore((s) => s.patch);
+
+  const isSignup = intent === 'signup';
 
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  // Quando l'accesso fallisce per credenziali invalide, proponiamo la creazione.
-  const [offerSignUp, setOfferSignUp] = useState(false);
 
   const valid = password.length >= MIN_LEN;
 
@@ -50,6 +52,7 @@ export default function PasswordScreen() {
     router.replace(profile?.age_verified ? '/home' : '/registrazione');
   };
 
+  // ACCESSO (intent 'signin'): credenziali errate → messaggio, niente creazione.
   const accedi = async () => {
     if (!valid) return;
     setLoading(true);
@@ -58,17 +61,13 @@ export default function PasswordScreen() {
       await signInWithPassword(email, password);
       await routeAfterAuth();
     } catch (e) {
-      if (isInvalidCredentials(e)) {
-        // Email forse nuova: offri la creazione con questa password.
-        setOfferSignUp(true);
-        setError('Non abbiamo trovato un account, oppure la password è errata.');
-      } else {
-        setError(authErrorMessage(e));
-      }
+      setError(isInvalidCredentials(e) ? 'Email o password non corretti.' : authErrorMessage(e));
       setLoading(false);
     }
   };
 
+  // REGISTRAZIONE (intent 'signup'): crea l'account → onboarding. Email già usata
+  // → suggerisce di accedere (torna alla welcome → "Accedi").
   const crea = async () => {
     if (!valid) return;
     setLoading(true);
@@ -77,10 +76,16 @@ export default function PasswordScreen() {
       await signUpWithPassword(email, password);
       await routeAfterAuth();
     } catch (e) {
-      setError(authErrorMessage(e));
+      setError(
+        isUserAlreadyRegistered(e)
+          ? 'Esiste già un account con questa email. Torna indietro e usa “Accedi”.'
+          : authErrorMessage(e),
+      );
       setLoading(false);
     }
   };
+
+  const submit = isSignup ? crea : accedi;
 
   const dimenticata = async () => {
     setError(null);
@@ -98,10 +103,10 @@ export default function PasswordScreen() {
       <AuthHeader onBack={() => router.back()} />
 
       <View style={styles.body}>
-        <Text style={styles.title}>{offerSignUp ? 'Crea il tuo account' : 'Inserisci la password'}</Text>
+        <Text style={styles.title}>{isSignup ? 'Crea una password' : 'Bentornato'}</Text>
         <Text style={styles.subtitle}>
-          {offerSignUp
-            ? `Useremo questa password per creare l'account ${email}.`
+          {isSignup
+            ? `La useremo per il tuo nuovo account ${email}.`
             : `Accedi a ${email}.`}
         </Text>
 
@@ -112,14 +117,13 @@ export default function PasswordScreen() {
             onChangeText={(t) => {
               setPassword(t);
               setError(null);
-              setOfferSignUp(false);
             }}
             placeholder="Almeno 8 caratteri"
             secureTextEntry={!show}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="go"
-            onSubmitEditing={offerSignUp ? crea : accedi}
+            onSubmitEditing={submit}
             error={error}
           />
           <Pressable style={styles.eye} onPress={() => setShow((s) => !s)} hitSlop={8}>
@@ -131,7 +135,7 @@ export default function PasswordScreen() {
           </Pressable>
         </View>
 
-        {!offerSignUp ? (
+        {!isSignup ? (
           <Pressable onPress={dimenticata} hitSlop={8} style={styles.forgotWrap}>
             <Text style={styles.forgot}>Password dimenticata?</Text>
           </Pressable>
@@ -140,8 +144,8 @@ export default function PasswordScreen() {
 
       <View style={styles.footer}>
         <GlassButton
-          label={offerSignUp ? 'Crea account e continua' : 'Accedi'}
-          onPress={offerSignUp ? crea : accedi}
+          label={isSignup ? 'Crea account' : 'Accedi'}
+          onPress={submit}
           loading={loading}
           disabled={!valid}
         />

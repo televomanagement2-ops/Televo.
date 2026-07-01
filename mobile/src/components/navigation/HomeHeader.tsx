@@ -1,20 +1,25 @@
 // =============================================================================
 // HomeHeader — intestazione della Home. Tre zone:
-//   sinistra: cerchio avatar → apre il profilo
-//   centro:   wordmark "televo"
+//   sinistra: cerchio avatar con ANELLO Aura → apre il profilo
+//   centro:   wordmark "Televo" come immagine (BrandLockup) — discreto
 //   destra:   icona ricerca → apre la ricerca
 // =============================================================================
 
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
+import { AuraAvatarRing } from '@/components/aura/AuraAvatarRing';
+import { BrandLockup } from '@/components/brand/BrandLockup';
 import { useAuth } from '@/hooks/useAuth';
-import { colors, fontFamily, spacing } from '@/constants/theme';
+import { useMyAura } from '@/hooks/useAura';
+import { colors, spacing } from '@/constants/theme';
 
 export function HomeHeader() {
   const router = useRouter();
   const { profile } = useAuth();
+  const aura = useMyAura();
+  const auraPercent = Math.round(aura.data?.score ?? 0);
 
   return (
     <View style={styles.header}>
@@ -23,10 +28,13 @@ export function HomeHeader() {
         hitSlop={8}
         accessibilityLabel="Apri il profilo"
       >
-        <Avatar uri={profile?.avatar_url} name={profile?.username} size={38} />
+        <AuraAvatarRing percent={auraPercent} size={38} strokeWidth={3} still>
+          <Avatar uri={profile?.avatar_url} name={profile?.username} size={38} />
+        </AuraAvatarRing>
       </Pressable>
 
-      <Text style={styles.wordmark}>televo</Text>
+      {/* Wordmark ufficiale (immagine viola→fucsia): discreto, ~18pt di glifo. */}
+      <BrandLockup size={18} />
 
       <Pressable
         onPress={() => router.push('/cerca')}
@@ -48,12 +56,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  wordmark: {
-    color: colors.ink,
-    fontSize: 22,
-    fontFamily: fontFamily.displayBold,
-    letterSpacing: 0.5,
-  },
-  // Stessa larghezza dell'avatar per tenere il wordmark perfettamente centrato.
-  search: { width: 38, alignItems: 'flex-end' },
+  // Stessa larghezza dell'avatar+anello (size 38 + bloom) per tenere il wordmark
+  // perfettamente centrato.
+  search: { width: 54, alignItems: 'flex-end' },
 });

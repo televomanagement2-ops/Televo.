@@ -22,32 +22,41 @@ export function useAuthListener(): void {
   useEffect(() => {
     let active = true;
 
-    const loadProfile = (userId: string | undefined) => {
-      if (!userId) {
-        setProfile(null);
-        return;
-      }
-      // Differita: evita deadlock col lock di gotrue.
-      setTimeout(async () => {
-        try {
-          const profile = await fetchMyProfile(userId);
-          if (active) setProfile(profile);
-        } catch {
-          if (active) setProfile(null);
+    // Carica il profilo e ATTENDE: il chiamante decide quando spegnere
+    // `initializing`. Differita di un tick per non chiamare Supabase dentro il
+    // lock di gotrue (rischio deadlock). Risolve sempre (mai throw).
+    const loadProfile = (userId: string | undefined): Promise<void> =>
+      new Promise((resolve) => {
+        if (!userId) {
+          setProfile(null);
+          resolve();
+          return;
         }
-      }, 0);
-    };
+        setTimeout(async () => {
+          try {
+            const profile = await fetchMyProfile(userId);
+            if (active) setProfile(profile);
+          } catch {
+            if (active) setProfile(null);
+          } finally {
+            resolve();
+          }
+        }, 0);
+      });
 
-    supabase.auth.getSession().then(({ data }) => {
+    // All'avvio: NON spegnere `initializing` finché non abbiamo anche il profilo,
+    // altrimenti per un istante isAuthenticated=true + isOnboarded=false → flash
+    // di redirect a /registrazione prima di arrivare a /home.
+    supabase.auth.getSession().then(async ({ data }) => {
       if (!active) return;
       setSession(data.session);
-      loadProfile(data.session?.user.id);
-      setInitializing(false);
+      await loadProfile(data.session?.user.id);
+      if (active) setInitializing(false);
     });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      loadProfile(session?.user.id);
+      void loadProfile(session?.user.id);
     });
 
     return () => {

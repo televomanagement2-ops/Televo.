@@ -30,5 +30,5 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.base },
   header: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   title: { color: colors.ink, fontSize: 22, fontFamily: fontFamily.displayBold },
-  body: { flex: 1, justifyContent: 'center' },
+  body: { flex: 1, justifyContent: 'center', paddingBottom: 90 },
 });

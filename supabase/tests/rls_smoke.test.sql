@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(86);
+select plan(125);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -119,6 +119,8 @@ select has_function('public', 'purge_due_deletions', 'purge_due_deletions() esis
 select has_function('public', 'unlock_achievement', array['uuid','text'], 'unlock_achievement(uuid,text) esiste');
 select has_function('public', 'send_friend_request', array['uuid'],       'send_friend_request(uuid) esiste');
 select has_function('public', 'get_or_create_dm', array['uuid'],          'get_or_create_dm(uuid) esiste');
+select has_function('public', 'remove_conversation_member', array['uuid','uuid'],
+  'remove_conversation_member(uuid,uuid) esiste');
 
 -- =============================================================================
 -- Invarianti strutturali di sicurezza
@@ -154,6 +156,93 @@ select has_function('public', 'create_invite',
 -- Invito school-free: school_id non più obbligatorio.
 select col_is_null('public', 'invites', 'school_id',
   'invites.school_id è nullable (invito school-free)');
+
+-- =============================================================================
+-- Aura v3 — reputazione ricalcolata a finestra mobile (0–100%)
+-- =============================================================================
+-- Struttura: helper di conteggio + drop media.
+select has_function('public', 'aura_static_points',  array['uuid'], 'aura_static_points(uuid) esiste');
+select has_function('public', 'aura_dynamic_points', array['uuid'], 'aura_dynamic_points(uuid) esiste');
+select has_function('public', 'aura_penalty_points', array['uuid'], 'aura_penalty_points(uuid) esiste');
+select has_function('public', 'aura_percentage',     array['uuid'], 'aura_percentage(uuid) esiste');
+select has_function('public', 'my_aura_percentage',  'my_aura_percentage() esiste');
+
+-- Drop: formato media (foto/video) accanto a audio/testo.
+select has_column('public', 'drops', 'media_url', 'drops.media_url esiste (drop media)');
+
+-- Nuovi valori dell'enum notifiche per le variazioni d'Aura.
+select ok((select 'aura_upgrade'   = any(enum_range(null::public.notification_type)::text[])),
+  'notification_type include aura_upgrade');
+select ok((select 'aura_downgrade' = any(enum_range(null::public.notification_type)::text[])),
+  'notification_type include aura_downgrade');
+
+-- Comportamento deterministico: un utente senza alcun dato vale 0 (clamp basso).
+select is(public.aura_percentage('00000000-0000-0000-0000-000000000000'::uuid), 0::numeric,
+  'aura_percentage di utente senza dati = 0');
+select is(public.aura_static_points('00000000-0000-0000-0000-000000000000'::uuid), 0::numeric,
+  'aura_static_points di utente senza dati = 0');
+select is(public.aura_dynamic_points('00000000-0000-0000-0000-000000000000'::uuid), 0::numeric,
+  'aura_dynamic_points di utente senza dati = 0');
+
+-- Cron: il ricalcolo è ora giornaliero (sostituisce il settimanale).
+select ok((select count(*)::int from cron.job where jobname = 'aura-recompute-daily') = 1,
+  'cron aura-recompute-daily attivo');
+select ok((select count(*)::int from cron.job where jobname = 'aura-recompute-weekly') = 0,
+  'cron aura-recompute-weekly rimosso');
+
+-- =============================================================================
+-- Chat — modello dati §3 (D1–D4): organizzazione, salvati, media, presenza, rubrica
+-- =============================================================================
+
+-- D4 — organizzazione per-utente su conversation_members (5 colonne + 3 RPC).
+select has_column('public', 'conversation_members', 'muted_until',
+  'conversation_members.muted_until esiste (silenzia per-conversazione)');
+select has_column('public', 'conversation_members', 'archived_at',
+  'conversation_members.archived_at esiste');
+select has_column('public', 'conversation_members', 'pinned_at',
+  'conversation_members.pinned_at esiste');
+select has_column('public', 'conversation_members', 'cleared_at',
+  'conversation_members.cleared_at esiste');
+select has_column('public', 'conversation_members', 'hidden_at',
+  'conversation_members.hidden_at esiste');
+select has_function('public', 'set_conversation_mute', array['uuid','timestamptz'],
+  'set_conversation_mute(uuid,timestamptz) esiste');
+select has_function('public', 'set_conversation_flag', array['uuid','text','boolean'],
+  'set_conversation_flag(uuid,text,boolean) esiste');
+select has_function('public', 'clear_conversation_history', array['uuid'],
+  'clear_conversation_history(uuid) esiste');
+
+-- D4 — messaggi salvati (tabella owner-only + 2 RPC).
+select has_table('public', 'saved_messages', 'saved_messages esiste');
+select ok((select relrowsecurity from pg_class where oid = 'public.saved_messages'::regclass),
+  'RLS attiva su saved_messages');
+select has_function('public', 'save_message', array['uuid'], 'save_message(uuid) esiste');
+select has_function('public', 'unsave_message', array['uuid'], 'unsave_message(uuid) esiste');
+
+-- D3 — foto/media nei messaggi (2 colonne + valore enum).
+select has_column('public', 'messages', 'media_url', 'messages.media_url esiste (foto/media)');
+select has_column('public', 'messages', 'media_type', 'messages.media_type esiste');
+select ok((select 'media' = any(enum_range(null::public.message_type)::text[])),
+  'message_type include media');
+
+-- §3.12–3.13 — presenza + toggle privacy (3 colonne + RPC).
+select has_column('public', 'profiles', 'last_active_at', 'profiles.last_active_at esiste');
+select has_column('public', 'profiles', 'show_last_seen', 'profiles.show_last_seen esiste');
+select has_column('public', 'profiles', 'show_read_receipts', 'profiles.show_read_receipts esiste');
+select has_function('public', 'touch_presence', 'touch_presence() esiste');
+
+-- D1 — rubrica (tabella + consenso + 2 RPC). Sensibile: RLS senza policy di select.
+select has_table('public', 'contact_hashes', 'contact_hashes esiste');
+select ok((select relrowsecurity from pg_class where oid = 'public.contact_hashes'::regclass),
+  'RLS attiva su contact_hashes');
+select has_function('public', 'has_contacts_consent', array['uuid'],
+  'has_contacts_consent(uuid) esiste');
+select has_function('public', 'register_contact_hash', array['text','text'],
+  'register_contact_hash(text,text) esiste');
+select has_function('public', 'match_contacts', array['text[]'],
+  'match_contacts(text[]) esiste');
+select ok((select 'contacts_sync' = any(enum_range(null::public.consent_type)::text[])),
+  'consent_type include contacts_sync');
 
 select * from finish();
 rollback;

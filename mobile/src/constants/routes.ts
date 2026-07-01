@@ -26,13 +26,20 @@ export const ROUTES = {
 
   // --- Stack interni (gruppo (main)) — aperti dall'header, non dai tab ---
   profilo: '/profilo',
+  profiloModifica: '/profilo/modifica',
+  profiloAura: '/profilo/aura',
+  profiloAchievement: '/profilo/achievement',
   cerca: '/cerca',
+  amici: '/amici',
+  nuovoGruppo: '/chat/nuovo-gruppo',
+  messaggiImportante: '/messaggi/importante',
 } as const;
 
 /** Route dinamiche: costruttori tipizzati per gli id (in arrivo nei prossimi M). */
 export const dynamicRoutes = {
   stanza: (id: string) => `/stanza/${id}` as const,
   chat: (id: string) => `/chat/${id}` as const,
+  chatInfo: (id: string) => `/chat/${id}/info` as const,
   profiloUtente: (id: string) => `/profilo/${id}` as const,
 };
 

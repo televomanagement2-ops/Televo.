@@ -38,8 +38,13 @@ export default function Welcome() {
     }
   };
 
-  const goEmail = () => {
-    patch({ method: 'email' });
+  // "Continua con email" = REGISTRAZIONE (crea account); "Accedi" = ACCESSO.
+  const goRegistrati = () => {
+    patch({ method: 'email', intent: 'signup', resetFlow: false });
+    router.push('/email');
+  };
+  const goAccedi = () => {
+    patch({ method: 'email', intent: 'signin', resetFlow: false });
     router.push('/email');
   };
 
@@ -80,7 +85,7 @@ export default function Welcome() {
             />
             <AuthButton
               label="Continua con email"
-              onPress={goEmail}
+              onPress={goRegistrati}
               disabled={!!busy}
               icon={<Ionicons name="mail-outline" size={21} color={colors.ink} />}
             />
@@ -91,7 +96,7 @@ export default function Welcome() {
               <View style={styles.line} />
             </View>
 
-            <AuthButton label="Accedi" variant="outline" onPress={goEmail} disabled={!!busy} />
+            <AuthButton label="Accedi" variant="outline" onPress={goAccedi} disabled={!!busy} />
 
             <Text style={styles.legal}>
               Continuando accetti i nostri <Text style={styles.link}>Termini di servizio</Text> e

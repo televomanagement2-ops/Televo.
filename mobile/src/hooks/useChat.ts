@@ -6,14 +6,12 @@
 // realtime aggiorna la cache in-place (dedup per id) e, in mancanza (publication
 // non ancora pushata), la UI ricade sul refetch on-focus.
 
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import {
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
-  type InfiniteData,
-  type QueryClient,
 } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -39,43 +37,17 @@ import {
   unsaveMessage,
   type ConversationView,
 } from '@/lib/chat';
-import { subscribeConversation } from '@/lib/chat-realtime';
+import { subscribeConversation, subscribeMessagesAll } from '@/lib/chat-realtime';
+import { chatKeys, conversationsPrefix, upsertMessage } from '@/lib/chat-cache';
+import { enqueueAudio, enqueueText, flushOutbox, retrySend } from '@/lib/outbox';
+import { initRete, onRiconnessione } from '@/lib/rete';
+import { useChatStore } from '@/store/chatStore';
 import type { MessageRow } from '@/types';
 import type { ConversationType } from '@/types/supabase';
 
-// --- Query keys --------------------------------------------------------------
-export const chatKeys = {
-  conversations: (uid: string, view: ConversationView = 'active') =>
-    ['chat', uid, 'conversations', view] as const,
-  header: (convId: string) => ['chat', 'header', convId] as const,
-  messages: (convId: string) => ['chat', 'messages', convId] as const,
-  senders: (convId: string) => ['chat', 'senders', convId] as const,
-  saved: (uid: string) => ['chat', uid, 'saved'] as const,
-};
-
-type MessagesData = InfiniteData<MessageRow[], string | undefined>;
-
-/**
- * Inserisce/aggiorna un messaggio nella cache infinita (dedup per id).
- * `chatKeys.messages(convId)` è un PREFISSO: la chiave reale include anche il
- * cleared_at corrente (vedi useMessages) → setQueriesData copre ogni variante.
- */
-function upsertMessage(queryClient: QueryClient, convId: string, msg: MessageRow) {
-  queryClient.setQueriesData<MessagesData>({ queryKey: chatKeys.messages(convId) }, (old) => {
-    if (!old) return old;
-    const exists = old.pages.some((p) => p.some((m) => m.id === msg.id));
-    if (exists) {
-      return {
-        ...old,
-        pages: old.pages.map((p) => p.map((m) => (m.id === msg.id ? msg : m))),
-      };
-    }
-    // Nuovo: in cima alla prima pagina (la più recente).
-    const pages = old.pages.slice();
-    pages[0] = [msg, ...(pages[0] ?? [])];
-    return { ...old, pages };
-  });
-}
+// Query keys e manipolazione cache: estratte in lib/chat-cache (CM2), perché
+// servono anche al motore dell'outbox fuori dagli hook. Ri-esportate per compat.
+export { chatKeys };
 
 // --- Lista conversazioni -----------------------------------------------------
 
@@ -89,10 +61,6 @@ export function useConversations(view: ConversationView = 'active') {
   });
 }
 
-/** Prefisso per invalidare TUTTE le viste della lista conversazioni (active/archived/muted). */
-function conversationsPrefix(uid: string) {
-  return ['chat', uid, 'conversations'] as const;
-}
 
 // --- Messaggi salvati (S7) ---------------------------------------------------
 
@@ -355,4 +323,87 @@ export function useConversationRealtime(convId: string, onIncoming?: (m: Message
     });
     return unsub;
   }, [convId, uid, queryClient, onIncoming]);
+}
+
+// --- Outbox: invio ottimistico (CM2, RC-01/RC-02) ------------------------------
+
+/**
+ * Coda d'invio della conversazione: bolle pending/failed + azioni. L'item vive
+ * nello store finché il server non conferma (→ riga reale in cache, dedup per id
+ * anche verso il realtime) o rifiuta (→ failed con Riprova/Elimina). Offline:
+ * resta pending e riparte alla riconnessione (flush in useChatRuntime).
+ */
+export function useOutbox(convId: string) {
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  const uid = session?.user.id;
+  const tutti = useChatStore((s) => s.outbox);
+  const discardStore = useChatStore((s) => s.outboxRemove);
+
+  const outbox = useMemo(
+    () => tutti.filter((o) => o.conversationId === convId),
+    [tutti, convId],
+  );
+
+  const sendText = useCallback(
+    (body: string, replyTo: string | null) => {
+      if (!uid) return;
+      enqueueText(queryClient, uid, convId, body, replyTo);
+    },
+    [queryClient, uid, convId],
+  );
+
+  const sendAudio = useCallback(
+    (audioLocalUri: string, audioSeconds: number, replyTo: string | null) => {
+      if (!uid) return;
+      enqueueAudio(queryClient, uid, convId, audioLocalUri, audioSeconds, replyTo);
+    },
+    [queryClient, uid, convId],
+  );
+
+  const retry = useCallback(
+    (tempId: string) => {
+      if (!uid) return;
+      retrySend(queryClient, uid, tempId);
+    },
+    [queryClient, uid],
+  );
+
+  return { outbox, sendText, sendAudio, retry, discard: discardStore };
+}
+
+// --- Runtime chat globale (CM2): rete, hub realtime, flush riconnessione -------
+
+/**
+ * Da montare UNA volta nella shell autenticata (componente ChatRuntime):
+ * 1. cabla NetInfo in onlineManager (query in pausa offline);
+ * 2. canale realtime GLOBALE sugli INSERT di `messages` (la RLS filtra lato
+ *    server) → cache della conversazione + lista chat/badge aggiornati live
+ *    senza aprire la chat (§8.5);
+ * 3. alla riconnessione, flush sequenziale dell'outbox (RC-02).
+ */
+export function useChatRuntime() {
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  const uid = session?.user.id;
+
+  useEffect(() => {
+    initRete();
+  }, []);
+
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = subscribeMessagesAll((m) => {
+      upsertMessage(queryClient, m.conversation_id, m);
+      void queryClient.invalidateQueries({ queryKey: conversationsPrefix(uid) });
+    });
+    return unsub;
+  }, [uid, queryClient]);
+
+  useEffect(() => {
+    if (!uid) return;
+    return onRiconnessione(() => {
+      void flushOutbox(queryClient, uid);
+    });
+  }, [uid, queryClient]);
 }

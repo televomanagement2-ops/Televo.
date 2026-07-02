@@ -5,6 +5,7 @@
 
 import { Redirect, Stack } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
+import { ChatRuntime } from '@/components/chat/ChatRuntime';
 import { colors } from '@/constants/theme';
 
 export default function MainLayout() {
@@ -14,11 +15,15 @@ export default function MainLayout() {
   if (!isAuthenticated || !isOnboarded) return <Redirect href="/" />;
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: colors.base },
-      }}
-    />
+    <>
+      {/* Servizi chat globali (CM2): rete, realtime hub, flush outbox. */}
+      <ChatRuntime />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.base },
+        }}
+      />
+    </>
   );
 }

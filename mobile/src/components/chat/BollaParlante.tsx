@@ -1,11 +1,13 @@
 // =============================================================================
 // BollaParlante — la bolla di un messaggio (presentazionale).
 // =============================================================================
-// Testo, citazione della risposta, orario e spunte di lettura. I vocali/media
-// hanno per ora un placeholder (player veri in M2/M6). Allineamento e long-press
-// sono gestiti da MessaggioRow; qui solo il contenuto della bolla.
+// Testo (con linkify degli URL), citazione della risposta (tappabile →
+// scroll-to-quoted), orario, spunte di lettura e stati d'invio ottimistico
+// (CM2): pending = orologio, failed = avviso rosso con motivo. I vocali in
+// invio mostrano un placeholder (il player vero serve il path remoto).
+// Allineamento e long-press sono gestiti da MessaggioRow; qui solo il contenuto.
 
-import { StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { PlayerVocale } from '@/components/chat/PlayerVocale';
 import { timeHHmm } from '@/lib/datetime';
@@ -17,6 +19,9 @@ export interface QuotedRef {
   text: string;
 }
 
+/** Stato d'invio ottimistico della bolla (null = messaggio confermato). */
+export type SendStatus = 'pending' | 'failed' | null;
+
 interface Props {
   message: MessageRow;
   isMine: boolean;
@@ -25,20 +30,74 @@ interface Props {
   showTicks: boolean;
   /** peer.last_read_at ≥ created_at → doppia spunta (letto). */
   readByPeer: boolean;
+  /** Invio ottimistico (CM2): pending/failed. */
+  status?: SendStatus;
+  /** Durata del vocale in coda d'invio (placeholder, niente player). */
+  audioSeconds?: number | null;
+  /** Motivo del fallimento (mostrato sotto il contenuto quando failed). */
+  errorMessage?: string | null;
+  /** Tap sulla citazione → scroll al messaggio originale. */
+  onQuotePress?: () => void;
 }
 
-export function BollaParlante({ message, isMine, quoted, showTicks, readByPeer }: Props) {
+/** secondi → "m:ss" (per il placeholder del vocale in invio). */
+function mmss(total: number): string {
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+// Cattura gli URL http/https nel testo (linkify, RC-10).
+const URL_SPLIT_RE = /(https?:\/\/[^\s]+)/g;
+
+/** Corpo testuale con gli URL tappabili (apre il browser). */
+function TestoConLink({ body, isMine }: { body: string; isMine: boolean }) {
+  const parti = body.split(URL_SPLIT_RE);
+  return (
+    <Text style={[styles.body, isMine && styles.bodyMine]}>
+      {parti.map((p, i) =>
+        /^https?:\/\//.test(p) ? (
+          <Text
+            key={`${i}-${p}`}
+            style={[styles.link, isMine && styles.linkMine]}
+            onPress={() => Linking.openURL(p).catch(() => {})}
+          >
+            {p}
+          </Text>
+        ) : (
+          p
+        ),
+      )}
+    </Text>
+  );
+}
+
+export function BollaParlante({
+  message,
+  isMine,
+  quoted,
+  showTicks,
+  readByPeer,
+  status = null,
+  audioSeconds,
+  errorMessage,
+  onQuotePress,
+}: Props) {
   const deleted = !!message.deleted_at;
 
   return (
     <View style={[styles.bubble, isMine ? styles.mine : styles.theirs]}>
       {quoted ? (
-        <View style={[styles.quote, isMine ? styles.quoteMine : styles.quoteTheirs]}>
+        <Pressable
+          onPress={onQuotePress}
+          disabled={!onQuotePress}
+          style={[styles.quote, isMine ? styles.quoteMine : styles.quoteTheirs]}
+        >
           {quoted.author ? <Text style={styles.quoteAuthor}>{quoted.author}</Text> : null}
           <Text style={styles.quoteText} numberOfLines={1}>
             {quoted.text}
           </Text>
-        </View>
+        </Pressable>
       ) : null}
 
       {deleted ? (
@@ -46,16 +105,34 @@ export function BollaParlante({ message, isMine, quoted, showTicks, readByPeer }
           Messaggio eliminato
         </Text>
       ) : message.type === 'text' ? (
-        <Text style={[styles.body, isMine && styles.bodyMine]}>{message.body}</Text>
+        <TestoConLink body={message.body ?? ''} isMine={isMine} />
       ) : message.type === 'audio' || message.type === 'voice_thread' ? (
-        <PlayerVocale path={message.audio_url} isMine={isMine} expiresAt={message.expires_at} />
+        status ? (
+          // Vocale ancora in coda: il file è locale → placeholder senza player.
+          <View style={styles.audioPending}>
+            <Ionicons name="mic" size={18} color={isMine ? '#ffffff' : colors.ink} />
+            <Text style={[styles.body, isMine && styles.bodyMine]}>
+              Vocale {audioSeconds != null ? mmss(audioSeconds) : ''}
+            </Text>
+          </View>
+        ) : (
+          <PlayerVocale path={message.audio_url} isMine={isMine} expiresAt={message.expires_at} />
+        )
       ) : (
         <Text style={[styles.body, isMine && styles.bodyMine]}>Messaggio</Text>
       )}
 
+      {status === 'failed' && errorMessage ? (
+        <Text style={styles.errorText}>{errorMessage}</Text>
+      ) : null}
+
       <View style={styles.footer}>
         <Text style={[styles.time, isMine && styles.timeMine]}>{timeHHmm(message.created_at)}</Text>
-        {showTicks && isMine && !deleted ? (
+        {status === 'pending' ? (
+          <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.7)" />
+        ) : status === 'failed' ? (
+          <Ionicons name="alert-circle" size={14} color={colors.danger} />
+        ) : showTicks && isMine && !deleted ? (
           <Ionicons
             name={readByPeer ? 'checkmark-done' : 'checkmark'}
             size={14}
@@ -88,6 +165,10 @@ const styles = StyleSheet.create({
   body: { color: colors.ink, fontSize: fontSize.base, fontFamily: fontFamily.sans, lineHeight: 21 },
   bodyMine: { color: '#ffffff' },
   deleted: { fontStyle: 'italic', color: colors.muted },
+  link: { textDecorationLine: 'underline', color: colors.accentSoft },
+  linkMine: { color: '#dbe6ff' },
+  audioPending: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 2 },
+  errorText: { color: colors.danger, fontSize: fontSize.xs, fontFamily: fontFamily.sans },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4 },
   time: { color: colors.faint, fontSize: 11, fontFamily: fontFamily.sans },
   timeMine: { color: 'rgba(255,255,255,0.7)' },

@@ -6,12 +6,13 @@
 // creazione). La voce attiva è segnalata da un puntino BLU sotto l'icona.
 // =============================================================================
 
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { colors, radius, spacing } from '@/constants/theme';
+import { useConversations } from '@/hooks/useChat';
+import { colors, fontFamily, radius, spacing } from '@/constants/theme';
 
 // Mappa nome-rotta → icone Ionicons (attiva/inattiva).
 const ICONS: Record<
@@ -26,6 +27,14 @@ const ICONS: Record<
 
 export function BottomBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+
+  // Badge tab Messaggi (CM2, §8.5): somma degli unread delle conversazioni NON
+  // silenziate e NON archiviate. La query è la stessa dell'hub (cache condivisa,
+  // aggiornata live dal canale realtime globale in ChatRuntime).
+  const conversazioni = useConversations();
+  const unread = (conversazioni.data ?? [])
+    .filter((c) => !c.muted && !c.archivedAt)
+    .reduce((n, c) => n + c.unreadCount, 0);
 
   const go = (routeKey: string, name: string, focused: boolean) => {
     Haptics.selectionAsync().catch(() => {});
@@ -59,6 +68,8 @@ export function BottomBar({ state, navigation }: BottomTabBarProps) {
           const meta = ICONS[route.name];
           if (!meta) return <View key={route.key} style={styles.slot} />;
 
+          const mostraBadge = route.name === 'messages' && unread > 0;
+
           return (
             <Pressable
               key={route.key}
@@ -66,11 +77,18 @@ export function BottomBar({ state, navigation }: BottomTabBarProps) {
               onPress={() => go(route.key, route.name, focused)}
               hitSlop={6}
             >
-              <Ionicons
-                name={focused ? meta.active : meta.inactive}
-                size={25}
-                color={focused ? colors.ink : colors.faint}
-              />
+              <View>
+                <Ionicons
+                  name={focused ? meta.active : meta.inactive}
+                  size={25}
+                  color={focused ? colors.ink : colors.faint}
+                />
+                {mostraBadge ? (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{unread > 99 ? '99+' : unread}</Text>
+                  </View>
+                ) : null}
+              </View>
               <View style={[styles.dot, focused && styles.dotActive]} />
             </Pressable>
           );
@@ -108,6 +126,20 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   slot: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 4 },
+  // Badge unread sulla tab Messaggi (contatore, max "99+").
+  badge: {
+    position: 'absolute',
+    top: -5,
+    right: -10,
+    minWidth: 17,
+    height: 17,
+    borderRadius: radius.full,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: { color: '#ffffff', fontSize: 10, fontFamily: fontFamily.semibold },
   // Puntino sotto l'icona: invisibile di default, BLU quando la voce è attiva.
   dot: { width: 4, height: 4, borderRadius: radius.full, backgroundColor: 'transparent' },
   dotActive: { backgroundColor: colors.accent },

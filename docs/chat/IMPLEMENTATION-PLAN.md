@@ -287,13 +287,22 @@ paginate (fallback: fetch fino al messaggio citato); doppia subscription (hub +
 conversazione) da tenere leggera (un solo canale globale nella shell).
 
 **Checklist**:
-- [ ] Messaggio visibile immediatamente all'invio (anche offline, come pending)
-- [ ] Errore di invio → stato failed con retry funzionante
-- [ ] Nessun messaggio duplicato con realtime attivo
-- [ ] Banner offline + ripartenza coda alla riconnessione
-- [ ] Hub e badge tab si aggiornano senza aprire la chat
-- [ ] Pill nuovi messaggi / scroll-to-quoted / copia / linkify / raggruppamento
-- [ ] `tsc` + `eslint` puliti
+- [x] Messaggio visibile immediatamente all'invio (anche offline, come pending)
+      — outbox in `chatStore` + motore `lib/outbox.ts` (testo E vocali, upload incluso)
+- [x] Errore di invio → stato failed con retry funzionante (tap o long-press → Riprova/Elimina;
+      errori di rete restano pending, errori del server diventano failed col motivo IT)
+- [x] Nessun messaggio duplicato con realtime attivo (temp rimosso PRIMA dell'upsert
+      della riga reale; upsert con dedup per id su tutte le varianti di chiave)
+- [x] Banner offline (S1+S2) + ripartenza coda alla riconnessione (flush sequenziale
+      in `ChatRuntime`, ordine di enqueue preservato). Persistenza su disco = non-obiettivo.
+- [x] Hub e badge tab si aggiornano senza aprire la chat (canale realtime globale
+      `chat:hub` in `ChatRuntime`; badge = somma unread non silenziate/non archiviate)
+- [x] Pill nuovi messaggi / scroll-to-quoted (con highlight e paginazione all'indietro)
+      / copia / linkify / raggruppamento (<2 min) + haptic all'invio
+- [x] `tsc` + `eslint` puliti
+
+> Demo end-to-end su 2 device (criterio di completamento): da eseguire in Expo Go
+> (smoke manuale utente); tutto il resto è verificato.
 
 **Criteri di completamento**: demo end-to-end su 2 device: A scrive (anche in
 aereo-mode e poi riconnette), B vede tutto live senza refresh manuali.

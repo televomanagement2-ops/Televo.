@@ -21,6 +21,7 @@ import {
 } from '@/hooks/useChat';
 import { dynamicRoutes, ROUTES } from '@/constants/routes';
 import { chatErrorMessage } from '@/lib/errors';
+import { useOnline } from '@/lib/rete';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 import type { ConversationPreview } from '@/types';
 
@@ -36,6 +37,7 @@ export default function Messages() {
   const router = useRouter();
   const conversazioni = useConversations();
   const { refetch } = conversazioni;
+  const online = useOnline();
 
   // Realtime dell'hub arriva più avanti: per ora rinfreschiamo al focus.
   useFocusEffect(
@@ -66,6 +68,14 @@ export default function Messages() {
           </Pressable>
         </View>
       </View>
+
+      {/* Banner offline (CM2, RC-02). */}
+      {!online ? (
+        <View style={styles.offlineBar}>
+          <Ionicons name="cloud-offline-outline" size={14} color={colors.muted} />
+          <Text style={styles.offlineText}>Sei offline</Text>
+        </View>
+      ) : null}
 
       {conversazioni.isLoading ? (
         <LoadingSpinner label="Carico le chat…" style={styles.flex} />
@@ -197,6 +207,17 @@ const styles = StyleSheet.create({
   },
   title: { color: colors.ink, fontSize: 22, fontFamily: fontFamily.displayBold },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+  offlineBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  offlineText: { color: colors.muted, fontSize: fontSize.xs, fontFamily: fontFamily.sans },
   listContent: { padding: spacing.lg, gap: spacing.sm, paddingBottom: 100 },
   nuovoGruppo: {
     flexDirection: 'row',

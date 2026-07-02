@@ -17,12 +17,12 @@ Progetto Supabase hosted `mmunnybytyfybncohkky` ("Televo Project"), org
 
 | Area | Stato |
 |------|-------|
-| 22 migrazioni (Fasi 0–8 + GDPR + onboarding, confermata live il 2026-06-30) | ✅ applicate (`migration list`: locale = remoto) |
-| Migrazioni 23–33 (Aura v3 23–24, **chat 25–33**: realtime, org D4, salvati, media D3, presenza/privacy, contatti D1) | ⏳ scritte in locale, **da `db push`** — milestone **CM0** del piano chat (`docs/chat/IMPLEMENTATION-PLAN.md`) |
-| 10 Edge Functions | ✅ deployate (Aura v3 non ne aggiunge) |
-| 3 Vault secrets (`edge_base_url`, `service_role_key`, `cron_secret`) | ✅ impostati |
-| 99 invarianti pgTAP | ✅ 82 passate + 13 nuove (Aura v3) da eseguire |
-| 7 cron job pg_cron (`aura-recompute` ora **daily**) | ✅ attivi |
+| **35 migrazioni** (Fasi 0–8 + GDPR + onboarding + Aura v3 + chat 25–33 + hardening CM1 34–35) | ✅ tutte applicate (`migration list`: locale = remoto, verificato 2026-07-02) |
+| 10 Edge Functions | ✅ deployate — ⚠️ `gdpr-export` ha un aggiornamento in repo NON deployato (CLI 403 → serve l'account owner) |
+| 3 Vault secrets (`edge_base_url`, `service_role_key`, `cron_secret`) | ✅ registrati il 2026-07-02 (`dispatch_push` attivo) |
+| 142 invarianti pgTAP | ✅ 142/142 verdi SUL REMOTO (suite eseguita via pooler il 2026-07-02) |
+| 7 cron job pg_cron (`aura-recompute` ora **daily**) | ✅ attivi e verificati |
+| Publication realtime (`messages`, `conversations`, `conversation_members`) | ✅ verificata server-side |
 
 **Domini coperti dal backend** (dettaglio in `CLAUDE.md` §4): identità + inviti +
 age-gate ≥16 · Aura v2 (props, decadimento half-life 14gg, classifiche) · Stanze
@@ -41,18 +41,25 @@ moderazione + safety · economia Vibes (simbolica attiva, Stripe inerte) · GDPR
 - Piano **Free** → `supabase gen types` e alcune API management danno 403. I tipi
   TS del DB sono quindi **mantenuti a mano** in `mobile/src/types/supabase.ts`.
 - Niente Docker locale, niente `psql` → i test pgTAP girano dal **SQL Editor**
-  della dashboard (prefissando `create extension … pgtap` + `set search_path`).
-- **NON rifare `db push`** per le 21 migrazioni originali: è tutto già applicato.
+  della dashboard OPPURE via **Deno + postgres.js sul pooler** (vedi script usati
+  il 2026-07-02: `postgres.<ref>@aws-1-eu-central-2.pooler.supabase.com:5432`,
+  password `SUPABASE_DB_PASSWORD` in `.env`) — quest'ultima via consente anche
+  verifiche di catalogo e la registrazione dei Vault secrets senza dashboard.
+- **NON rifare `db push`** delle migrazioni già applicate: `migration list` è la
+  fonte di verità (tutte e 35 risultano live al 2026-07-02).
 
-> ✅ **Migrazione 22 (onboarding) applicata** — confermata live il 2026-06-30
-> (RPC `complete_onboarding`/`check_invite`/`create_invite` funzionanti).
+> ✅ **CM0 chiuso (2026-07-02)**: tutte le migrazioni (comprese Aura v3 e chat
+> 25–33) risultano applicate al remoto; realtime publication, cron e Vault
+> verificati; pgTAP 142/142 verdi sul remoto.
 >
-> ⚠️ **Migrazioni 23–33 in attesa di push** (Aura v3 + tutte le migrazioni chat:
-> realtime publication, organizzazione D4, salvati, media D3, presenza/privacy,
-> contatti D1). Si applicano nella milestone **CM0** del piano chat
-> (`docs/chat/IMPLEMENTATION-PLAN.md`), con verifica pgTAP e fix in corsa.
-> Senza il push, il **realtime della chat non funziona**. Nessuna nuova Edge
-> Function richiesta.
+> ✅ **CM1 chiuso con audit (2026-07-02)**: la prima migrazione di hardening
+> (`20260702120000`) aveva regressioni gravi (insert messaggi rotto, funzione
+> `anonymize_user_data` esposta ad authenticated) — tutte corrette da
+> `20260702130000_chat_hardening_fix.sql`. Dettagli nell'header della migrazione
+> e nella checklist CM1 del piano chat.
+>
+> ⚠️ **Unico passo manuale rimasto**: `supabase functions deploy gdpr-export`
+> dall'account owner (la CLI di questo ambiente riceve 403 dal management API).
 
 ### 1.2 Frontend — 🟢 Avvio + Auth/Onboarding completi
 
@@ -226,10 +233,19 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
   effimeri 24h, reply, spunte DM, soft-delete, realtime per-conversazione), info/
   membri, nuovo gruppo, Salvati/Archiviati/Silenziati, mute/pin/archivia/elimina,
   streak badge, bozze; amicizie UI + DM da profilo (`useApriDm`).
-- **Backend chat scritto** (migrazioni 25–33) ma **in attesa di `db push`** → CM0.
-- **Prossimo**: CM0 (push + realtime live) → CM1 (fix correttezza/safety) → CM2
-  (optimistic/offline/realtime hub) → … → CM8. Dettagli, rischi e checklist nel
-  piano dedicato.
+- ✅ **CM0 fatto** (2026-07-02): DB remoto allineato, realtime/cron/Vault verificati,
+  pgTAP 142/142 sul remoto.
+- ✅ **CM1 fatto** (2026-07-02): 6 difetti chiusi (blocco↔DM, cleared_at in chat,
+  vocali scaduti, hidden_at reset, presenza privacy-safe via `get_peer_presence`,
+  composer disabilitato con motivo) + audit con migrazione correttiva
+  `20260702130000`. Resta solo il deploy manuale di `gdpr-export`.
+- ✅ **CM2 fatto** (2026-07-02): invio ottimistico (outbox pending/failed/retry,
+  testo e vocali, offline-safe con flush alla riconnessione), banner offline,
+  canale realtime globale hub + badge tab Messaggi, pill "nuovi messaggi",
+  scroll-to-quoted con highlight, Copia, linkify, raggruppamento bolle, haptic.
+  Da fare: smoke manuale su 2 device.
+- **Prossimo**: CM3 (presenza/typing/S10) → CM4 (edit/inoltro/reazioni/ricerca/
+  gruppi) → … → CM8. Dettagli, rischi e checklist nel piano dedicato.
 - **Verifica:** DM solo tra amici, vocale che scade a 24h, streak con freeze +
   criteri di completamento per milestone in `docs/chat/IMPLEMENTATION-PLAN.md`.
 

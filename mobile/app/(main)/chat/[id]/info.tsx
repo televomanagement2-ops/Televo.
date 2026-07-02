@@ -1,9 +1,9 @@
 // =============================================================================
 // Info conversazione (S13) — profilo peer (DM) o gestione gruppo (group/house).
 // =============================================================================
-// DM (versione minimale M3): profilo del peer + streak + n. membri; blocca/segnala
-// arrivano in M8. Group/house: lista membri con ruolo; se sono admin posso
-// aggiungere amici (riuso una selezione inline), rimuovere un membro, uscire.
+// DM: profilo del peer + streak + blocca/sblocca (segnala arriva in M8).
+// Group/house: lista membri con ruolo; se sono admin posso aggiungere amici
+// (riuso una selezione inline), rimuovere un membro, uscire.
 
 import { useMemo, useState } from 'react';
 import {
@@ -18,12 +18,13 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { StreakBadge } from '@/components/chat/StreakBadge';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useAuth } from '@/hooks/useAuth';
-import { useAmici } from '@/hooks/useAmici';
+import { useAmici, useAzioniAmicizia, useRelazione } from '@/hooks/useAmici';
 import {
   useAddMember,
   useConversationHeader,
@@ -53,6 +54,40 @@ export default function ChatInfo() {
   const addMember = useAddMember(convId);
   const removeMember = useRemoveMember(convId);
   const leave = useLeaveConversation(convId);
+
+  // DM: relazione col peer per l'azione Blocca/Sblocca.
+  const peerId = !isGroup ? data?.peer?.id : undefined;
+  const relPeer = useRelazione(peerId);
+  const azioni = useAzioniAmicizia();
+  const queryClient = useQueryClient();
+
+  // Dopo blocca/sblocca il composer della chat va ricalcolato al rientro.
+  const aggiornaComposer = () =>
+    queryClient.invalidateQueries({ queryKey: ['chat', 'composer-block'] });
+
+  const handleBlocca = () => {
+    if (!peerId) return;
+    Alert.alert('Blocca utente', 'Non potrete più scrivervi né trovarvi.', [
+      { text: 'Annulla', style: 'cancel' },
+      {
+        text: 'Blocca',
+        style: 'destructive',
+        onPress: () =>
+          azioni.blocca.mutate(peerId, {
+            onSuccess: aggiornaComposer,
+            onError: (e) => Alert.alert('Ops', chatErrorMessage(e)),
+          }),
+      },
+    ]);
+  };
+
+  const handleSblocca = () => {
+    if (!peerId) return;
+    azioni.sblocca.mutate(peerId, {
+      onSuccess: aggiornaComposer,
+      onError: (e) => Alert.alert('Ops', chatErrorMessage(e)),
+    });
+  };
 
   const [showAdd, setShowAdd] = useState(false);
 
@@ -170,25 +205,61 @@ export default function ChatInfo() {
               </View>
             </>
           ) : (
-            // DM: profilo del peer (blocca/segnala arrivano in M8).
+            // DM: profilo del peer + blocca/sblocca (segnala arriva in M8).
             data.peer && (
-              <Pressable
-                style={styles.group}
-                onPress={() => router.push(dynamicRoutes.profiloUtente(data.peer!.id))}
-              >
-                <View style={styles.row}>
-                  <Avatar uri={data.peer.avatarUrl} name={data.peer.username} size={44} />
-                  <View style={styles.rowText}>
-                    <Text style={styles.name} numberOfLines={1}>
-                      {data.peer.displayName || data.peer.username}
-                    </Text>
-                    <Text style={styles.username} numberOfLines={1}>
-                      @{data.peer.username}
-                    </Text>
+              <>
+                <Pressable
+                  style={styles.group}
+                  onPress={() => router.push(dynamicRoutes.profiloUtente(data.peer!.id))}
+                >
+                  <View style={styles.row}>
+                    <Avatar uri={data.peer.avatarUrl} name={data.peer.username} size={44} />
+                    <View style={styles.rowText}>
+                      <Text style={styles.name} numberOfLines={1}>
+                        {data.peer.displayName || data.peer.username}
+                      </Text>
+                      <Text style={styles.username} numberOfLines={1}>
+                        @{data.peer.username}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.faint} />
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={colors.faint} />
-                </View>
-              </Pressable>
+                </Pressable>
+
+                {/* Blocca/Sblocca. Se è il PEER ad avermi bloccato, nessuna riga:
+                    il blocco altrui non va mai rivelato. */}
+                {relPeer.data === 'blocked_by_me' ? (
+                  <Pressable
+                    style={({ pressed }) => [styles.group, pressed && styles.rowPressed]}
+                    onPress={handleSblocca}
+                    disabled={azioni.sblocca.isPending}
+                  >
+                    <View style={styles.row}>
+                      {azioni.sblocca.isPending ? (
+                        <ActivityIndicator size="small" color={colors.ink} />
+                      ) : (
+                        <Ionicons name="lock-open-outline" size={20} color={colors.ink} />
+                      )}
+                      <Text style={styles.name}>Sblocca utente</Text>
+                    </View>
+                  </Pressable>
+                ) : relPeer.data && relPeer.data !== 'blocked_by_them' ? (
+                  <Pressable
+                    style={({ pressed }) => [styles.group, pressed && styles.rowPressed]}
+                    onPress={handleBlocca}
+                    disabled={azioni.blocca.isPending}
+                  >
+                    <View style={styles.row}>
+                      {azioni.blocca.isPending ? (
+                        <ActivityIndicator size="small" color={colors.danger} />
+                      ) : (
+                        <Ionicons name="ban-outline" size={20} color={colors.danger} />
+                      )}
+                      <Text style={[styles.name, styles.danger]}>Blocca utente</Text>
+                    </View>
+                  </Pressable>
+                ) : null}
+              </>
             )
           )}
           <View style={{ height: spacing['3xl'] }} />
@@ -345,6 +416,7 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, gap: 2 },
   name: { color: colors.ink, fontSize: fontSize.base, fontFamily: fontFamily.semibold },
   username: { color: colors.muted, fontSize: fontSize.sm, fontFamily: fontFamily.sans },
+  danger: { color: colors.danger },
 
   addRow: {
     flexDirection: 'row',

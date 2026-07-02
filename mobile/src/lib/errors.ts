@@ -11,7 +11,8 @@ const MESSAGES: Record<string, string> = {
   not_friends: 'Potete scrivervi solo se siete amici.',
   already_friends: 'Siete già amici.',
   pending: 'Richiesta già inviata, in attesa di risposta.',
-  blocked: 'Non è possibile: c’è un blocco attivo.',
+  // Neutro: può arrivare anche al bloccato, il blocco altrui non va rivelato.
+  blocked: 'Non è possibile completare questa operazione.',
   invalid_target: 'Utente non valido.',
   target_not_found: 'Utente non trovato.',
   no_pending_request: 'Nessuna richiesta da accettare.',
@@ -31,8 +32,9 @@ const MESSAGES: Record<string, string> = {
   invalid_reply_to: 'Il messaggio a cui rispondi non è valido.',
   invalid_expiry: 'Scadenza del vocale non valida.',
   message_not_found: 'Messaggio non trovato.',
-  // Blocco e invio (CM1)
-  blocked_pair: 'Hai bloccato questo utente. Sblocca per scrivere.',
+  // Blocco e invio (CM1) — neutro: lo vede anche il bloccato (es. outbox);
+  // chi ha bloccato ha già la spiegazione nel composer disabilitato.
+  blocked_pair: 'Non è possibile inviare il messaggio.',
   message_too_long: 'Il messaggio è troppo lungo (max 4096 caratteri).',
   rate_limited: 'Stai scrivendo troppo velocemente. Aspetta un secondo.',
   edit_window_expired: 'Puoi editare solo nei primi 48h dal messaggio.',

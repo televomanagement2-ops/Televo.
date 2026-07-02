@@ -88,18 +88,47 @@ export async function fetchProfileCard(id: string): Promise<ProfileCard | null> 
   return data ? toCard(data as unknown as ProfileCardRow) : null;
 }
 
-/** Cerca utenti per username o nome (esclude sé stessi e i cancellati). */
+/**
+ * Cerca utenti per username o nome (esclude sé stessi e i cancellati).
+ * Stile Instagram: chi MI ha bloccato non compare mai nei risultati (il blocco
+ * non va rivelato al bloccato). Chi ho bloccato IO resta visibile: dal suo
+ * profilo posso sbloccarlo.
+ */
 export async function searchProfiles(term: string, excludeId: string): Promise<ProfileCard[]> {
   const t = term.trim();
   if (t.length < 2) return [];
   const like = `%${t}%`;
-  const { data, error } = await supabase
-    .from('profiles')
-    .select(CARD_COLS)
-    .or(`username.ilike.${like},display_name.ilike.${like}`)
-    .neq('id', excludeId)
-    .is('deleted_at', null)
-    .limit(20);
-  if (error) throw error;
-  return ((data ?? []) as unknown as ProfileCardRow[]).map(toCard);
+  const [profili, blocchi] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select(CARD_COLS)
+      .or(`username.ilike.${like},display_name.ilike.${like}`)
+      .neq('id', excludeId)
+      .is('deleted_at', null)
+      .limit(20),
+    supabase
+      .from('friendships')
+      .select('user_id, friend_id, blocked_by')
+      .eq('status', 'blocked')
+      .or(`user_id.eq.${excludeId},friend_id.eq.${excludeId}`),
+  ]);
+  if (profili.error) throw profili.error;
+  if (blocchi.error) throw blocchi.error;
+
+  const nascosti = new Set<string>();
+  const righeBlocco = (blocchi.data ?? []) as unknown as {
+    user_id: string;
+    friend_id: string;
+    blocked_by: string | null;
+  }[];
+  for (const r of righeBlocco) {
+    // blocked_by diverso da me = mi ha bloccato l'altro → invisibile per me.
+    if (r.blocked_by && r.blocked_by !== excludeId) {
+      nascosti.add(r.user_id === excludeId ? r.friend_id : r.user_id);
+    }
+  }
+
+  return ((profili.data ?? []) as unknown as ProfileCardRow[])
+    .map(toCard)
+    .filter((c) => !nascosti.has(c.id));
 }

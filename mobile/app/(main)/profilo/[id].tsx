@@ -64,11 +64,13 @@ export default function ProfiloUtente() {
         <View style={{ width: 26 }} />
       </View>
 
-      {card.isLoading ? (
+      {card.isLoading || rel.isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.muted} />
         </View>
-      ) : !card.data ? (
+      ) : /* Stile Instagram: chi mi ha bloccato vede il profilo come inesistente,
+             identico a un utente non trovato. */
+      !card.data || rel.data === 'blocked_by_them' ? (
         <View style={styles.center}>
           <Text style={styles.vuoto}>Utente non disponibile.</Text>
         </View>
@@ -94,6 +96,26 @@ export default function ProfiloUtente() {
   function renderAzione() {
     if (rel.isLoading || !id) return <ActivityIndicator color={colors.muted} />;
 
+    // Bottone Blocca con conferma: disponibile in OGNI relazione non bloccata
+    // (anche tra amici — è il caso più importante).
+    const bloccaBtn = (
+      <SecondaryBtn
+        icon="ban-outline"
+        label="Blocca"
+        loading={azioni.blocca.isPending}
+        onPress={() =>
+          Alert.alert('Blocca utente', 'Non potrete più scrivervi né trovarvi.', [
+            { text: 'Annulla', style: 'cancel' },
+            {
+              text: 'Blocca',
+              style: 'destructive',
+              onPress: () => azioni.blocca.mutate(id, { onError }),
+            },
+          ])
+        }
+      />
+    );
+
     switch (rel.data) {
       case 'accepted':
         return (
@@ -114,6 +136,7 @@ export default function ProfiloUtente() {
                 ])
               }
             />
+            {bloccaBtn}
           </>
         );
       case 'pending_in':
@@ -130,16 +153,20 @@ export default function ProfiloUtente() {
               loading={azioni.rimuovi.isPending}
               onPress={() => azioni.rimuovi.mutate(id, { onError })}
             />
+            {bloccaBtn}
           </>
         );
       case 'pending_out':
         return (
-          <SecondaryBtn
-            icon="time-outline"
-            label="Annulla richiesta"
-            loading={azioni.rimuovi.isPending}
-            onPress={() => azioni.rimuovi.mutate(id, { onError })}
-          />
+          <>
+            <SecondaryBtn
+              icon="time-outline"
+              label="Annulla richiesta"
+              loading={azioni.rimuovi.isPending}
+              onPress={() => azioni.rimuovi.mutate(id, { onError })}
+            />
+            {bloccaBtn}
+          </>
         );
       case 'blocked_by_me':
         return (
@@ -151,7 +178,8 @@ export default function ProfiloUtente() {
           />
         );
       case 'blocked_by_them':
-        return <Text style={styles.vuoto}>Non puoi interagire con questo utente.</Text>;
+        // Mai raggiunto: il render principale mostra "Utente non disponibile".
+        return null;
       case 'none':
       default:
         return (
@@ -161,21 +189,7 @@ export default function ProfiloUtente() {
               onPress={() => azioni.richiedi.mutate(id, { onError })}
               loading={azioni.richiedi.isPending}
             />
-            <SecondaryBtn
-              icon="ban-outline"
-              label="Blocca"
-              loading={azioni.blocca.isPending}
-              onPress={() =>
-                Alert.alert('Blocca utente', 'Non potrete più scrivervi né trovarvi.', [
-                  { text: 'Annulla', style: 'cancel' },
-                  {
-                    text: 'Blocca',
-                    style: 'destructive',
-                    onPress: () => azioni.blocca.mutate(id, { onError }),
-                  },
-                ])
-              }
-            />
+            {bloccaBtn}
           </>
         );
     }

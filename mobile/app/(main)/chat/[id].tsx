@@ -10,7 +10,6 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -389,9 +388,15 @@ export default function Chat() {
         </View>
       </View>
 
+      {/* Tastiera: in Expo Go su Android la finestra NON si ridimensiona da sola,
+          quindi serve il KeyboardAvoidingView. behavior="padding" aggiunge in fondo
+          un padding pari all'altezza della tastiera → lista + composer salgono sopra
+          di essa, e alla chiusura il padding torna a 0 (ripristino pulito, niente
+          "resta su"). keyboardVerticalOffset DEVE essere 0: un valore positivo lascia
+          un vuoto tra input e tastiera (era il bug di prima, offset ~header). */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior="padding"
         keyboardVerticalOffset={0}
       >
         {header.isLoading || messagesQ.isLoading ? (
@@ -429,6 +434,7 @@ export default function Chat() {
           sending={send.isPending}
           reply={reply ? { author: reply.sender_id === uid ? 'Tu' : peerName, text: previewText(reply) } : null}
           onCancelReply={() => setReplyTo(convId, null)}
+          onAttach={() => Alert.alert('Presto', 'Gli allegati arrivano presto.')}
           onStartRecording={handleStartRec}
           onStopRecording={handleStopRec}
           isRecording={isRecording}

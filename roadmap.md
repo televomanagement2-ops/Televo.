@@ -4,7 +4,7 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-01
+> **Ultimo aggiornamento:** 2026-07-02
 
 ---
 
@@ -17,8 +17,8 @@ Progetto Supabase hosted `mmunnybytyfybncohkky` ("Televo Project"), org
 
 | Area | Stato |
 |------|-------|
-| 22 migrazioni (Fasi 0–8 + GDPR + onboarding) | ✅ applicate (`migration list`: locale = remoto) |
-| Migrazioni 23–24 (Aura v3) | ⏳ scritte in locale, **da `db push`** (vedi `now.md` §3.1bis) |
+| 22 migrazioni (Fasi 0–8 + GDPR + onboarding, confermata live il 2026-06-30) | ✅ applicate (`migration list`: locale = remoto) |
+| Migrazioni 23–33 (Aura v3 23–24, **chat 25–33**: realtime, org D4, salvati, media D3, presenza/privacy, contatti D1) | ⏳ scritte in locale, **da `db push`** — milestone **CM0** del piano chat (`docs/chat/IMPLEMENTATION-PLAN.md`) |
 | 10 Edge Functions | ✅ deployate (Aura v3 non ne aggiunge) |
 | 3 Vault secrets (`edge_base_url`, `service_role_key`, `cron_secret`) | ✅ impostati |
 | 99 invarianti pgTAP | ✅ 82 passate + 13 nuove (Aura v3) da eseguire |
@@ -44,13 +44,15 @@ moderazione + safety · economia Vibes (simbolica attiva, Stripe inerte) · GDPR
   della dashboard (prefissando `create extension … pgtap` + `set search_path`).
 - **NON rifare `db push`** per le 21 migrazioni originali: è tutto già applicato.
 
-> ⚠️ **Migrazione 22 in attesa di push.** Per l'onboarding/login (vedi §1.2) è
-> stata aggiunta `20260629120000_onboarding_oauth.sql`: onboarding differito
-> (`handle_new_user` ridotto a scheletro), RPC `complete_onboarding`,
-> `check_invite`, `create_invite`, e `invites.school_id` reso nullable
-> (inviti school-free). **Va applicata al DB live** con un `supabase db push`
-> (solo questa nuova migrazione; le 21 esistenti restano). Senza, il flusso di
-> registrazione non funziona end-to-end. Nessuna nuova Edge Function.
+> ✅ **Migrazione 22 (onboarding) applicata** — confermata live il 2026-06-30
+> (RPC `complete_onboarding`/`check_invite`/`create_invite` funzionanti).
+>
+> ⚠️ **Migrazioni 23–33 in attesa di push** (Aura v3 + tutte le migrazioni chat:
+> realtime publication, organizzazione D4, salvati, media D3, presenza/privacy,
+> contatti D1). Si applicano nella milestone **CM0** del piano chat
+> (`docs/chat/IMPLEMENTATION-PLAN.md`), con verifica pgTAP e fix in corsa.
+> Senza il push, il **realtime della chat non funziona**. Nessuna nuova Edge
+> Function richiesta.
 
 ### 1.2 Frontend — 🟢 Avvio + Auth/Onboarding completi
 
@@ -213,13 +215,23 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
 - `src/hooks/useStanze.ts`, `src/store/stanzeStore.ts`.
 - **Verifica:** join stanza, audio bidirezionale, sali sul palco.
 
-### 💬 M5 — Social + Chat
-*Obiettivo: amicizie e DM (testo + vocali effimeri) con streak.*
-- Amicizie UI (RPC `send`/`accept`/`remove`, Top Friends).
-- `chat/index.tsx` (lista), `chat/[id].tsx` (conversazione); Realtime sui messaggi.
-- Componenti: `MessaggioRow`, `BollaParlante` (vocale), `StreakBadge`.
-- `src/hooks/useChat.ts`, `src/store/chatStore.ts`.
-- **Verifica:** DM solo tra amici, vocale che scade a 24h, streak con freeze.
+### 💬 M5 — Social + Chat — 🟡 IN CORSO (~70% costruito, roadmap dedicata)
+*Obiettivo: sistema chat completo, maturità funzionale livello Telegram.*
+> **Aggiornamento 2026-07-02**: la chat ha ora una **roadmap ufficiale dedicata**:
+> `docs/chat/IMPLEMENTATION-PLAN.md` (milestone CM0–CM8), basata sulla specifica
+> `docs/chat/SRS-chat.md` **Rev. 2** (tutte le decisioni chiuse; nuovi requisiti di
+> completezza RC-01…RC-13: optimistic send, offline, typing, presenza, edit,
+> inoltro, reazioni, ricerca FTS, push, contatti email-only).
+- **Già costruito**: hub Messaggi (S1), conversazione DM/gruppo (testo + vocali
+  effimeri 24h, reply, spunte DM, soft-delete, realtime per-conversazione), info/
+  membri, nuovo gruppo, Salvati/Archiviati/Silenziati, mute/pin/archivia/elimina,
+  streak badge, bozze; amicizie UI + DM da profilo (`useApriDm`).
+- **Backend chat scritto** (migrazioni 25–33) ma **in attesa di `db push`** → CM0.
+- **Prossimo**: CM0 (push + realtime live) → CM1 (fix correttezza/safety) → CM2
+  (optimistic/offline/realtime hub) → … → CM8. Dettagli, rischi e checklist nel
+  piano dedicato.
+- **Verifica:** DM solo tra amici, vocale che scade a 24h, streak con freeze +
+  criteri di completamento per milestone in `docs/chat/IMPLEMENTATION-PLAN.md`.
 
 ### ☁️ M6 — Drops
 - `DropCard`, `DropFeed`; integrazione in home/tab; `src/hooks/useDrops.ts`.

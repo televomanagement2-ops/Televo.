@@ -16,9 +16,14 @@ interface Props {
 
 export function CategoryBar({ selected, onSelect }: Props) {
   return (
+    // `style` con flexGrow:0 è ESSENZIALE: uno ScrollView orizzontale dentro un
+    // contenitore a colonna (la Home) NON ricava l'altezza dal contenuto e, senza
+    // vincolo, si "mangia" tutto lo spazio verticale disponibile — spingendo il
+    // feed a partire da metà schermo. Con flexGrow:0 resta alto quanto la sua riga.
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
+      style={styles.bar}
       contentContainerStyle={styles.row}
     >
       {FEED_CATEGORIES.map((cat) => {
@@ -36,6 +41,8 @@ export function CategoryBar({ selected, onSelect }: Props) {
 
 // Scritte volutamente discrete (mockup): piccole, peso leggero, underline sottile.
 const styles = StyleSheet.create({
+  // flexGrow:0 → la barra non si espande in verticale (vedi commento sopra).
+  bar: { flexGrow: 0, flexShrink: 0 },
   row: { gap: spacing.lg, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   item: { alignItems: 'center', gap: 5 },
   label: { color: colors.muted, fontSize: fontSize.sm, fontFamily: fontFamily.medium, letterSpacing: 0.2 },

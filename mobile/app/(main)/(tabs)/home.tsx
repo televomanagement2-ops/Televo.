@@ -52,6 +52,14 @@ function FeedBody({ category }: { category: FeedCategoryKey }) {
           <FeedLiveCard />
         </View>
       );
+    case 'drops':
+      return (
+        <ComingSoon
+          icon="flash-outline"
+          title="I Drop arrivano presto"
+          subtitle="Momenti effimeri che durano 24h. Niente vetrine, solo l'istante: quello che c'è ora e poi svanisce."
+        />
+      );
     case 'live':
       return (
         <ComingSoon

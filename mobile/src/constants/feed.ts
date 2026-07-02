@@ -9,7 +9,7 @@
 // "discover" mostra già un mix di card placeholder (vedi constants/feedItems.ts).
 // NB: "Reels" è stato RIMOSSO — il concept dell'app non lo contempla.
 
-export type FeedCategoryKey = 'discover' | 'live' | 'map' | 'aura' | 'sport';
+export type FeedCategoryKey = 'discover' | 'drops' | 'live' | 'map' | 'aura' | 'sport';
 
 export interface FeedCategory {
   key: FeedCategoryKey;
@@ -21,6 +21,7 @@ export interface FeedCategory {
 /** Ordine canonico mostrato nella barra (Discover sempre primo e di default). */
 export const FEED_CATEGORIES: readonly FeedCategory[] = [
   { key: 'discover', label: 'Discover', backed: true },
+  { key: 'drops', label: 'Drops', backed: true },
   { key: 'live', label: 'Live', backed: true },
   { key: 'map', label: 'Map', backed: true },
   { key: 'aura', label: 'Aura', backed: true },

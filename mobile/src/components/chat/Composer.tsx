@@ -35,6 +35,8 @@ interface Props {
   disabledReason?: string | null;
   reply?: ReplyPreview | null;
   onCancelReply?: () => void;
+  /** Tap sulla graffetta allegati (foto/file). Per ora → avviso "presto" (M6). */
+  onAttach?: () => void;
   // --- Vocali (M2) ---
   /** Avvia la registrazione (tap sul microfono). */
   onStartRecording?: () => void;
@@ -62,6 +64,7 @@ export function Composer({
   disabledReason,
   reply,
   onCancelReply,
+  onAttach,
   onStartRecording,
   onStopRecording,
   isRecording,
@@ -132,8 +135,16 @@ export function Composer({
           </Pressable>
         </View>
       ) : (
-        // --- Idle: input testo + microfono / invio ---
+        // --- Idle: graffetta allegati + input testo + microfono / invio ---
         <View style={styles.row}>
+          <Pressable
+            onPress={onAttach}
+            style={({ pressed }) => [styles.attachBtn, pressed && styles.pressed]}
+            hitSlop={6}
+            accessibilityLabel="Allega"
+          >
+            <Ionicons name="add-circle-outline" size={26} color={colors.muted} />
+          </Pressable>
           <TextInput
             value={value}
             onChangeText={onChangeText}
@@ -208,6 +219,8 @@ const styles = StyleSheet.create({
   stopBtn: { backgroundColor: colors.danger },
   pressed: { opacity: 0.85 },
   iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  // Graffetta allegati: stessa altezza dell'input/mic per allinearsi sulla base.
+  attachBtn: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
 
   // Registrazione
   recordingBar: {

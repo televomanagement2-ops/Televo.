@@ -8,7 +8,12 @@
 > documento. Questa fase **non** contiene codice, migrazioni o API: definisce il
 > prodotto. L'implementazione tecnica verrà pianificata dopo la validazione.
 >
-> **Stato**: bozza per validazione — ultimo aggiornamento 2026-07-01.
+> **Stato**: **Revisione 2 — validata** (2026-07-02). La Rev. 2 fotografa lo stato
+> reale del codice (backend chat quasi completo, frontend ~70%), chiude tutte le
+> decisioni aperte (§17), aggiunge i **Requisiti di completezza moderna** (§19,
+> riferimento: Telegram per maturità funzionale, non per design) e rimanda
+> l'esecuzione a `docs/chat/IMPLEMENTATION-PLAN.md` (roadmap ufficiale CM0–CM8).
+> Vedi Revision history in fondo.
 
 ---
 
@@ -18,10 +23,17 @@ Televo è un social mobile-first per Gen Z (16+), lancio invite-only a Terni
 (settembre 2026), costruito su tre pilastri: **Proof of Human**, **Aura**
 (reputazione vivente), **Anti-doomscroll by design**. Il backend è **live** su
 Supabase hosted e copre già gran parte del dominio chat (conversazioni, messaggi,
-vocali effimeri, streak, amicizie, notifiche, moderazione). Il frontend mobile
-(Expo/React Native) ha completato bootstrap, auth/onboarding, shell e profilo/Aura;
-la tab **Messaggi** è oggi un semplice `ComingSoon` e tutti i file `src/*/chat*`
-sono stub vuoti.
+vocali effimeri, streak, amicizie, notifiche, moderazione).
+
+> **Aggiornamento Rev. 2 (2026-07-02)**: lo stato descritto sotto ("tab Messaggi =
+> ComingSoon, stub vuoti") era vero alla Rev. 1 ed è **superato**. Oggi: (a) il
+> backend chat è quasi completo — 9 migrazioni dedicate (realtime publication,
+> organizzazione D4, salvati, media D3, presenza/privacy, contatti D1) sono scritte
+> in locale ma **non ancora applicate al DB live** (milestone CM0); (b) il frontend
+> copre ~70% di questa SRS: hub S1, conversazione S2/S3 (testo + vocali effimeri,
+> reply, spunte DM, soft-delete, realtime per-conversazione), S4, S7/S8/S9, S13.
+> La fotografia completa e i difetti noti sono in
+> `docs/chat/IMPLEMENTATION-PLAN.md` §1.
 
 L'utente ha fornito due schizzi ad alto livello del sistema chat (Sketch 1 = hub
 Messaggi; Sketch 2 = schermata conversazione). L'obiettivo di questo documento è
@@ -40,6 +52,9 @@ massima coerenza del sistema.
 | D2 | Chiamata audio (☎ header chat) | **Differita** (come Stanze Live): dipende da LiveKit + Development Build. Requisito documentato ma marcato *differito*; pulsante visibile ma disabilitato/"presto". |
 | D3 | Tipi di messaggio | **Testo + vocali effimeri + foto/media**. I media (immagini/file) richiedono NUOVO backend (colonna media + bucket storage + RLS). |
 | D4 | Funzioni organizzative (Silenzia, Archivia, Salvati, Cancella cronologia, Elimina chat, toggle ultimo accesso/spunte) | **Requisiti completi con persistenza server-side** (multi-device). Per ognuna si specifica la nuova tabella/colonna backend necessaria. |
+| D5 *(Rev. 2)* | Reazioni emoji ai messaggi | **SÌ** (decisione utente 2026-07-02): set curato di emoji, 1 reazione per utente per messaggio, visibili solo ai membri della conversazione (nessun contatore pubblico → coerente con l'anti-vanity). Il **prop** resta il gesto "forte" separato che alimenta l'Aura. Nuovo backend `message_reactions` (§19 RC-07). |
+| D6 *(Rev. 2)* | Identificatore per il match rubrica (chiude R-01) | **Solo hash EMAIL per ora**: l'email esiste già per ogni account, zero attrito. Il telefono NON viene reintrodotto (valutabile in futuro). Il backend `match_contacts` supporta già entrambi i tipi di hash. |
+| D7 *(Rev. 2)* | Applicazione migrazioni pendenti al DB live | Le 11 migrazioni locali non ancora `db push`ate (Aura v3 23–24 + chat 25–33; la 22 onboarding è già live) vengono applicate da Claude nella milestone **CM0** con verifica pgTAP e fix in corsa. |
 
 ---
 
@@ -139,27 +154,14 @@ requisiti di prodotto (§10, §11).
 
 ---
 
-## 2. Discrepanze BACKEND ↔ FRONTEND (CRITICO — precondizione)
+## 2. Discrepanze BACKEND ↔ FRONTEND — ✅ RISOLTA (Rev. 2)
 
-I tipi scritti a mano in `mobile/src/types/supabase.ts` **divergono** dal DB reale.
-Costruire la chat sopra i tipi attuali fallirebbe a runtime. Prima di implementare va
-riallineato (documentato qui; correzione nella fase implementativa vera).
-
-| Ambito | Frontend attuale (`types/supabase.ts`) | Backend reale (migrazioni) | Azione |
-|--------|----------------------------------------|----------------------------|--------|
-| Colonna tipo conversazione | `conversations.kind` | `conversations.type` | Rinominare nei tipi |
-| Nome conversazione | `conversations.title` | `conversations.name` (+ `topic`, `avatar_url`) | Allineare |
-| Campo scuola | `conversations.school_id` | **non esiste** su conversations (la scuola è su `profiles.school_id`; house = stessa scuola via membri) | Rimuovere/riconcepire |
-| DM key | assente | `conversations.dm_key` (unique where type='dm') | Aggiungere |
-| updated_at | assente | `conversations.updated_at` (bump su ogni messaggio) | Aggiungere (serve per ordinamento!) |
-| Media messaggio | `messages.media_url` | `messages.audio_url` (solo audio, oggi) | Allineare (+ colonna media nuova per foto, §D3) |
-| Tipo messaggio | `messages.kind` | `messages.type` (`text/audio/voice_thread`) | Allineare |
-| `conversation_members` | **assente** dai tipi | tabella reale (role, last_read_at, joined_at) | Aggiungere ai tipi |
-| `get_or_create_dm` | `Args {other}` → `string` | `(p_other uuid)` → `jsonb {ok, conversation_id, created}` | Allineare firma + parsing jsonb |
-| `create_group_conversation` | `Args {title}` → `string` | `(p_type, p_name, p_members[])` → `jsonb {ok, conversation_id}` | Allineare |
-| `add_conversation_member` | `Args {conv, member}` | `(p_conv, p_user)` | Allineare nomi param |
-| `leave_conversation` / `mark_conversation_read` | `Args {conv}` → `undefined` | `(p_conv)` → `jsonb {ok}` | Allineare |
-| `streaks`, `usage_daily`, `notifications`, `devices`, `reports` | parziali/assenti | tabelle reali | Aggiungere ai tipi ciò che serve |
+La precondizione della Rev. 1 (tipi `mobile/src/types/supabase.ts` divergenti dal DB:
+`kind`/`title`/`media_url`, RPC con firme sbagliate, `conversation_members` assente) è
+stata **completamente risolta**: i tipi sono oggi allineati alle migrazioni reali
+(colonne `type`/`name`/`audio_url`+`media_url`, RPC `jsonb {ok,…}`, tabelle
+`conversation_members`, `streaks`, `saved_messages` tipizzate). Resta valida la regola
+operativa qui sotto.
 
 > **Nota**: il progetto è su piano Supabase Free → `supabase gen types` dà 403, quindi
 > i tipi si mantengono **a mano**. Ogni nuova colonna/tabella backend introdotta da
@@ -171,6 +173,13 @@ riallineato (documentato qui; correzione nella fase implementativa vera).
 
 Per ogni entità: com'è vista dal prodotto, dove vive nel backend, e i campi NUOVI
 richiesti dalle decisioni D1–D4.
+
+> **Nota Rev. 2**: i campi/tabelle marcati "NUOVO" in questa sezione sono stati nel
+> frattempo **implementati** (migrazioni del 2026-07-01: `chat_org`,
+> `saved_messages`, `chat_media`, `chat_presence_privacy`, `contact_match` — in
+> attesa di `db push`, milestone CM0). Lo stato aggiornato è nella tabella §16.
+> Restano da creare solo: `edited_at`, `forwarded_from`, `message_reactions`, FTS
+> (§19).
 
 ### 3.1 Conversation
 - Backend: `conversations(id, type, name, topic, avatar_url, dm_key, created_by,
@@ -751,73 +760,101 @@ coda invii), **retry** (invii/upload falliti). Nessuno stato deve lasciare la UI
 
 ---
 
-## 16. Mappatura capacità backend: ESISTE vs GAP
+## 16. Mappatura capacità backend: ESISTE vs GAP *(aggiornata Rev. 2)*
 
-| Requisito | Backend esistente | GAP / nuovo backend |
-|-----------|-------------------|---------------------|
-| DM 1:1 tra amici | `get_or_create_dm`, `dm_key`, RLS | — |
-| Gruppo / house | `create_group_conversation`, `add_conversation_member` | — |
-| Lista chat + ordinamento | `conversations.updated_at`, `conversation_members`, RLS | Filtri archiviate/hidden (nuovi campi) |
-| Messaggi testo | `messages` insert/RLS/trigger | — |
-| Vocali effimeri | `messages.audio_url`+`expires_at`, bucket `voice-messages`, RLS | — |
-| **Foto/media** | — | **NUOVO**: colonna media + enum + bucket `chat-media` + RLS + grant |
-| Reply / edit / soft-delete | `reply_to`, grant update(body, deleted_at), RLS | — |
-| Spunte di lettura | `last_read_at`, `mark_conversation_read` | Gating privacy (toggle) |
-| Unread / badge | derivabile da `last_read_at` | — (client) |
-| Streak | `streaks`, `touch_streak`, trigger | — |
-| Notifiche push messaggi | trigger notify + `dispatch_push` + Edge | **Mute-aware** (modifica trigger) |
-| **Silenzia conversazione** | — | **NUOVO**: `conversation_members.muted_until` + trigger mute-aware |
-| **Archivia** | — | **NUOVO**: `conversation_members.archived_at` |
-| **Fissa** | — | **NUOVO**: `conversation_members.pinned_at` (§17 R-07) |
-| **Cancella cronologia** | — | **NUOVO**: `conversation_members.cleared_at` |
-| **Elimina chat (DM)** | `leave_conversation` (esce) | **NUOVO**: `conversation_members.hidden_at` (soft, preferito) |
-| **Messaggi salvati** | — | **NUOVO**: tabella `saved_messages` + RLS |
-| **Ultimo accesso** | — (solo `live_presence` effimero, non adatto) | **NUOVO**: `profiles.last_active_at` o Realtime presence (§17 R-02) |
-| **Toggle ultimo accesso / spunte** | — | **NUOVO**: settings su profiles/`user_settings` |
-| **Contatti su Televo (rubrica)** | — (telefono rimosso) | **NUOVO**: identificatore contatto + `contact_hashes` + RPC `match_contacts` + `expo-contacts` |
-| Ricerca messaggi (storico) | select per membro | **NUOVO** (eventuale) full-text search (§17 R-13) |
-| Segnala / blocca | `file_report`, `block/unblock_user` | Effetto blocco su DM (§17 R-05) |
-| Dai prop da messaggio | props (`source_type='message'`) | — |
-| **Chiamata audio** | livekit-token (Edge) esiste | **DIFFERITA**: LiveKit SDK + Dev Build (D2) |
-| **Cambia sfondo** | — | **DIFFERITA** (non implementare ora) |
-| Moderazione AI testo | Edge `moderate-text` | **DIFFERITA** senza chiave |
-| Drops strip nell'hub | `drops` (backend esiste) | UI Drops (M6) non costruita → placeholder |
+> Quasi tutti i "NUOVO backend" della Rev. 1 sono stati **scritti** (migrazioni del
+> 2026-07-01, in attesa di `db push` — milestone CM0). I gap residui veri sono i
+> requisiti di completezza moderna (§19), pianificati in CM1/CM4.
+
+| Requisito | Backend | Note / milestone |
+|-----------|---------|------------------|
+| DM 1:1 tra amici | ✅ `get_or_create_dm`, `dm_key`, RLS | — |
+| Gruppo / house | ✅ `create_group_conversation`, `add/remove_conversation_member` | rinomina/avatar/promozione admin → CM4 |
+| Lista chat + ordinamento | ✅ `updated_at` + campi organizzazione | — |
+| Messaggi testo | ✅ insert/RLS/trigger | cap 4096 + rate-limit → CM1 |
+| Vocali effimeri | ✅ bucket `voice-messages`, clamp 24h | — |
+| Foto/media (D3) | ✅ **FATTO** `chat_media` (enum, colonne, bucket, RLS, grant) | UI → CM5 |
+| Reply / soft-delete | ✅ | — |
+| Edit | ⚠️ grant update(body) senza `edited_at` | **GAP**: colonna + finestra 48h → CM1 (RC-05) |
+| Spunte di lettura | ✅ `last_read_at` | gating privacy client → CM3; enforcement server → CM8 |
+| Unread / badge | ✅ derivabile | riepilogo server-side (scala) → CM8 |
+| Streak | ✅ | — |
+| Notifiche push messaggi | ✅ trigger **già mute-aware** + `dispatch_push` + Edge | client push → CM6 |
+| Silenzia / Archivia / Fissa / Cancella cronologia / Elimina (D4) | ✅ **FATTO** `chat_org` (5 campi + 3 RPC) | riapparizione `hidden_at` su nuovo msg → CM1 |
+| Messaggi salvati | ✅ **FATTO** `saved_messages` + RPC | — |
+| Realtime | ✅ **FATTO** `chat_realtime` (publication su 3 tabelle) | attivo dopo CM0 |
+| Ultimo accesso | ✅ **FATTO** `profiles.last_active_at` + `touch_presence` | esposizione privacy-safe (RPC) → CM1; UI → CM3 |
+| Toggle ultimo accesso / spunte | ✅ **FATTO** `show_last_seen`, `show_read_receipts` su profiles | UI S10 → CM3 |
+| Contatti su Televo (D1) | ✅ **FATTO** `contact_hashes` + `match_contacts` (minori solo da amici) | email-only (D6); UI S11 → CM7 |
+| Ricerca messaggi (storico) | ❌ | **GAP**: FTS italian + `search_messages` → CM4 (RC-08) |
+| Inoltro | ❌ | **GAP**: `forwarded_from` → CM4 (RC-06) |
+| Reazioni emoji (D5) | ❌ | **GAP**: `message_reactions` → CM4 (RC-07) |
+| Segnala / blocca | ✅ `file_report`, `block/unblock_user` | blocco→stop invio DM → CM1 (R-05); UI → CM4/CM8 |
+| Dai prop da messaggio | ✅ props (`source_type='message'`) | UI → CM4 |
+| GDPR export/delete su tabelle chat nuove | ⚠️ incompleto | **GAP** → CM1 (RC-12) |
+| Chiamata audio | Edge livekit-token esiste | **DIFFERITA** (D2: Dev Build) |
+| Cambia sfondo | — | **DIFFERITA** (non implementare ora) |
+| Moderazione AI testo | Edge `moderate-text` (degrada) | integrazione opzionale → CM8 |
+| Drops strip nell'hub | `drops` backend esiste | nascosta finché il dominio Drops non è costruito (R-08) |
 
 ---
 
-## 17. Requisiti da confermare (decisioni aperte)
+## 17. Decisioni — TUTTE CHIUSE (Rev. 2, 2026-07-02)
 
-- **R-01 (Rubrica/Contatti, alta priorità/safety)**: quale identificatore per il match
-  (telefono reintrodotto? email?), modello di hashing, e regole privacy per minori
-  (chi può essere scoperto da chi). Feature sensibile: definire prima di implementare.
-- **R-02 (Ultimo accesso)**: persistere `last_active_at` (storico) vs solo "online ora"
-  via Realtime presence (nessuno storico)? Impatto privacy/batteria.
-- **R-03 (Toggle privacy reciprocità)**: nascondere ultimo accesso/spunte implica non
-  vederli anche agli altri (stile WhatsApp)? Sì/No.
-- **R-04 (Delivery receipts)**: mostrare "consegnato" (non tracciato dal backend) o solo
-  inviato/letto? Proposta: solo inviato (singola) / letto (doppia).
-- **R-05 (Blocco ↔ DM esistenti)**: al blocco, cosa succede alla DM? Nascondere per
-  entrambi? Impedire invio? Oggi il backend non cancella nulla.
-- **R-06 (Durate silenzia)**: opzioni (8h / 1 settimana / sempre) o solo on/off?
-- **R-07 (Chat fissate)**: la funzione "fissa in cima" è desiderata? (non esplicitamente
-  negli sketch; comune nei sistemi chat). Se sì → `pinned_at`.
-- **R-08 (Drops nell'hub)**: mostrare la striscia Drops ora come placeholder, nasconderla
-  finché M6, o rimandarla del tutto?
-- **R-09 (Admin che esce dal gruppo)**: passaggio automatico ruolo admin? A chi?
-- **R-10 (Gruppo senza membri iniziali)**: consentire creazione con soli me + aggiungere
-  dopo?
-- **R-11 (De-archiviazione)**: un nuovo messaggio ripristina automaticamente dalla
-  cartella Archiviati?
-- **R-12 (`voice_thread` vs `audio`)**: differenza semantica dei due tipi vocali.
-- **R-13 (Ricerca messaggi storico)**: client-side sui caricati (MVP) o full-text server
-  (scala)?
-- **R-14 (Registrazione vocale)**: press-and-hold vs tap-to-start/stop.
-- **R-15 (Finestra di edit)**: limite di tempo per modificare un messaggio? indicatore
-  "modificato" sempre?
-- **R-16 (Gruppo orfano)**: cleanup delle conversazioni senza membri?
-- **R-17 (Preview link/immagini)**: generare anteprime dei link? (fuori MVP salvo conferma)
-- **R-18 (Cancella cronologia "ora?")**: cancellare tutto vs da un momento specifico
-  (lo sketch annota "ora?").
+Molte erano già state decise *di fatto* dall'implementazione; le altre sono chiuse
+qui con motivazione. Nessuna decisione resta aperta.
+
+- **R-01 (Rubrica/Contatti)** → **CHIUSA (D6)**: match per **hash EMAIL** (SHA-256
+  client-side, mai rubrica in chiaro); telefono NON reintrodotto per ora. Le regole
+  minori sono già enforced nel backend `match_contacts`: adulti scopribili da
+  chiunque abbia il loro hash, **minori scopribili solo da amici esistenti**.
+  Consenso `contacts_sync` registrato/revocabile via `record_consent`. → CM7.
+- **R-02 (Ultimo accesso)** → **CHIUSA**: si persiste `profiles.last_active_at`
+  (già in DB) aggiornato da `touch_presence()` con heartbeat throttled solo in
+  foreground (impatto batteria minimo). "Online" = attività < 2 min (resa client).
+- **R-03 (Reciprocità toggle)** → **CHIUSA: SÌ**, stile WhatsApp/Telegram: chi
+  nasconde ultimo accesso/spunte non vede quelli altrui. È la semantica che gli
+  utenti già conoscono e disincentiva l'opt-out "gratis". → CM1 (RPC) + CM3 (UI).
+- **R-04 (Delivery receipts)** → **CHIUSA**: solo **inviato (✓) / letto (✓✓)**.
+  Il backend non traccia la consegna per-device e il valore aggiunto non giustifica
+  l'infrastruttura. (Già implementato così.)
+- **R-05 (Blocco ↔ DM esistenti)** → **CHIUSA**: il blocco **impedisce l'invio a
+  entrambi** nella DM esistente (trigger backend, CM1); la conversazione resta
+  visibile (la storia non si riscrive); nuova DM non creabile (già enforced).
+  Composer disabilitato con motivo. Safety-first: nessun contatto forzato.
+- **R-06 (Durate silenzia)** → **CHIUSA**: 8 ore / 1 settimana / per sempre.
+  (Già implementato.)
+- **R-07 (Chat fissate)** → **CHIUSA: SÌ** (`pinned_at`, già implementato).
+- **R-08 (Drops nell'hub)** → **CHIUSA**: striscia **nascosta** finché il dominio
+  Drops non è costruito — niente placeholder morto nell'hub.
+- **R-09 (Admin che esce)** → **CHIUSA**: se esce l'ultimo admin, **auto-promozione
+  del membro più anziano** (per `joined_at`); in più RPC esplicita
+  `promote_conversation_admin` per il passaggio volontario. → CM4.
+- **R-10 (Gruppo senza membri iniziali)** → **CHIUSA: consentito** (crea con soli
+  te + aggiungi dopo — già implementato).
+- **R-11 (De-archiviazione)** → **CHIUSA (stile Telegram)**: una chat **archiviata
+  resta archiviata** al nuovo messaggio (mostra badge unread in S8) — l'archivio è
+  una scelta deliberata. Invece la DM **eliminata** (`hidden_at`) **riappare** al
+  nuovo messaggio (trigger CM1): eliminare non è ignorare per sempre.
+- **R-12 (`voice_thread` vs `audio`)** → **CHIUSA**: **unificati** — nessuna
+  differenza di prodotto emersa; la UI tratta entrambi da vocale, l'enum resta per
+  compatibilità. Rivalutare solo se le Stanze introdurranno thread vocali (CM8).
+- **R-13 (Ricerca storico)** → **CHIUSA: full-text server** (tsvector `italian` +
+  GIN + RPC `search_messages`) — la ricerca client sui soli messaggi caricati non
+  regge la promessa di completezza. → CM4 (RC-08).
+- **R-14 (Registrazione vocale)** → **CHIUSA: tap-to-record/stop** con anteprima
+  (già implementato); press-and-hold eventuale polish futuro.
+- **R-15 (Finestra edit)** → **CHIUSA: 48 ore** (Telegram-like), solo messaggi di
+  testo propri; indicatore "modificato" **sempre** visibile (trasparenza). Richiede
+  `edited_at` (CM1) + UI (CM4).
+- **R-16 (Gruppo orfano)** → **CHIUSA**: cleanup **differito** via cron dedicato
+  (CM8); non bloccante, nessun dato sensibile esposto nel frattempo.
+- **R-17 (Preview link)** → **CHIUSA**: ora solo **linkify** (URL tappabili, CM2);
+  le card di anteprima sono differite (fetch di URL esterni = superficie privacy +
+  effort non giustificato per l'MVP).
+- **R-18 (Cancella cronologia "ora?")** → **CHIUSA**: MVP = tutta la cronologia
+  (`cleared_at = now()`); "da un momento specifico" differito (nessuna richiesta
+  d'uso concreta).
 
 ---
 
@@ -872,12 +909,109 @@ coda invii), **retry** (invii/upload falliti). Nessuno stato deve lasciare la UI
 
 ---
 
-## Prossimi passi (dopo la validazione di questa SRS)
-1. **Review dell'utente** sezione per sezione, con focus su §17 (Requisiti da
-   confermare) e sulle decisioni D1–D4.
-2. **Cross-check backend**: la tabella §16 è già confrontata con le migrazioni reali —
-   le voci "GAP/NUOVO" sono le sole che richiederanno nuovo lavoro backend.
-3. **Completezza**: verificare che ogni elemento degli sketch abbia un requisito
-   corrispondente (§18.D) e che ogni schermata abbia stati loading/vuoto/errore (§14).
-4. Solo dopo la validazione: pianificare l'implementazione (tipi riallineati §2 →
-   migrazioni per i GAP → hook/componenti seguendo §C).
+## 19. Requisiti di completezza moderna (Rev. 2)
+
+> **Perché questa sezione.** L'utente ha fissato il riferimento di qualità: il
+> sistema chat finale deve *sentirsi* maturo e completo come **Telegram / WhatsApp /
+> Instagram Direct** — riferimento di **completezza funzionale**, non di design (il
+> design verrà rifatto). La revisione critica (2026-07-02) ha confrontato la Rev. 1
+> con quel livello: questi sono i requisiti mancanti, ognuno con la sua motivazione.
+> Niente feature "perché sì": ciò che è stato valutato e scartato è in §19.3.
+
+### 19.1 Requisiti nuovi o promossi (RC-01…RC-13)
+
+- **RC-01 — Stati di invio, optimistic, retry.** Ogni messaggio inviato appare
+  **immediatamente** come `pending`, poi `sent` (✓) o `failed` con **Riprova/Elimina**.
+  Dedup con l'evento realtime. *Motivo*: è la differenza percepita tra una chat
+  "vera" e una demo; già abbozzato in §6.2, qui diventa requisito con stati espliciti.
+- **RC-02 — Offline di base.** Rilevazione connettività (NetInfo → onlineManager),
+  banner "Sei offline", messaggi composti offline in coda `pending` che partono alla
+  riconnessione (coda in-sessione; persistenza su disco fuori scope, documentato).
+  *Motivo*: mobile-first + scuola = rete instabile; §14 lo citava senza requisiti.
+- **RC-03 — Typing indicator** ("sta scrivendo…"). Via Supabase Realtime **broadcast**
+  (throttle ~2.5s, TTL 4s, nessuna tabella, nessuna persistenza); nei gruppi con
+  username. *Motivo*: presenza umana percepibile in tempo reale — è letteralmente il
+  pilastro Proof of Human applicato alla chat; standard in ogni chat matura.
+- **RC-04 — Presenza online/ultimo accesso privacy-safe.** Heartbeat `touch_presence`
+  (solo foreground, throttled); esposizione SOLO via RPC `get_peer_presence` che
+  applica `show_last_seen` + reciprocità (R-03); la colonna raw non deve restare
+  leggibile da chiunque. *Motivo*: header S2 la richiede; la privacy dei minori vieta
+  di esporla senza gate server.
+- **RC-05 — Edit tracciato.** `messages.edited_at` + finestra **48h** + indicatore
+  "modificato" sempre visibile (R-15). *Motivo*: l'edit non tracciato è un buco di
+  trasparenza (si può riscrivere la storia di nascosto) — inaccettabile in un
+  prodotto per minori.
+- **RC-06 — Inoltro + selezione multipla.** `forwarded_from` + intestazione
+  "Inoltrato"; selezione multipla con Copia/Inoltra/Elimina/Salva. I **vocali
+  effimeri non sono inoltrabili** (il file scade: l'effimero resta effimero).
+  *Motivo*: gestione moderna dei messaggi; l'inoltro tracciato è anche un segnale di
+  moderazione (provenienza).
+- **RC-07 — Reazioni emoji (D5).** Tabella `message_reactions` (1 per utente per
+  messaggio, set curato es. ❤️ 😂 👍 😮 😢 🔥), realtime, visibili **solo dentro la
+  conversazione** — nessun contatore pubblico, nessun leaderboard. *Motivo*:
+  riconoscimento leggero a costo sociale zero; il **prop** resta il gesto forte che
+  alimenta l'Aura (i due livelli non si cannibalizzano).
+- **RC-08 — Ricerca messaggi server (FTS).** `to_tsvector('italian')` + GIN + RPC
+  `search_messages` (rispetta membership/cleared/deleted); UI in-chat (S12b) e
+  globale (S12a). *Motivo*: R-13 chiusa lato server — la ricerca solo sui messaggi
+  caricati tradisce l'aspettativa appena la chat ha storia.
+- **RC-09 — "Letto da N" nei gruppi + Info messaggio.** Derivato dai `last_read_at`
+  dei membri; voce "Info" nel menu del proprio messaggio. *Motivo*: le spunte solo-DM
+  lasciano i gruppi senza feedback di lettura.
+- **RC-10 — Micro-professionalità.** Pill "nuovi messaggi ↓" (mai scroll forzato,
+  già §S2), tap sulla citazione → scroll al messaggio originale, raggruppamento
+  bolle consecutive (<2 min), **Copia**, linkify URL, haptic all'invio. *Motivo*:
+  sono i dettagli che, sommati, fanno dire "è una chat seria"; erano sparsi nella
+  Rev. 1, qui diventano requisiti espliciti.
+- **RC-11 — Hardening safety dell'invio.** Blocco→stop invio in DM (R-05), cap
+  **4096 caratteri**, rate-limit di base (>30 msg/60s → rifiuto), composer
+  disabilitato con motivo per mutati/bannati (§11.4). *Motivo*: anti-abuso a costo
+  quasi nullo, coerente con la safety minori.
+- **RC-12 — GDPR completo sulle nuove tabelle.** `gdpr-export` include
+  `saved_messages`, `conversation_members`, `contact_hashes`, `consents`; la
+  cancellazione account elimina `contact_hashes`. *Motivo*: l'art. 15/17 copre TUTTI
+  i dati personali — le tabelle nate dopo l'Edge GDPR erano rimaste fuori (difetto
+  verificato).
+- **RC-13 — Push end-to-end lato client.** `register_device`, canale Android, tap →
+  deep link `chat/[id]` (anche da app chiusa), soppressione del banner se la chat è
+  già aperta, badge tab/app (§8.5, §9). *Motivo*: il backend push è completo e
+  mute-aware; senza client resta lettera morta.
+
+### 19.2 Mappa RC → milestone
+CM1: RC-04 (RPC), RC-05 (colonna), RC-11, RC-12 · CM2: RC-01, RC-02, RC-10 ·
+CM3: RC-03, RC-04 (UI) · CM4: RC-05 (UI), RC-06, RC-07, RC-08, RC-09 · CM6: RC-13.
+Dettagli in `docs/chat/IMPLEMENTATION-PLAN.md`.
+
+### 19.3 Valutato e SCARTATO (con motivo — non rientra senza nuova decisione)
+- **Crittografia E2E**: in conflitto con la moderazione obbligatoria per un social di
+  minori (i report devono poter essere verificati); fuori scope MVP.
+- **Messaggi programmati / sondaggi / sticker & GIF / videomessaggi / canali
+  broadcast**: superficie enorme, nessun legame con i tre pilastri; Telegram-parity
+  non significa Telegram-clone.
+- **@menzioni nei gruppi**: rimandata — i gruppi Televo sono piccoli (amici/scuola),
+  il valore è basso finché non esistono gruppi grandi.
+- **Card di anteprima link**: fetch di URL esterni = superficie privacy/sicurezza;
+  per ora solo linkify (R-17).
+- **Delivered receipts per-device**: costo infrastrutturale senza valore percepito
+  aggiuntivo rispetto a ✓/✓✓ (R-04).
+- **Multi-account**: non pertinente a un social identità-centrico invite-only.
+
+---
+
+## Prossimi passi (Rev. 2)
+La validazione della Rev. 1 e la revisione critica sono **completate**. L'esecuzione
+segue `docs/chat/IMPLEMENTATION-PLAN.md` (milestone CM0–CM8): questo documento
+resta la **fonte di verità funzionale** e va aggiornato se una milestone cambia un
+requisito.
+
+---
+
+## Revision history
+- **Rev. 1** (2026-07-01) — prima stesura dagli sketch: requisiti S1–S16, decisioni
+  D1–D4, gap backend §16, 18 decisioni aperte §17.
+- **Rev. 2** (2026-07-02) — revisione critica post-analisi del codice: §2 risolta
+  (tipi allineati); §16 aggiornata allo stato reale (backend D1/D3/D4/presenza già
+  scritto, in attesa di push); §17 tutte le decisioni CHIUSE; nuove decisioni D5
+  (reazioni: sì), D6 (rubrica: solo email), D7 (push migrazioni in CM0); nuova §19
+  "Requisiti di completezza moderna" (RC-01…RC-13 + scartati); esecuzione delegata a
+  IMPLEMENTATION-PLAN.md.

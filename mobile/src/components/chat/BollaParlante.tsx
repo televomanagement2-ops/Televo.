@@ -69,7 +69,11 @@ export function BollaParlante({ message, isMine, quoted, showTicks, readByPeer }
 
 const styles = StyleSheet.create({
   bubble: {
-    maxWidth: '80%',
+    // Il tetto di larghezza (80%) è imposto dalla colonna in MessaggioRow; qui la
+    // bolla riempie la colonna. `alignSelf:'flex-start'` evita che si stiri a
+    // tutta larghezza per i messaggi corti (deve avvolgere il testo).
+    maxWidth: '100%',
+    alignSelf: 'flex-start',
     borderRadius: radius.lg,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,

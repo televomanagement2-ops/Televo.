@@ -54,10 +54,17 @@ function MessaggioRowBase({
 export const MessaggioRow = memo(MessaggioRowBase);
 
 const styles = StyleSheet.create({
-  row: { paddingHorizontal: spacing.lg, marginVertical: 3 },
+  // `width:'100%'` è essenziale: senza, la riga si stringe al contenuto e il
+  // `maxWidth:'80%'` della bolla (BollaParlante) si calcola su una larghezza
+  // collassata → bolle strette che vanno a capo a metà parola e si sovrappongono.
+  // Con la riga a tutta larghezza, l'80% si riferisce allo schermo (corretto).
+  row: { width: '100%', paddingHorizontal: spacing.lg, marginVertical: 3 },
   rowMine: { alignItems: 'flex-end' },
   rowTheirs: { alignItems: 'flex-start' },
-  col: { maxWidth: '100%' },
+  // Il tetto di larghezza della bolla vive QUI (80% della riga a tutta larghezza):
+  // così l'80% si calcola su una base definita (lo schermo) e non su una larghezza
+  // collassata. La bolla dentro riempie la colonna (maxWidth:'100%').
+  col: { maxWidth: '80%' },
   sender: {
     color: colors.accentSoft,
     fontSize: fontSize.xs,

@@ -31,6 +31,7 @@ Deno.serve(async (req) => {
     profile, profilePrivate, consents, auraEvents, auraSnapshots,
     friendships, messages, drops, propsGiven, propsReceived,
     achievements, wallet, txFrom, txTo, earnings, devices, reports, gdprReqs,
+    savedMessages, convMemberships, contactHashes,
   ] = await Promise.all([
     db.from("profiles").select("*").eq("id", uid).maybeSingle(),
     db.from("profiles_private").select("*").eq("id", uid).maybeSingle(),
@@ -50,6 +51,10 @@ Deno.serve(async (req) => {
     db.from("devices").select("*").eq("user_id", uid),
     db.from("reports").select("*").eq("reporter_id", uid),
     db.from("gdpr_requests").select("*").eq("user_id", uid),
+    // Tabelle chat aggiunte in CM1 (RC-12): bookmark, membership, hash rubrica.
+    db.from("saved_messages").select("*").eq("user_id", uid),
+    db.from("conversation_members").select("*").eq("user_id", uid),
+    db.from("contact_hashes").select("*").eq("user_id", uid),
   ]);
 
   const data = {
@@ -70,6 +75,9 @@ Deno.serve(async (req) => {
     devices: devices.data ?? [],
     reports: reports.data ?? [],
     gdpr_requests: gdprReqs.data ?? [],
+    saved_messages: savedMessages.data ?? [],
+    conversation_memberships: convMemberships.data ?? [],
+    contact_hashes: contactHashes.data ?? [],
   };
 
   // Marca completate le richieste di export pendenti + audit.

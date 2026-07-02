@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(125);
+select plan(142);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -243,6 +243,64 @@ select has_function('public', 'match_contacts', array['text[]'],
   'match_contacts(text[]) esiste');
 select ok((select 'contacts_sync' = any(enum_range(null::public.consent_type)::text[])),
   'consent_type include contacts_sync');
+
+-- =============================================================================
+-- CM1 — hardening chat (20260702120000 + fix 20260702130000)
+-- =============================================================================
+-- Colonna edit-tracking + indice del rate-limit.
+select has_column('public', 'messages', 'edited_at', 'messages.edited_at esiste (edit 48h)');
+select has_index('public', 'messages', 'messages_sender_created_idx',
+  'indice rate-limit (sender_id, created_at) esiste');
+
+-- Trigger: lo storico resta, i duplicati introdotti dal primo hardening NO.
+select has_trigger('public', 'messages', 'messages_before_insert_trg',
+  'trigger before-insert storico presente');
+select hasnt_trigger('public', 'messages', 'messages_before_insert',
+  'nessun trigger before-insert duplicato');
+select has_trigger('public', 'messages', 'messages_before_update_trg',
+  'trigger before-update (finestra edit 48h) presente');
+select hasnt_trigger('public', 'messages', 'messages_before_update',
+  'vecchio nome del trigger before-update rimosso');
+select has_trigger('public', 'messages', 'messages_after_insert_bump_trg',
+  'trigger bump/hidden-reset presente');
+select hasnt_trigger('public', 'messages', 'messages_after_insert',
+  'trigger after-insert ridondante rimosso');
+
+-- Funzioni: presenza RPC, assenza delle funzioni pericolose/ridondanti.
+select has_function('public', 'get_peer_presence', array['uuid'],
+  'get_peer_presence(uuid) esiste');
+select hasnt_function('public', 'anonymize_user_data',
+  'anonymize_user_data droppata (era una falla: grant ad authenticated)');
+select hasnt_function('public', 'messages_after_insert',
+  'funzione messages_after_insert droppata (fusa nel bump)');
+
+-- Corpo di messages_before_insert: hardening presente E logica originale intatta.
+select ok((select prosrc not like '%peer_id%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'before_insert non referenzia colonne inesistenti (peer_id)');
+select ok((select prosrc like '%blocked_pair%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'before_insert applica il blocco DM (R-05)');
+select ok((select prosrc like '%rate_limited%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'before_insert applica il rate-limit');
+select ok((select prosrc like '%message_too_long%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'before_insert applica il cap 4096');
+select ok((select prosrc like '%invalid_expiry%' and prosrc like '%invalid_reply_to%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'before_insert conserva la logica originale (expiry + reply)');
+
+-- GDPR (RC-12): la cancellazione account copre le nuove tabelle chat.
+select ok((select prosrc like '%contact_hashes%' and prosrc like '%saved_messages%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'process_account_deletion'),
+  'process_account_deletion pulisce contact_hashes e saved_messages');
 
 select * from finish();
 rollback;

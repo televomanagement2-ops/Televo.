@@ -20,6 +20,7 @@ import {
   addConversationMember,
   clearConversationHistory,
   createGroupConversation,
+  fetchComposerDisabledReason,
   fetchConversationHeader,
   fetchConversations,
   fetchGroupSenders,
@@ -54,9 +55,13 @@ export const chatKeys = {
 
 type MessagesData = InfiniteData<MessageRow[], string | undefined>;
 
-/** Inserisce/aggiorna un messaggio nella cache infinita (dedup per id). */
+/**
+ * Inserisce/aggiorna un messaggio nella cache infinita (dedup per id).
+ * `chatKeys.messages(convId)` è un PREFISSO: la chiave reale include anche il
+ * cleared_at corrente (vedi useMessages) → setQueriesData copre ogni variante.
+ */
 function upsertMessage(queryClient: QueryClient, convId: string, msg: MessageRow) {
-  queryClient.setQueryData<MessagesData>(chatKeys.messages(convId), (old) => {
+  queryClient.setQueriesData<MessagesData>({ queryKey: chatKeys.messages(convId) }, (old) => {
     if (!old) return old;
     const exists = old.pages.some((p) => p.some((m) => m.id === msg.id));
     if (exists) {
@@ -129,15 +134,40 @@ export function useConversationSenders(convId: string, enabled: boolean) {
 
 // --- Messaggi (paginati) -----------------------------------------------------
 
-export function useMessages(convId: string) {
+/**
+ * Messaggi paginati della conversazione. `clearedAt` è il cleared_at della MIA
+ * membership (dall'header): `undefined` = header non ancora caricato → query
+ * spenta (evita il flash dei messaggi "cancellati"); `null` = nessuna
+ * cronologia cancellata. Fa parte della query key: dopo "Cancella cronologia"
+ * l'header invalidato porta un cleared_at nuovo → chiave nuova → refetch pulito
+ * filtrato lato server (niente race con la cache vecchia).
+ */
+export function useMessages(convId: string, clearedAt: string | null | undefined) {
   return useInfiniteQuery({
-    queryKey: chatKeys.messages(convId),
-    enabled: !!convId,
+    queryKey: [...chatKeys.messages(convId), clearedAt ?? null] as const,
+    enabled: !!convId && clearedAt !== undefined,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => fetchMessagesPage(convId, pageParam),
+    queryFn: ({ pageParam }) => fetchMessagesPage(convId, pageParam, MESSAGES_PAGE, clearedAt),
     // La pagina è "piena" → potrebbero esserci messaggi più vecchi.
     getNextPageParam: (lastPage) =>
       lastPage.length === MESSAGES_PAGE ? lastPage[lastPage.length - 1]?.created_at : undefined,
+  });
+}
+
+// --- Composer disabilitato (CM1 — §11.4) ---------------------------------------
+
+/**
+ * Motivo per cui il composer è disabilitato (null = libero di scrivere):
+ * sanzioni di moderazione proprie (mute/ban globali) e, nelle DM, blocco della
+ * coppia. `peerId` va passato solo per le DM (null per i gruppi).
+ */
+export function useComposerDisabledReason(peerId: string | null) {
+  const { session } = useAuth();
+  const uid = session?.user.id;
+  return useQuery({
+    queryKey: ['chat', 'composer-block', uid ?? 'anon', peerId ?? 'none'] as const,
+    enabled: !!uid,
+    queryFn: () => fetchComposerDisabledReason(uid as string, peerId),
   });
 }
 

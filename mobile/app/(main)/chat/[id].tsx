@@ -30,6 +30,7 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   useConversationHeader,
   useConversationOrg,
+  useComposerDisabledReason,
   useConversationRealtime,
   useConversationSenders,
   useDeleteMessage,
@@ -66,7 +67,9 @@ export default function Chat() {
   const uid = session?.user.id;
 
   const header = useConversationHeader(convId);
-  const messagesQ = useMessages(convId);
+  // clearedAt: undefined finché l'header non è pronto → query messaggi spenta
+  // (così "Cancella cronologia" filtra DENTRO la chat, senza flash dei vecchi).
+  const messagesQ = useMessages(convId, header.data ? header.data.myClearedAt ?? null : undefined);
   const send = useSendMessage(convId);
   const sendAudio = useSendAudioMessage(convId);
   const del = useDeleteMessage(convId);
@@ -99,6 +102,11 @@ export default function Chat() {
   const isGroup = (header.data?.type ?? 'dm') !== 'dm';
   const peerName = header.data?.peer?.username ?? null;
   const peerLastRead = header.data?.peerLastReadAt ?? null;
+
+  // CM1 §11.4: composer disabilitato con motivo (ban/mute globali; blocco in DM).
+  const composerBlock = useComposerDisabledReason(
+    !isGroup ? header.data?.peer?.id ?? null : null,
+  );
 
   // Nei gruppi il nome sopra le bolle viene dal mittente reale (non dal peer).
   const sendersQ = useConversationSenders(convId, isGroup);
@@ -399,7 +407,7 @@ export default function Chat() {
         behavior="padding"
         keyboardVerticalOffset={0}
       >
-        {header.isLoading || messagesQ.isLoading ? (
+        {header.isLoading || messagesQ.isPending ? (
           <LoadingSpinner label="Carico la conversazione…" style={styles.flex} />
         ) : !header.data ? (
           <View style={styles.center}>
@@ -432,6 +440,7 @@ export default function Chat() {
           onChangeText={(t) => setDraft(convId, t)}
           onSend={handleSend}
           sending={send.isPending}
+          disabledReason={composerBlock.data ?? null}
           reply={reply ? { author: reply.sender_id === uid ? 'Tu' : peerName, text: previewText(reply) } : null}
           onCancelReply={() => setReplyTo(convId, null)}
           onAttach={() => Alert.alert('Presto', 'Gli allegati arrivano presto.')}

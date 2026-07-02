@@ -175,11 +175,13 @@ funziona end-to-end; il working tree è pulito.
 - Publication realtime: verificare che il piano Free non limiti i canali necessari.
 
 **Checklist**:
-- [ ] WIP committato
-- [ ] `migration list`: locale = remoto (nessuna pendente)
-- [ ] pgTAP: 125/125 verdi sul remoto
-- [ ] Realtime: evento INSERT ricevuto in app
-- [ ] Cron/Vault verificati
+- [x] WIP committato (`d5c1272`)
+- [x] `migration list`: locale = remoto (nessuna pendente)
+- [x] pgTAP: 142/142 verdi sul remoto (suite eseguita via pooler il 2026-07-02)
+- [ ] Realtime: evento INSERT ricevuto in app (publication verificata server-side:
+      `messages`, `conversations`, `conversation_members` — resta lo smoke su device)
+- [x] Cron/Vault verificati (7 cron attivi; i 3 segreti push registrati in Vault
+      il 2026-07-02: `edge_base_url`, `service_role_key`, `cron_secret`)
 
 **Criteri di completamento**: tutte le checkbox; nessuna regressione su login/profilo.
 
@@ -231,14 +233,17 @@ scegliere l'approccio meno invasivo e testare il login/profilo; il rate-limit no
 deve colpire l'uso legittimo (soglia larga).
 
 **Checklist**:
-- [ ] Migrazione hardening applicata (push) + pgTAP estesi verdi
-- [ ] Cancella cronologia funziona DENTRO la chat
-- [ ] Vocale scaduto non visibile anche prima del cron
-- [ ] Invio rifiutato in DM bloccata (e composer disabilitato con motivo)
-- [ ] Composer disabilitato per mutato/bannato con messaggio
-- [ ] DM nascosta riappare al nuovo messaggio
-- [ ] Export GDPR contiene le nuove tabelle
-- [ ] `tsc --noEmit` + `eslint` puliti
+- [x] Migrazione hardening applicata (push) + pgTAP estesi verdi (142/142 sul remoto)
+      — ⚠️ la prima stesura (20260702120000) aveva regressioni gravi, corrette da
+      `20260702130000_chat_hardening_fix.sql` (vedi header della migrazione)
+- [x] Cancella cronologia funziona DENTRO la chat (filtro `cleared_at` lato server)
+- [x] Vocale scaduto non visibile anche prima del cron (filtro `expires_at` lato server)
+- [x] Invio rifiutato in DM bloccata (trigger `blocked_pair`) e composer disabilitato con motivo
+- [x] Composer disabilitato per mutato/bannato con messaggio (`useComposerDisabledReason`)
+- [x] DM nascosta riappare al nuovo messaggio (reset `hidden_at` per TUTTI i membri)
+- [ ] Export GDPR contiene le nuove tabelle (codice pronto in `gdpr-export/index.ts`;
+      il deploy CLI risponde 403 per privilegi account → deployare dall'account owner)
+- [x] `tsc --noEmit` + `eslint` puliti
 
 **Criteri di completamento**: i 6 difetti di §1.3 chiusi e coperti da test/pgTAP.
 

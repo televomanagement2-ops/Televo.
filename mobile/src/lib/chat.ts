@@ -10,6 +10,7 @@
 import { supabase } from '@/lib/supabase';
 import { callRpc } from '@/lib/rpc';
 import { fetchProfileCards } from '@/lib/social';
+import { timeHHmm } from '@/lib/datetime';
 import type {
   ConversationPreview,
   ConversationRow,
@@ -186,6 +187,8 @@ export interface ConversationHeader {
   peer: ProfileCard | null;
   /** last_read_at del peer (DM): base della doppia spunta. */
   peerLastReadAt: string | null;
+  /** cleared_at della MIA membership: base del filtro "cancella cronologia". */
+  myClearedAt: string | null;
   streak: number | null;
   memberCount: number;
   /** Membri con ruolo e profilo (popolato solo per group/house; DM = vuoto). */
@@ -212,12 +215,13 @@ export async function fetchConversationHeader(
 
   const { data: memData } = await supabase
     .from('conversation_members')
-    .select('user_id, role, last_read_at')
+    .select('user_id, role, last_read_at, cleared_at')
     .eq('conversation_id', convId);
   const members = (memData ?? []) as unknown as {
     user_id: string;
     role: ConversationRole;
     last_read_at: string;
+    cleared_at: string | null;
   }[];
 
   let peer: ProfileCard | null = null;
@@ -254,6 +258,7 @@ export async function fetchConversationHeader(
     avatarUrl: c.type === 'dm' ? peer?.avatarUrl ?? null : c.avatar_url,
     peer,
     peerLastReadAt,
+    myClearedAt: members.find((m) => m.user_id === uid)?.cleared_at ?? null,
     streak,
     memberCount: members.length,
     members: memberCards,
@@ -376,7 +381,13 @@ export async function fetchSavedMessages(uid: string): Promise<SavedMessage[]> {
 
 // --- Messaggi ----------------------------------------------------------------
 
-/** Una pagina di messaggi (desc, più recenti prima). `before` = paginazione indietro. */
+/**
+ * Una pagina di messaggi (desc, più recenti prima). `before` = paginazione
+ * indietro. I filtri "cancella cronologia" (created_at <= cleared_at) e "vocale
+ * scaduto" (expires_at nel passato, prima del cron expire_content) sono applicati
+ * LATO SERVER: filtrare lato client svuoterebbe le pagine rompendo la semantica
+ * del cursore (pagina "piena" = potrebbero esserci messaggi più vecchi).
+ */
 export async function fetchMessagesPage(
   convId: string,
   before?: string,
@@ -387,29 +398,14 @@ export async function fetchMessagesPage(
     .from('messages')
     .select('*')
     .eq('conversation_id', convId)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .order('created_at', { ascending: false })
     .limit(limit);
+  if (clearedAt) q = q.gt('created_at', clearedAt);
   if (before) q = q.lt('created_at', before);
   const { data, error } = await q;
   if (error) throw error;
-
-  let msgs = (data ?? []) as unknown as MessageRow[];
-
-  // Filtra lato client: escludi messaggi <= clearedAt e vocali scaduti
-  const now = new Date();
-  msgs = msgs.filter((m) => {
-    // Escludi se <= clearedAt (cronologia cancellata per me)
-    if (clearedAt && new Date(m.created_at) <= new Date(clearedAt)) {
-      return false;
-    }
-    // Escludi vocali scaduti (expires_at nel passato)
-    if (m.type === 'audio' && m.expires_at && new Date(m.expires_at) < now) {
-      return false;
-    }
-    return true;
-  });
-
-  return msgs;
+  return (data ?? []) as unknown as MessageRow[];
 }
 
 /** Invia un messaggio di testo (il trigger forza sender/membership/created_at). */
@@ -484,15 +480,13 @@ export function previewText(m: MessageRow | null): string {
 }
 
 // =============================================================================
-// Helper: calcola il motivo per cui il composer è disabilitato (CM1 — safety)
+// Composer disabilitato (CM1 — §11.4): motivo calcolato da sanzioni e blocchi
 // =============================================================================
 /**
- * Ritorna il motivo per cui l'utente NON può scrivere nella conversazione.
- * Se libero di scrivere, ritorna undefined. I motivi sono:
- * - Mutato (sanzione moderazione)
- * - Bannato (account sospeso)
- * - Ha bloccato il peer (DM)
- * - È bloccato dal peer (DM)
+ * Ritorna il motivo per cui l'utente NON può scrivere nella conversazione
+ * (undefined = libero): bannato, mutato (sanzione moderazione GLOBALE), oppure
+ * blocco della coppia in DM. Se è il PEER ad aver bloccato, il testo resta
+ * neutro: non riveliamo il blocco altrui (l'insert fallirebbe comunque a DB).
  */
 export function getComposerDisabledReason(opts: {
   myMutedUntil?: string | null;
@@ -500,22 +494,64 @@ export function getComposerDisabledReason(opts: {
   isBlockedByPeer?: boolean;
   isPeerBlocked?: boolean;
 }): string | undefined {
-  const now = new Date();
-
   if (opts.myBannedAt) {
     return 'Account sospeso';
   }
-  if (opts.myMutedUntil && new Date(opts.myMutedUntil) > now) {
-    const until = new Date(opts.myMutedUntil);
-    return `Sei silenziato fino alle ${until.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
+  if (opts.myMutedUntil && new Date(opts.myMutedUntil) > new Date()) {
+    return `Sei silenziato fino alle ${timeHHmm(opts.myMutedUntil)}`;
   }
   if (opts.isPeerBlocked) {
     return 'Hai bloccato questo utente';
   }
   if (opts.isBlockedByPeer) {
-    return 'Questo utente ti ha bloccato';
+    return 'Non puoi scrivere in questa conversazione';
   }
   return undefined;
+}
+
+/**
+ * Legge lo stato che disabilita il composer: sanzioni proprie
+ * (profiles.muted_until / banned_at) e, nelle DM, l'eventuale blocco della
+ * coppia (friendships, coppia normalizzata user_id < friend_id).
+ */
+export async function fetchComposerDisabledReason(
+  uid: string,
+  peerId: string | null,
+): Promise<string | null> {
+  const { data: meData, error: meErr } = await supabase
+    .from('profiles')
+    .select('muted_until, banned_at')
+    .eq('id', uid)
+    .maybeSingle();
+  if (meErr) throw meErr;
+  const me = meData as unknown as { muted_until: string | null; banned_at: string | null } | null;
+
+  let isPeerBlocked = false;
+  let isBlockedByPeer = false;
+  if (peerId) {
+    const [a, b] = uid < peerId ? [uid, peerId] : [peerId, uid];
+    const { data: frData, error: frErr } = await supabase
+      .from('friendships')
+      .select('status, blocked_by')
+      .eq('user_id', a)
+      .eq('friend_id', b)
+      .maybeSingle();
+    if (frErr) throw frErr;
+    const fr = frData as unknown as { status: string; blocked_by: string | null } | null;
+    if (fr?.status === 'blocked') {
+      isPeerBlocked = fr.blocked_by === uid;
+      isBlockedByPeer = !isPeerBlocked;
+    }
+  }
+
+  return (
+    getComposerDisabledReason({
+      myMutedUntil: me?.muted_until,
+      myBannedAt: me?.banned_at,
+      isPeerBlocked,
+      isBlockedByPeer,
+    }) ?? null
+  );
 }
 
 // Ri-esporta per comodità nei componenti.

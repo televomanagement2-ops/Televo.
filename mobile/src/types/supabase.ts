@@ -66,6 +66,8 @@ export interface Database {
           last_active_at: string | null; // "ultimo accesso" (heartbeat via touch_presence)
           show_last_seen: boolean; // toggle privacy: mostra l'ultimo accesso
           show_read_receipts: boolean; // toggle privacy: spunte di lettura
+          muted_until: string | null; // sanzione moderazione (mute GLOBALE, non per-conversazione)
+          banned_at: string | null; // sanzione moderazione (ban account)
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -437,6 +439,11 @@ export interface Database {
       unsave_message: { Args: { p_message: string }; Returns: Json };
       // Presenza "ultimo accesso" (§3.13) — jsonb { ok }.
       touch_presence: { Args: Record<string, never>; Returns: Json };
+      // Presenza del peer, privacy-safe (CM1, R-03): amici/co-membri + reciprocità.
+      get_peer_presence: {
+        Args: { p_peer_user: string };
+        Returns: { online: boolean | null; last_active_at: string | null };
+      };
       // Rubrica (D1) — register: jsonb { ok }; match: righe { user_id, username, avatar_url }.
       register_contact_hash: { Args: { p_kind: 'phone' | 'email'; p_hash: string }; Returns: Json };
       match_contacts: {

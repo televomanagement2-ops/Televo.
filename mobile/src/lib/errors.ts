@@ -31,6 +31,15 @@ const MESSAGES: Record<string, string> = {
   invalid_reply_to: 'Il messaggio a cui rispondi non è valido.',
   invalid_expiry: 'Scadenza del vocale non valida.',
   message_not_found: 'Messaggio non trovato.',
+  // Blocco e invio (CM1)
+  blocked_pair: 'Hai bloccato questo utente. Sblocca per scrivere.',
+  message_too_long: 'Il messaggio è troppo lungo (max 4096 caratteri).',
+  rate_limited: 'Stai scrivendo troppo velocemente. Aspetta un secondo.',
+  edit_window_expired: 'Puoi editare solo nei primi 48h dal messaggio.',
+  cannot_edit_message: 'Questo messaggio non può essere editato.',
+  // Moderazione (CM1)
+  user_muted: 'Sei silenziato fino a un certo orario. Torna dopo.',
+  user_banned: 'Il tuo account è stato sospeso.',
   // Organizzazione chat (D4)
   invalid_flag: 'Azione non riconosciuta.',
   invalid_mute: 'Durata del silenzia non valida.',

@@ -165,6 +165,7 @@ export interface Database {
           media_type: string | null; // es. 'image'
           reply_to: string | null;
           expires_at: string | null;
+          edited_at: string | null; // timestamp ultima modifica (max 48h dall'invio)
           created_at: string;
           deleted_at: string | null;
         };

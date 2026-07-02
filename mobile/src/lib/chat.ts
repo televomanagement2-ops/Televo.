@@ -381,6 +381,7 @@ export async function fetchMessagesPage(
   convId: string,
   before?: string,
   limit = MESSAGES_PAGE,
+  clearedAt?: string | null,
 ): Promise<MessageRow[]> {
   let q = supabase
     .from('messages')
@@ -391,7 +392,24 @@ export async function fetchMessagesPage(
   if (before) q = q.lt('created_at', before);
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as unknown as MessageRow[];
+
+  let msgs = (data ?? []) as unknown as MessageRow[];
+
+  // Filtra lato client: escludi messaggi <= clearedAt e vocali scaduti
+  const now = new Date();
+  msgs = msgs.filter((m) => {
+    // Escludi se <= clearedAt (cronologia cancellata per me)
+    if (clearedAt && new Date(m.created_at) <= new Date(clearedAt)) {
+      return false;
+    }
+    // Escludi vocali scaduti (expires_at nel passato)
+    if (m.type === 'audio' && m.expires_at && new Date(m.expires_at) < now) {
+      return false;
+    }
+    return true;
+  });
+
+  return msgs;
 }
 
 /** Invia un messaggio di testo (il trigger forza sender/membership/created_at). */
@@ -463,6 +481,41 @@ export function previewText(m: MessageRow | null): string {
     default:
       return 'Messaggio';
   }
+}
+
+// =============================================================================
+// Helper: calcola il motivo per cui il composer è disabilitato (CM1 — safety)
+// =============================================================================
+/**
+ * Ritorna il motivo per cui l'utente NON può scrivere nella conversazione.
+ * Se libero di scrivere, ritorna undefined. I motivi sono:
+ * - Mutato (sanzione moderazione)
+ * - Bannato (account sospeso)
+ * - Ha bloccato il peer (DM)
+ * - È bloccato dal peer (DM)
+ */
+export function getComposerDisabledReason(opts: {
+  myMutedUntil?: string | null;
+  myBannedAt?: string | null;
+  isBlockedByPeer?: boolean;
+  isPeerBlocked?: boolean;
+}): string | undefined {
+  const now = new Date();
+
+  if (opts.myBannedAt) {
+    return 'Account sospeso';
+  }
+  if (opts.myMutedUntil && new Date(opts.myMutedUntil) > now) {
+    const until = new Date(opts.myMutedUntil);
+    return `Sei silenziato fino alle ${until.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+  if (opts.isPeerBlocked) {
+    return 'Hai bloccato questo utente';
+  }
+  if (opts.isBlockedByPeer) {
+    return 'Questo utente ti ha bloccato';
+  }
+  return undefined;
 }
 
 // Ri-esporta per comodità nei componenti.

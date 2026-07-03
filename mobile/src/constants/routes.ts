@@ -33,6 +33,7 @@ export const ROUTES = {
   amici: '/amici',
   nuovoGruppo: '/chat/nuovo-gruppo',
   messaggiImportante: '/messaggi/importante',
+  messaggiImpostazioni: '/messaggi/impostazioni',
 } as const;
 
 /** Route dinamiche: costruttori tipizzati per gli id (in arrivo nei prossimi M). */

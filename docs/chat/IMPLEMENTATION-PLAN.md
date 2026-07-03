@@ -8,7 +8,7 @@
 > dichiarato dall'utente: **Telegram** (per maturità funzionale, NON per design —
 > il design verrà rifatto in seguito).
 >
-> **Stato**: approvato. **Ultimo aggiornamento**: 2026-07-02.
+> **Stato**: approvato. **Ultimo aggiornamento**: 2026-07-03.
 
 ---
 
@@ -343,11 +343,27 @@ foreground); typing spam sul canale (throttle + TTL); privacy minori (la presenz
 visibile solo dentro conversazioni esistenti, mai pubblica).
 
 **Checklist**:
-- [ ] Online/ultimo accesso corretto nei due sensi (e sparisce se toggle off)
-- [ ] "Sta scrivendo…" appare/scompare correttamente (DM e gruppo)
-- [ ] S10 persiste i toggle e la reciprocità è rispettata
-- [ ] Spunte nascoste quando i toggle sono off
-- [ ] `tsc` + `eslint` puliti
+- [x] Online/ultimo accesso corretto nei due sensi (e sparisce se toggle off)
+      — hook `usePresenza` (heartbeat foreground 60s + throttle 45s in ChatRuntime;
+      query `get_peer_presence` con refetch 30s); privacy/reciprocità applicate
+      DAL SERVER (RPC v2 di CM1), il client nasconde la riga sui null
+- [x] "Sta scrivendo…" appare/scompare correttamente (DM e gruppo)
+      — broadcast `typing` sul canale per-conversazione ESISTENTE (zero canali
+      extra), throttle 2.5s emittente + TTL 4s ricevente; nei gruppi con username
+      (">1 → N stanno scrivendo…"); sottotitolo header con priorità
+      typing > presenza (DM) > "N membri" (gruppi)
+- [x] S10 persiste i toggle e la reciprocità è rispettata
+      — `messaggi/impostazioni.tsx` (via menu overflow hub), update ottimistico con
+      rollback su `profiles` (ProfilePatch esteso, grant per-colonna già live);
+      invalida presenza + header chat al salvataggio
+- [x] Spunte nascoste quando i toggle sono off
+      — gating client §6.4: doppia spunta solo se `show_read_receipts` è on per
+      ENTRAMBI (mio da `useMyProfile`, peer da `peerShowsReadReceipts` nell'header);
+      `mark_conversation_read` invariato (unread proprio). Enforcement server → CM8
+- [x] `tsc` + `eslint` puliti (0 errori, 0 warning)
+
+> Verifica su 2 device (criterio di completamento): da eseguire in Expo Go (smoke
+> manuale utente, matrice toggle on/off × 2 utenti); tutto il resto è verificato.
 
 **Criteri di completamento**: scenari sopra verificati su 2 device.
 

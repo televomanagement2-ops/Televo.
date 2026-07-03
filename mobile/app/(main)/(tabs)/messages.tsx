@@ -1,8 +1,8 @@
 // =============================================================================
 // Messaggi — hub delle conversazioni (S1). Lista chat ordinata per attività, con
 // menu contestuale (S16-bis: silenzia/archivia/fissa/segna letto/elimina) e menu
-// overflow (S6: Nuovo gruppo / Importante). I drops strip e "Contatti su Televo"
-// arrivano nei blocchi successivi.
+// overflow (S6: Nuovo gruppo / Importante / Impostazioni). I drops strip e
+// "Contatti su Televo" arrivano nei blocchi successivi.
 // =============================================================================
 
 import { useCallback } from 'react';
@@ -46,11 +46,12 @@ export default function Messages() {
     }, [refetch]),
   );
 
-  // Menu overflow dell'hub (S6): Nuovo gruppo / Importante.
+  // Menu overflow dell'hub (S6): Nuovo gruppo / Importante / Impostazioni (S10).
   const openHubMenu = () => {
     Alert.alert('Messaggi', undefined, [
       { text: 'Nuovo gruppo', onPress: () => router.push(ROUTES.nuovoGruppo) },
       { text: 'Importante', onPress: () => router.push(ROUTES.messaggiImportante) },
+      { text: 'Impostazioni', onPress: () => router.push(ROUTES.messaggiImpostazioni) },
       { text: 'Annulla', style: 'cancel' },
     ]);
   };

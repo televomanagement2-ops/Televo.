@@ -3,8 +3,8 @@
 // =============================================================================
 // Letture via RLS (il profilo proprio è sempre visibile a sé). La modifica scrive
 // SOLO le colonne con GRANT update su `profiles` (display_name, status_text,
-// username, avatar_url): i campi di sistema (aura_*, age_verified, school_id) NON
-// sono toccabili dal client. Al salvataggio invalidiamo le query e ricarichiamo
+// username, avatar_url + i toggle privacy chat show_last_seen/show_read_receipts):
+// i campi di sistema (aura_*, age_verified, school_id) NON sono toccabili dal client. Al salvataggio invalidiamo le query e ricarichiamo
 // il profilo in authStore (così l'header/menu si aggiornano subito).
 
 import { useCallback } from 'react';
@@ -43,6 +43,9 @@ export interface ProfilePatch {
   status_text?: string | null;
   username?: string;
   avatar_url?: string | null;
+  /** Toggle privacy chat (S10, CM3) — grant per-colonna già live a DB. */
+  show_last_seen?: boolean;
+  show_read_receipts?: boolean;
 }
 
 /** Aggiorna il profilo proprio; invalida le query e ricarica authStore. */

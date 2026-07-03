@@ -6,6 +6,8 @@
 // lato server cosa ricevo (solo le mie conversazioni). Richiede che le tabelle
 // siano nella publication `supabase_realtime` (migrazione 20260701010000): finché
 // non è pushata, gli eventi non arrivano e la UI ricade sul refetch on-focus.
+// CM3: sul canale della conversazione viaggia anche il broadcast `typing`
+// ("sta scrivendo…", RC-03) — effimero, nessuna persistenza.
 
 import { supabase } from '@/lib/supabase';
 import type { MessageRow } from '@/types';
@@ -17,12 +19,16 @@ export interface ConversationRealtimeHandlers {
   onUpdate?: (m: MessageRow) => void;
   /** Un membro ha aggiornato il proprio stato (es. last_read_at → spunte). */
   onMemberUpdate?: () => void;
+  /** Un altro membro sta scrivendo (CM3, RC-03 — evento broadcast effimero). */
+  onTyping?: (userId: string) => void;
 }
 
-/**
- * Si iscrive agli eventi realtime di una conversazione. Restituisce la funzione
- * di cleanup (rimuove il canale). Sicura da chiamare in un useEffect.
- */
+/** Sottoscrizione a una conversazione: cleanup + invio del segnale "sta scrivendo". */
+export interface ConversationSubscription {
+  cleanup: () => void;
+  /** Emette l'evento typing sul canale (no-op finché il canale non è joined). */
+  sendTyping: (userId: string) => void;
+}
 /**
  * Canale GLOBALE dell'hub (CM2, §8.5): un solo canale per tutta la shell, su
  * TUTTI gli INSERT di `messages` visibili all'utente (la RLS filtra lato server
@@ -44,10 +50,21 @@ export function subscribeMessagesAll(onInsert: (m: MessageRow) => void): () => v
   };
 }
 
+/**
+ * Si iscrive agli eventi realtime di una conversazione (postgres_changes +
+ * broadcast typing sullo STESSO canale: zero canali extra sul piano Free).
+ * Sicura da chiamare in un useEffect (usare `cleanup` come teardown).
+ *
+ * Nota privacy (compromesso CM3, documentato nel piano chat): il topic broadcast
+ * non è un canale privato Realtime — è raggiungibile solo conoscendo l'UUID
+ * della conversazione (non indovinabile) e trasporta solo lo user_id di chi
+ * digita. L'upgrade a canali privati (RLS su realtime.messages) è un
+ * affinamento CM8, coerente col compromesso già accettato per last_active_at.
+ */
 export function subscribeConversation(
   convId: string,
   handlers: ConversationRealtimeHandlers,
-): () => void {
+): ConversationSubscription {
   const filter = `conversation_id=eq.${convId}`;
   const channel = supabase
     .channel(`chat:${convId}`)
@@ -66,9 +83,22 @@ export function subscribeConversation(
       { event: 'UPDATE', schema: 'public', table: 'conversation_members', filter },
       () => handlers.onMemberUpdate?.(),
     )
+    .on('broadcast', { event: 'typing' }, (payload) => {
+      const userId = (payload.payload as { user_id?: string } | undefined)?.user_id;
+      if (userId) handlers.onTyping?.(userId);
+    })
     .subscribe();
 
-  return () => {
-    void supabase.removeChannel(channel);
+  return {
+    cleanup: () => {
+      void supabase.removeChannel(channel);
+    },
+    sendTyping: (userId: string) => {
+      // Prima del join l'invio fallirebbe: evento effimero, si perde senza danni.
+      if (channel.state !== 'joined') return;
+      void channel
+        .send({ type: 'broadcast', event: 'typing', payload: { user_id: userId } })
+        .catch(() => {});
+    },
   };
 }

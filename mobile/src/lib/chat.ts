@@ -187,6 +187,8 @@ export interface ConversationHeader {
   peer: ProfileCard | null;
   /** last_read_at del peer (DM): base della doppia spunta. */
   peerLastReadAt: string | null;
+  /** Toggle spunte del peer (DM, §6.4): se off — o se off il MIO — solo ✓ singola. */
+  peerShowsReadReceipts: boolean;
   /** cleared_at della MIA membership: base del filtro "cancella cronologia". */
   myClearedAt: string | null;
   streak: number | null;
@@ -226,12 +228,26 @@ export async function fetchConversationHeader(
 
   let peer: ProfileCard | null = null;
   let peerLastReadAt: string | null = null;
+  let peerShowsReadReceipts = true;
   let memberCards: ConversationMemberCard[] = [];
   if (c.type === 'dm') {
     const peerRow = members.find((m) => m.user_id !== uid);
     if (peerRow) {
-      peer = (await fetchProfileCards([peerRow.user_id])).get(peerRow.user_id) ?? null;
+      // Toggle spunte del peer (CM3, §6.4): lettura diretta della colonna
+      // (compromesso CM1 documentato — l'enforcement server è rimandato a CM8).
+      const [cards, prefRes] = await Promise.all([
+        fetchProfileCards([peerRow.user_id]),
+        supabase
+          .from('profiles')
+          .select('show_read_receipts')
+          .eq('id', peerRow.user_id)
+          .maybeSingle(),
+      ]);
+      peer = cards.get(peerRow.user_id) ?? null;
       peerLastReadAt = peerRow.last_read_at;
+      peerShowsReadReceipts =
+        (prefRes.data as unknown as { show_read_receipts: boolean } | null)
+          ?.show_read_receipts ?? true;
     }
   } else {
     // Group/house: risolvi il profilo di ogni membro per la schermata Info.
@@ -258,6 +274,7 @@ export async function fetchConversationHeader(
     avatarUrl: c.type === 'dm' ? peer?.avatarUrl ?? null : c.avatar_url,
     peer,
     peerLastReadAt,
+    peerShowsReadReceipts,
     myClearedAt: members.find((m) => m.user_id === uid)?.cleared_at ?? null,
     streak,
     memberCount: members.length,

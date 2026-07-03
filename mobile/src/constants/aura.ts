@@ -109,7 +109,7 @@ function rgbToHex(r: number, g: number, b: number): string {
  */
 export function auraRingColor(percent: number): string {
   const p = Math.max(0, Math.min(100, percent));
-  const stops: ReadonlyArray<{ at: number; color: string }> = AURA_RING_STOPS;
+  const stops: readonly { at: number; color: string }[] = AURA_RING_STOPS;
   const first = stops[0] ?? { at: 0, color: '#FF3B30' };
   const last = stops[stops.length - 1] ?? first;
   if (p <= first.at) return first.color;

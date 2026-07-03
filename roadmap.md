@@ -4,7 +4,7 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-02
+> **Ultimo aggiornamento:** 2026-07-03
 
 ---
 
@@ -244,8 +244,15 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
   canale realtime globale hub + badge tab Messaggi, pill "nuovi messaggi",
   scroll-to-quoted con highlight, Copia, linkify, raggruppamento bolle, haptic.
   Da fare: smoke manuale su 2 device.
-- **Prossimo**: CM3 (presenza/typing/S10) → CM4 (edit/inoltro/reazioni/ricerca/
-  gruppi) → … → CM8. Dettagli, rischi e checklist nel piano dedicato.
+- ✅ **CM3 fatto** (2026-07-03, SOLO frontend — il backend era già live da CM1):
+  presenza "online / ultimo accesso" nell'header DM (heartbeat `touch_presence`
+  foreground + query `get_peer_presence` con privacy/reciprocità server-side),
+  "sta scrivendo…" via broadcast sul canale per-conversazione esistente (DM e
+  gruppi, throttle 2.5s + TTL 4s), S10 `messaggi/impostazioni.tsx` (toggle
+  ultimo accesso/spunte con update ottimistico), gating client delle spunte ✓✓
+  (§6.4, reciprocità). Da fare: smoke manuale su 2 device.
+- **Prossimo**: CM4 (edit/inoltro/reazioni/ricerca/gruppi) → … → CM8. Dettagli,
+  rischi e checklist nel piano dedicato.
 - **Verifica:** DM solo tra amici, vocale che scade a 24h, streak con freeze +
   criteri di completamento per milestone in `docs/chat/IMPLEMENTATION-PLAN.md`.
 

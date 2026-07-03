@@ -6,7 +6,7 @@
 // realtime aggiorna la cache in-place (dedup per id) e, in mancanza (publication
 // non ancora pushata), la UI ricade sul refetch on-focus.
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useInfiniteQuery,
   useMutation,
@@ -41,6 +41,7 @@ import { subscribeConversation, subscribeMessagesAll } from '@/lib/chat-realtime
 import { chatKeys, conversationsPrefix, upsertMessage } from '@/lib/chat-cache';
 import { enqueueAudio, enqueueText, flushOutbox, retrySend } from '@/lib/outbox';
 import { initRete, onRiconnessione } from '@/lib/rete';
+import { usePresenceHeartbeat } from '@/hooks/usePresenza';
 import { useChatStore } from '@/store/chatStore';
 import type { MessageRow } from '@/types';
 import type { ConversationType } from '@/types/supabase';
@@ -299,20 +300,46 @@ export function useSaveMessage() {
 
 // --- Realtime ----------------------------------------------------------------
 
+// Typing (CM3, RC-03): TTL lato ricevente e throttle lato emittente.
+const TYPING_TTL_MS = 4_000;
+const TYPING_THROTTLE_MS = 2_500;
+
 /**
  * Aggancia il realtime della conversazione aperta: aggiorna la cache dei messaggi,
  * invalida l'header (spunte del peer) e chiama `onIncoming` sui messaggi ALTRUI
  * (per segnare letto). Cleanup automatico.
+ *
+ * CM3: gestisce anche il "sta scrivendo…" (broadcast sullo stesso canale) e
+ * ritorna `{ typingUserIds, sendTyping }`: gli id di chi sta digitando ORA
+ * (scadono dopo 4s senza nuovi eventi) e l'emissione del proprio typing
+ * (già throttlata a ~2.5s — il chiamante la invoca a ogni battuta).
  */
 export function useConversationRealtime(convId: string, onIncoming?: (m: MessageRow) => void) {
   const queryClient = useQueryClient();
   const { session } = useAuth();
   const uid = session?.user.id;
 
+  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
+  // Timer di scadenza per utente + invio agganciato al canale corrente via ref
+  // (così `sendTyping` resta stabile tra le ri-sottoscrizioni).
+  const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const sendTypingRef = useRef<(userId: string) => void>(() => {});
+  const lastTypingSent = useRef(0);
+
   useEffect(() => {
     if (!convId) return;
-    const unsub = subscribeConversation(convId, {
+
+    const clearTyping = (userId: string) => {
+      const t = typingTimers.current.get(userId);
+      if (t) clearTimeout(t);
+      typingTimers.current.delete(userId);
+      setTypingUserIds((ids) => (ids.includes(userId) ? ids.filter((x) => x !== userId) : ids));
+    };
+
+    const sub = subscribeConversation(convId, {
       onInsert: (m) => {
+        // Chi invia un messaggio ha smesso di scrivere: via l'indicatore subito.
+        clearTyping(m.sender_id);
         upsertMessage(queryClient, convId, m);
         if (uid) void queryClient.invalidateQueries({ queryKey: conversationsPrefix(uid) });
         if (m.sender_id !== uid) onIncoming?.(m);
@@ -320,9 +347,38 @@ export function useConversationRealtime(convId: string, onIncoming?: (m: Message
       onUpdate: (m) => upsertMessage(queryClient, convId, m),
       onMemberUpdate: () =>
         void queryClient.invalidateQueries({ queryKey: chatKeys.header(convId) }),
+      onTyping: (userId) => {
+        if (userId === uid) return;
+        const prev = typingTimers.current.get(userId);
+        if (prev) clearTimeout(prev);
+        else setTypingUserIds((ids) => [...ids, userId]);
+        typingTimers.current.set(
+          userId,
+          setTimeout(() => clearTyping(userId), TYPING_TTL_MS),
+        );
+      },
     });
-    return unsub;
+    sendTypingRef.current = sub.sendTyping;
+
+    const timers = typingTimers.current;
+    return () => {
+      sub.cleanup();
+      sendTypingRef.current = () => {};
+      for (const t of timers.values()) clearTimeout(t);
+      timers.clear();
+      setTypingUserIds([]);
+    };
   }, [convId, uid, queryClient, onIncoming]);
+
+  const sendTyping = useCallback(() => {
+    if (!uid) return;
+    const now = Date.now();
+    if (now - lastTypingSent.current < TYPING_THROTTLE_MS) return;
+    lastTypingSent.current = now;
+    sendTypingRef.current(uid);
+  }, [uid]);
+
+  return { typingUserIds, sendTyping };
 }
 
 // --- Outbox: invio ottimistico (CM2, RC-01/RC-02) ------------------------------
@@ -380,12 +436,15 @@ export function useOutbox(convId: string) {
  * 2. canale realtime GLOBALE sugli INSERT di `messages` (la RLS filtra lato
  *    server) → cache della conversazione + lista chat/badge aggiornati live
  *    senza aprire la chat (§8.5);
- * 3. alla riconnessione, flush sequenziale dell'outbox (RC-02).
+ * 3. alla riconnessione, flush sequenziale dell'outbox (RC-02);
+ * 4. heartbeat di presenza (CM3, RC-04): touch_presence solo in foreground.
  */
 export function useChatRuntime() {
   const queryClient = useQueryClient();
   const { session } = useAuth();
   const uid = session?.user.id;
+
+  usePresenceHeartbeat();
 
   useEffect(() => {
     initRete();

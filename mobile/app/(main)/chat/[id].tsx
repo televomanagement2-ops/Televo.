@@ -6,6 +6,8 @@
 // via outbox (bolla pending immediata, failed con Riprova/Elimina, offline-safe),
 // pill "nuovi messaggi ↓", scroll-to-quoted con highlight, Copia, linkify,
 // raggruppamento bolle consecutive, haptic all'invio, banner offline.
+// CM3: sottotitolo header (typing > presenza DM > "N membri"), spunte gated dai
+// toggle privacy (reciprocità R-03), emissione "sta scrivendo…" dal composer.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -44,6 +46,8 @@ import {
   useOutbox,
   useSaveMessage,
 } from '@/hooks/useChat';
+import { usePeerPresence, presenceLabel } from '@/hooks/usePresenza';
+import { useMyProfile } from '@/hooks/useProfilo';
 import { useChatStore } from '@/store/chatStore';
 import { previewText } from '@/lib/chat';
 import { useOnline } from '@/lib/rete';
@@ -129,7 +133,8 @@ export default function Chat() {
     markReadRef.current();
     if (!atBottomRef.current) setNewBelow(true);
   }, []);
-  useConversationRealtime(convId, onIncoming);
+  // CM3: il realtime della conversazione espone anche typing (RC-03).
+  const { typingUserIds, sendTyping } = useConversationRealtime(convId, onIncoming);
 
   // Messaggi: pagine desc (più recenti prima). asc = per costruire i separatori.
   const messages = useMemo(() => messagesQ.data?.pages.flat() ?? [], [messagesQ.data]);
@@ -143,6 +148,16 @@ export default function Chat() {
     !isGroup ? header.data?.peer?.id ?? null : null,
   );
 
+  // CM3 (RC-04): presenza del peer, solo DM — privacy e reciprocità lato server.
+  const presence = usePeerPresence(!isGroup ? header.data?.peer?.id ?? null : null);
+
+  // CM3 (§6.4, R-03): spunte visibili solo se ENTRAMBI i toggle sono attivi;
+  // altrimenti resta la ✓ singola (mark_conversation_read continua per l'unread).
+  const myProfile = useMyProfile();
+  const receiptsOn =
+    (myProfile.data?.show_read_receipts ?? true) &&
+    (header.data?.peerShowsReadReceipts ?? true);
+
   // Nei gruppi il nome sopra le bolle viene dal mittente reale (non dal peer).
   const sendersQ = useConversationSenders(convId, isGroup);
   const senders = sendersQ.data;
@@ -150,6 +165,24 @@ export default function Chat() {
     (senderId: string) => senders?.get(senderId)?.username ?? 'Utente',
     [senders],
   );
+
+  // CM3: sottotitolo dell'header — priorità: typing > presenza (DM) > membri.
+  const typingLabel = useMemo(() => {
+    if (typingUserIds.length === 0) return null;
+    if (!isGroup) return 'sta scrivendo…';
+    if (typingUserIds.length > 1) return `${typingUserIds.length} stanno scrivendo…`;
+    return `${senderName(typingUserIds[0] ?? '')} sta scrivendo…`;
+  }, [typingUserIds, isGroup, senderName]);
+  const presenceText = !isGroup ? presenceLabel(presence.data) : null;
+  const memberLabel =
+    isGroup && header.data
+      ? header.data.memberCount === 1
+        ? '1 membro'
+        : `${header.data.memberCount} membri`
+      : null;
+  const subtitle = typingLabel ?? presenceText ?? memberLabel;
+  // "Vivo" (accento) quando c'è attività ora: typing o peer online.
+  const subtitleLive = !!typingLabel || presence.data?.online === true;
 
   // Lista invertita: costruiamo asc (server + outbox in coda), poi rovesciamo.
   // Gli item dell'outbox diventano pseudo-messaggi con id temporaneo: il dedup
@@ -497,8 +530,11 @@ export default function Chat() {
     if (item.kind === 'sep') return <DataSeparatore label={item.label} />;
     const m = item.message;
     const isMine = m.sender_id === uid;
+    // Doppia spunta solo se i toggle privacy lo consentono (CM3, §6.4).
     const readByPeer =
-      !!peerLastRead && new Date(m.created_at).getTime() <= new Date(peerLastRead).getTime();
+      receiptsOn &&
+      !!peerLastRead &&
+      new Date(m.created_at).getTime() <= new Date(peerLastRead).getTime();
     return (
       <MessaggioRow
         message={m}
@@ -529,10 +565,21 @@ export default function Chat() {
         <Pressable style={styles.headerCenter} onPress={openPeer}>
           <Avatar uri={header.data?.avatarUrl} name={header.data?.title} size={36} />
           <View style={styles.headerText}>
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {header.data?.title ?? 'Chat'}
-            </Text>
-            {header.data?.streak ? <StreakBadge count={header.data.streak} compact /> : null}
+            <View style={styles.headerTitleRow}>
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {header.data?.title ?? 'Chat'}
+              </Text>
+              {header.data?.streak ? <StreakBadge count={header.data.streak} compact /> : null}
+            </View>
+            {/* CM3: typing > presenza (DM) > membri (gruppi); assente = nascosto. */}
+            {subtitle ? (
+              <Text
+                style={[styles.headerSubtitle, subtitleLive && styles.headerSubtitleLive]}
+                numberOfLines={1}
+              >
+                {subtitle}
+              </Text>
+            ) : null}
           </View>
         </Pressable>
         <View style={styles.headerActions}>
@@ -622,7 +669,11 @@ export default function Chat() {
 
         <Composer
           value={draft}
-          onChangeText={(t) => setDraft(convId, t)}
+          onChangeText={(t) => {
+            setDraft(convId, t);
+            // CM3 (RC-03): segnala "sta scrivendo…" (throttle dentro l'hook).
+            if (t.trim().length > 0) sendTyping();
+          }}
           onSend={handleSend}
           disabledReason={composerBlock.data ?? null}
           reply={reply ? { author: reply.sender_id === uid ? 'Tu' : peerName, text: previewText(reply) } : null}
@@ -661,8 +712,18 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   headerCenter: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  headerText: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  headerTitle: { color: colors.ink, fontSize: fontSize.base, fontFamily: fontFamily.semibold },
+  // CM3: colonna titolo+streak sopra, sottotitolo (typing/presenza/membri) sotto.
+  headerText: { flex: 1 },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  // flexShrink: il titolo lungo si tronca senza spingere fuori lo streak badge.
+  headerTitle: {
+    color: colors.ink,
+    fontSize: fontSize.base,
+    fontFamily: fontFamily.semibold,
+    flexShrink: 1,
+  },
+  headerSubtitle: { color: colors.muted, fontSize: fontSize.xs, fontFamily: fontFamily.sans },
+  headerSubtitleLive: { color: colors.accentSoft },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
   listContent: { paddingVertical: spacing.md },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },

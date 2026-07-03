@@ -16,12 +16,16 @@ export interface OutboxItem {
   /** Id temporaneo locale ("temp-…"): mai in collisione con gli uuid del DB. */
   tempId: string;
   conversationId: string;
-  type: 'text' | 'audio';
+  type: 'text' | 'audio' | 'media';
+  /** Testo del messaggio; per le foto è la caption opzionale. */
   body: string | null;
   /** Vocale: URI locale del file registrato (upload al momento dell'invio). */
   audioLocalUri: string | null;
   /** Vocale: durata per la bolla pending. */
   audioSeconds: number | null;
+  /** Foto (CM5): URI locale + MIME (upload al momento dell'invio). */
+  mediaLocalUri: string | null;
+  mediaMimeType: string | null;
   replyTo: string | null;
   /** Istante di composizione (ordina la bolla in lista). */
   createdAt: string;

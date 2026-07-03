@@ -39,9 +39,18 @@ const MESSAGES: Record<string, string> = {
   rate_limited: 'Stai scrivendo troppo velocemente. Aspetta un secondo.',
   edit_window_expired: 'Puoi modificare solo nelle prime 48 ore dal messaggio.',
   cannot_edit_message: 'Questo messaggio non può essere modificato.',
-  // Inoltro (CM4)
+  // Inoltro (CM4 + CM5: testo e foto; i vocali restano vietati — effimeri)
   invalid_forward: 'Il messaggio da inoltrare non è più disponibile.',
   cannot_forward_type: 'I vocali non si possono inoltrare.',
+  // Media (CM5)
+  media_url_required: 'Foto mancante, riprova a inviarla.',
+  invalid_media_type: 'Formato immagine non supportato (usa JPEG, PNG o WebP).',
+  invalid_media_path: 'Immagine non valida.',
+  media_cannot_expire: 'Le foto non hanno scadenza.',
+  invalid_media_fields: 'Messaggio non valido.',
+  media_too_large: 'La foto è troppo grande (max 15 MB).',
+  permesso_galleria_negato: 'Per allegare foto consenti l’accesso alla galleria nelle impostazioni.',
+  permesso_fotocamera_negato: 'Per scattare foto consenti l’accesso alla fotocamera nelle impostazioni.',
   // Gestione gruppo (CM4)
   cannot_edit_dm: 'Le chat 1:1 non si possono modificare.',
   invalid_name: 'Il nome del gruppo deve avere da 1 a 80 caratteri.',

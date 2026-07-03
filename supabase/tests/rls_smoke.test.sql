@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(166);
+select plan(177);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -401,6 +401,64 @@ select ok((select prosrc like '%message_reactions%' from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'process_account_deletion'),
   'process_account_deletion pulisce message_reactions');
+
+-- =============================================================================
+-- CM5 — chat media hardening (20260703130000): bucket, validazione, inoltro foto
+-- =============================================================================
+
+-- Bucket chat-media: privato (voce/foto dei minori MAI pubbliche), 15 MB,
+-- whitelist MIME immagine.
+select ok((select not public from storage.buckets where id = 'chat-media'),
+  'bucket chat-media è privato');
+select ok((select file_size_limit = 15728640 from storage.buckets where id = 'chat-media'),
+  'bucket chat-media ha limite 15 MB');
+select ok((select allowed_mime_types = array['image/png','image/jpeg','image/webp']
+           from storage.buckets where id = 'chat-media'),
+  'bucket chat-media accetta solo png/jpeg/webp');
+
+-- Le 3 policy path-based (read membri / write propria cartella / delete proprietario).
+select ok((select count(*)::int from pg_policies
+           where schemaname='storage' and tablename='objects'
+             and policyname like 'chat_media_%') = 3,
+  'chat-media ha 3 policy storage path-based');
+
+-- Validazione media nel trigger di insert (guardie prosrc sui codici errore).
+select ok((select prosrc like '%media_url_required%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'before_insert esige media_url sui messaggi media');
+select ok((select prosrc like '%invalid_media_type%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'before_insert valida media_type (solo image)');
+select ok((select prosrc like '%invalid_media_path%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'before_insert esige il prefisso <conv>/<sender>/ (anti cross-conversazione)');
+select ok((select prosrc like '%media_cannot_expire%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'before_insert vieta expires_at sui media (foto permanenti)');
+
+-- Inoltro esteso: testo E media inoltrabili, vocali ancora vietati (guardia di
+-- regressione: cannot_forward_type resta).
+select ok((select prosrc like '%(''text'', ''media'')%'
+             and prosrc like '%cannot_forward_type%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'inoltro esteso a testo+media, vocali vietati');
+
+-- Media immutabili in update (con eccezione azzeramento su soft-delete/GDPR).
+select ok((select prosrc like '%media_url%' and prosrc like '%media_type%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_update'),
+  'before_update: media_url/media_type immutabili');
+
+-- GDPR: l''anonimizzazione azzera anche i riferimenti media.
+select ok((select prosrc like '%media_url = null%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'process_account_deletion'),
+  'process_account_deletion azzera media_url/media_type');
 
 select * from finish();
 rollback;

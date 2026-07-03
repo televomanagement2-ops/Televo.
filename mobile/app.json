@@ -17,6 +17,7 @@
       "bundleIdentifier": "app.televo.mobile",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Televo usa il microfono per le Stanze Live e i messaggi vocali.",
+        "NSCameraUsageDescription": "Televo usa la fotocamera per scattare foto da inviare in chat.",
         "NSLocationWhenInUseUsageDescription": "Televo mostra le live vicine a te sulla Mappa Vibe, solo se attivi la condivisione."
       }
     },
@@ -28,6 +29,7 @@
       },
       "permissions": [
         "RECORD_AUDIO",
+        "CAMERA",
         "ACCESS_COARSE_LOCATION"
       ]
     },
@@ -46,7 +48,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Televo usa le tue foto per impostare l'immagine del profilo."
+          "photosPermission": "Televo usa le tue foto per l'immagine del profilo e per inviarle in chat.",
+          "cameraPermission": "Televo usa la fotocamera per scattare foto da inviare in chat."
         }
       ],
       "expo-web-browser"

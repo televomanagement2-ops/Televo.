@@ -17,10 +17,10 @@ Progetto Supabase hosted `mmunnybytyfybncohkky` ("Televo Project"), org
 
 | Area | Stato |
 |------|-------|
-| **35 migrazioni** (Fasi 0–8 + GDPR + onboarding + Aura v3 + chat 25–33 + hardening CM1 34–35) | ✅ tutte applicate (`migration list`: locale = remoto, verificato 2026-07-02) |
+| **37 migrazioni** (Fasi 0–8 + GDPR + onboarding + Aura v3 + chat 25–33 + hardening CM1 34–35 + chat modern CM4 36 + media hardening CM5 37) | ✅ tutte applicate (la 37 applicata e registrata via pooler: CLI bloccata da criterio app Windows, vedi nota) |
 | 10 Edge Functions | ✅ deployate — ⚠️ `gdpr-export` ha un aggiornamento in repo NON deployato (CLI 403 → serve l'account owner) |
 | 3 Vault secrets (`edge_base_url`, `service_role_key`, `cron_secret`) | ✅ registrati il 2026-07-02 (`dispatch_push` attivo) |
-| 142 invarianti pgTAP | ✅ 142/142 verdi SUL REMOTO (suite eseguita via pooler il 2026-07-02) |
+| 177 invarianti pgTAP | ✅ 177/177 verdi SUL REMOTO (suite eseguita via pooler il 2026-07-03) |
 | 7 cron job pg_cron (`aura-recompute` ora **daily**) | ✅ attivi e verificati |
 | Publication realtime (`messages`, `conversations`, `conversation_members`) | ✅ verificata server-side |
 
@@ -46,7 +46,13 @@ moderazione + safety · economia Vibes (simbolica attiva, Stripe inerte) · GDPR
   password `SUPABASE_DB_PASSWORD` in `.env`) — quest'ultima via consente anche
   verifiche di catalogo e la registrazione dei Vault secrets senza dashboard.
 - **NON rifare `db push`** delle migrazioni già applicate: `migration list` è la
-  fonte di verità (tutte e 35 risultano live al 2026-07-02).
+  fonte di verità (tutte e 37 risultano live al 2026-07-03).
+- ⚠️ Dal 2026-07-03 la **CLI supabase è bloccata** su questa macchina da un
+  criterio di controllo applicazioni Windows (spawn di `supabase.exe` negato
+  anche fuori sandbox). Alternativa piena già collaudata: **pooler** (Deno +
+  postgres.js) per SQL/pgTAP E per applicare migrazioni — ricordandosi di
+  registrare la versione in `supabase_migrations.schema_migrations` (fatto per
+  la 37, script in scratchpad `apply_migration.ts`).
 
 > ✅ **CM0 chiuso (2026-07-02)**: tutte le migrazioni (comprese Aura v3 e chat
 > 25–33) risultano applicate al remoto; realtime publication, cron e Vault
@@ -263,8 +269,21 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
   (anti-vanity, decisione utente). Da fare: smoke manuale su 2 device.
   ⚠️ Scoperta sistemica: DEFAULT PRIVILEGES del progetto concedono ALL su ogni
   nuova tabella (RLS = unico cancello reale) → audit rimandato a CM8.
-- **Prossimo**: CM5 (foto/media) → … → CM8. Dettagli, rischi e checklist nel
-  piano dedicato.
+- ✅ **CM5 fatto** (2026-07-03): foto in chat end-to-end. Backend: migrazione
+  `20260703130000_chat_media_hardening` LIVE (validazione media nel trigger:
+  media_url obbligatorio con prefisso `<conv>/<sender>/`, solo `image`, FOTO
+  PERMANENTI — decisione utente; media immutabili in update con eccezione
+  azzeramento GDPR; `process_account_deletion` azzera i media; inoltro esteso
+  a testo+foto, vocali ancora vietati; pgTAP 177/177 sul remoto + smoke
+  runtime 10 casi via pooler). Frontend: `lib/media.ts` (picker
+  galleria/fotocamera, upload senza base64, signed URL cache, copia inoltro
+  via `storage.copy`), outbox esteso al tipo `media` (upload prima
+  dell'insert, offline-safe), anteprima+caption nel composer, `BollaMedia`
+  (4:3, cacheKey=path), `ViewerMedia` (pinch/pan/doppio tap, RootView nel
+  Modal), inoltro foto in menu/selezione, permessi camera in app.json.
+  Da fare: smoke manuale su 2 device (incl. RLS cross-utente sul bucket).
+- **Prossimo**: CM6 (push + deep link) → CM7 → CM8. Dettagli, rischi e
+  checklist nel piano dedicato.
 - **Verifica:** DM solo tra amici, vocale che scade a 24h, streak con freeze +
   criteri di completamento per milestone in `docs/chat/IMPLEMENTATION-PLAN.md`.
 

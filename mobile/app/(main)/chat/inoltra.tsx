@@ -2,9 +2,10 @@
 // Inoltra (CM4, RC-06) — scegli la conversazione di destinazione.
 // =============================================================================
 // I messaggi da inoltrare arrivano dal chatStore (`forwardDraft`, mai in URL);
-// vuoto al mount = rotta aperta a mano → back. Solo TESTO (i vocali sono
-// effimeri; i media arrivano con CM5 — regola enforce-ata anche dal trigger DB).
-// Al tap sulla destinazione: inoltro sequenziale in ordine cronologico, poi
+// vuoto al mount = rotta aperta a mano → back. Testo e FOTO (CM5: il file
+// viene copiato server-side nella destinazione); i vocali restano vietati
+// (effimeri — regola enforce-ata anche dal trigger DB). Al tap sulla
+// destinazione: inoltro sequenziale in ordine cronologico, poi
 // `router.replace` sulla chat di destinazione (le bolle portano "Inoltrato").
 
 import { useEffect, useState } from 'react';

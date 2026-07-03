@@ -11,6 +11,8 @@
 // CM4: menu messaggio completo (MenuMessaggio: reazioni, edit, inoltro, prop,
 // info, segnala), modalità SELEZIONE con barra azioni, ricerca in-chat (S12b)
 // con navigazione tra i match, deep-link ?highlight= dalla ricerca globale.
+// CM5: foto — graffetta → galleria/fotocamera, anteprima con caption nel
+// composer, invio via outbox (upload prima dell'insert), viewer full-screen.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -36,6 +38,7 @@ import { DataSeparatore } from '@/components/chat/DataSeparatore';
 import { Composer } from '@/components/chat/Composer';
 import { StreakBadge } from '@/components/chat/StreakBadge';
 import { MenuMessaggio, type ReadByEntry } from '@/components/chat/MenuMessaggio';
+import { ViewerMedia } from '@/components/chat/ViewerMedia';
 import type { QuotedRef, SendStatus } from '@/components/chat/BollaParlante';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -65,6 +68,7 @@ import {
   fermaRegistrazione,
   richiediPermessoMic,
 } from '@/lib/audio';
+import { scegliFotoDaGalleria, scattaFoto, type FotoScelta } from '@/lib/media';
 import { dayLabel, isSameDay } from '@/lib/datetime';
 import { chatErrorMessage, propErrorMessage } from '@/lib/errors';
 import { dynamicRoutes, ROUTES } from '@/constants/routes';
@@ -84,6 +88,8 @@ type Item =
       /** Invio ottimistico: pending/failed (null = confermato dal server). */
       status: SendStatus;
       audioSeconds?: number | null;
+      /** Foto in coda d'invio (CM5): URI locale per la thumbnail. */
+      mediaLocalUri?: string | null;
       errorMessage?: string | null;
     };
 
@@ -233,8 +239,13 @@ export default function Chat() {
   // verso il realtime è garantito dal fatto che al successo l'item è rimosso
   // PRIMA dell'upsert della riga reale (vedi lib/outbox.ts).
   const items = useMemo<Item[]>(() => {
-    const asc: { m: MessageRow; status: SendStatus; audioSeconds?: number | null; errorMessage?: string | null }[] =
-      [...messages].reverse().map((m) => ({ m, status: null }));
+    const asc: {
+      m: MessageRow;
+      status: SendStatus;
+      audioSeconds?: number | null;
+      mediaLocalUri?: string | null;
+      errorMessage?: string | null;
+    }[] = [...messages].reverse().map((m) => ({ m, status: null }));
     for (const o of outbox) {
       asc.push({
         m: {
@@ -245,7 +256,7 @@ export default function Chat() {
           body: o.body,
           audio_url: null,
           media_url: null,
-          media_type: null,
+          media_type: o.type === 'media' ? 'image' : null,
           reply_to: o.replyTo,
           expires_at: null,
           edited_at: null,
@@ -255,12 +266,13 @@ export default function Chat() {
         } as MessageRow,
         status: o.status,
         audioSeconds: o.audioSeconds,
+        mediaLocalUri: o.mediaLocalUri,
         errorMessage: o.errorMessage,
       });
     }
     const out: Item[] = [];
     let prev: MessageRow | null = null;
-    for (const { m, status, audioSeconds, errorMessage } of asc) {
+    for (const { m, status, audioSeconds, mediaLocalUri, errorMessage } of asc) {
       if (!prev || !isSameDay(prev.created_at, m.created_at)) {
         out.push({ kind: 'sep', id: `sep-${m.id}`, label: dayLabel(m.created_at) });
         prev = null; // il separatore spezza anche il raggruppamento
@@ -272,6 +284,7 @@ export default function Chat() {
         grouped: isGrouped(prev, m),
         status,
         audioSeconds,
+        mediaLocalUri,
         errorMessage,
       });
       prev = m;
@@ -400,9 +413,11 @@ export default function Chat() {
       .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
   }, [selectedIds, messages]);
   const selHasText = selectedMessages.some((m) => m.type === 'text' && m.body && !m.deleted_at);
-  const selCanForward =
-    selectedMessages.length > 0 &&
-    selectedMessages.every((m) => m.type === 'text' && !!m.body && !m.deleted_at);
+  // Inoltrabili (CM4+CM5): testo con body O foto con file; i vocali no (effimeri).
+  const inoltrabile = (m: MessageRow) =>
+    !m.deleted_at &&
+    ((m.type === 'text' && !!m.body) || (m.type === 'media' && !!m.media_url));
+  const selCanForward = selectedMessages.length > 0 && selectedMessages.every(inoltrabile);
   const selCanDelete =
     selectedMessages.length > 0 &&
     selectedMessages.every((m) => m.sender_id === uid && !m.deleted_at);
@@ -516,9 +531,11 @@ export default function Chat() {
 
   const onMenuEdit = (m: MessageRow) => {
     // La bozza corrente viene sovrascritta dal testo in modifica
-    // (semplificazione documentata nel piano CM4).
+    // (semplificazione documentata nel piano CM4). La foto in anteprima si
+    // scarta: la modifica prende il composer per intero (CM5).
     setEditing(convId, m);
     setDraft(convId, m.body ?? '');
+    setFotoPreview(null);
   };
   const onMenuForward = (m: MessageRow) => {
     setForwardDraft([m]);
@@ -544,11 +561,12 @@ export default function Chat() {
 
   const handleSend = () => {
     const body = draft.trim();
-    if (!body || !uid) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    if (!uid) return;
 
     // CM4 (RC-05): in modalità modifica l'invio aggiorna il messaggio.
     if (editing) {
+      if (!body) return;
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       if (body !== (editing.body ?? '').trim()) {
         editMut.mutate(
           { id: editing.id, body },
@@ -560,6 +578,19 @@ export default function Chat() {
       return;
     }
 
+    // CM5: foto in anteprima → invio media (la caption è opzionale).
+    if (fotoPreview) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      outboxApi.sendMedia(fotoPreview.uri, fotoPreview.mimeType, body || null, reply?.id ?? null);
+      setFotoPreview(null);
+      clearDraft(convId);
+      setReplyTo(convId, null);
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      return;
+    }
+
+    if (!body) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     // Ottimistico: bolla immediata, input libero subito (anche offline → pending).
     outboxApi.sendText(body, reply?.id ?? null);
     clearDraft(convId);
@@ -653,6 +684,32 @@ export default function Chat() {
     setReplyTo(convId, null);
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
+
+  // --- Foto (CM5, D3) ----------------------------------------------------------
+  // Stato effimero locale come i vocali: foto scelta in attesa d'invio (la
+  // caption si scrive nell'input) e messaggio aperto nel viewer full-screen.
+  const [fotoPreview, setFotoPreview] = useState<FotoScelta | null>(null);
+  const [viewerFor, setViewerFor] = useState<MessageRow | null>(null);
+
+  const pickFoto = async (scegli: () => Promise<FotoScelta | null>) => {
+    try {
+      const foto = await scegli();
+      if (foto) setFotoPreview(foto);
+    } catch (e) {
+      // Permesso OS negato: invito alle impostazioni (specchio del microfono).
+      Alert.alert('Permesso necessario', chatErrorMessage(e));
+    }
+  };
+
+  const onAttach = () => {
+    Alert.alert('Allega', undefined, [
+      { text: 'Foto dalla galleria', onPress: () => void pickFoto(scegliFotoDaGalleria) },
+      { text: 'Scatta una foto', onPress: () => void pickFoto(scattaFoto) },
+      { text: 'Annulla', style: 'cancel' },
+    ]);
+  };
+
+  const onMediaPress = useCallback((m: MessageRow) => setViewerFor(m), []);
 
   const openPeer = () => {
     if (header.data?.peer) router.push(dynamicRoutes.profiloUtente(header.data.peer.id));
@@ -749,6 +806,7 @@ export default function Chat() {
         highlighted={highlightId === m.id}
         status={item.status}
         audioSeconds={item.audioSeconds}
+        mediaLocalUri={item.mediaLocalUri}
         errorMessage={item.errorMessage}
         reactions={reactionsByMsg.get(m.id)}
         myUid={uid ?? null}
@@ -758,6 +816,7 @@ export default function Chat() {
         onLongPress={onLongPress}
         onToggleReaction={onToggleReaction}
         onQuotePress={onQuotePress}
+        onMediaPress={onMediaPress}
       />
     );
   };
@@ -960,7 +1019,12 @@ export default function Chat() {
             setEditing(convId, null);
             clearDraft(convId);
           }}
-          onAttach={() => Alert.alert('Presto', 'Gli allegati arrivano presto.')}
+          onAttach={onAttach}
+          mediaPreview={
+            fotoPreview
+              ? { uri: fotoPreview.uri, onDiscard: () => setFotoPreview(null) }
+              : null
+          }
           onStartRecording={handleStartRec}
           onStopRecording={handleStopRec}
           isRecording={isRecording}
@@ -1001,6 +1065,14 @@ export default function Chat() {
         onDelete={() => menuFor && del.mutate(menuFor.id)}
         onProp={(trait) => menuFor && void onMenuProp(menuFor, trait)}
         onReport={(reason) => menuFor && void onMenuReport(menuFor, reason)}
+      />
+
+      {/* Viewer foto full-screen (CM5, S14c). */}
+      <ViewerMedia
+        visible={!!viewerFor}
+        path={viewerFor?.media_url ?? null}
+        caption={viewerFor?.body}
+        onClose={() => setViewerFor(null)}
       />
     </SafeAreaView>
   );

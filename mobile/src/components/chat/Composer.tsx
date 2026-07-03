@@ -1,13 +1,16 @@
 // =============================================================================
 // Composer — barra di composizione in fondo alla chat.
 // =============================================================================
-// Testo (M1b) + vocali (M2). Tre modalità di input mutuamente esclusive dentro la
-// stessa barra: idle (input testo + microfono/invio), recording (timer + stop),
-// preview (riascolta il vocale registrato → annulla/invia). L'allegato foto (M6)
-// arriva dopo. Se l'utente è mutato/bannato (M8) il composer è disabilitato.
-// Mostra la barra di risposta quando si sta rispondendo a un messaggio.
+// Testo (M1b) + vocali (M2) + foto (CM5). Tre modalità di input mutuamente
+// esclusive dentro la stessa barra: idle (input testo + microfono/invio),
+// recording (timer + stop), preview vocale (riascolta → annulla/invia). La
+// foto selezionata appare come barra-anteprima sopra l'input (la caption si
+// scrive nell'input, l'invio parte col bottone). Se l'utente è mutato/bannato
+// (M8) il composer è disabilitato. Mostra la barra di risposta quando si sta
+// rispondendo a un messaggio.
 
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 
@@ -31,6 +34,12 @@ export interface EditPreview {
   text: string;
 }
 
+/** Foto selezionata in attesa d'invio (CM5): l'input diventa la caption. */
+export interface MediaPreview {
+  uri: string;
+  onDiscard: () => void;
+}
+
 interface Props {
   value: string;
   onChangeText: (t: string) => void;
@@ -44,8 +53,10 @@ interface Props {
    *  messaggio (niente mic/allegati — si edita solo testo). */
   editing?: EditPreview | null;
   onCancelEdit?: () => void;
-  /** Tap sulla graffetta allegati (foto/file). Per ora → avviso "presto" (M6). */
+  /** Tap sulla graffetta allegati → picker foto (CM5). */
   onAttach?: () => void;
+  /** Foto selezionata (CM5): barra-anteprima sopra l'input, invio col bottone. */
+  mediaPreview?: MediaPreview | null;
   // --- Vocali (M2) ---
   /** Avvia la registrazione (tap sul microfono). */
   onStartRecording?: () => void;
@@ -76,6 +87,7 @@ export function Composer({
   editing,
   onCancelEdit,
   onAttach,
+  mediaPreview,
   onStartRecording,
   onStopRecording,
   isRecording,
@@ -92,7 +104,8 @@ export function Composer({
   }
 
   const hasText = value.trim().length > 0;
-  const canSendText = hasText && !sending;
+  // Con una foto in anteprima l'invio è sempre possibile (caption opzionale).
+  const canSendText = (hasText || !!mediaPreview) && !sending;
 
   return (
     <View style={styles.wrap}>
@@ -120,6 +133,22 @@ export function Composer({
             </Text>
           </View>
           <Pressable onPress={onCancelReply} hitSlop={8}>
+            <Ionicons name="close" size={18} color={colors.muted} />
+          </Pressable>
+        </View>
+      ) : null}
+
+      {mediaPreview && !audioPreview && !isRecording ? (
+        // --- Foto in attesa d'invio (CM5): thumbnail + hint caption ---
+        <View style={styles.replyBar}>
+          <Image source={{ uri: mediaPreview.uri }} style={styles.mediaThumb} contentFit="cover" />
+          <View style={styles.replyBody}>
+            <Text style={styles.replyAuthor}>Foto</Text>
+            <Text style={styles.replyText} numberOfLines={1}>
+              Aggiungi una didascalia, se vuoi
+            </Text>
+          </View>
+          <Pressable onPress={mediaPreview.onDiscard} hitSlop={8}>
             <Ionicons name="close" size={18} color={colors.muted} />
           </Pressable>
         </View>
@@ -176,13 +205,13 @@ export function Composer({
           <TextInput
             value={value}
             onChangeText={onChangeText}
-            placeholder="Scrivi un messaggio…"
+            placeholder={mediaPreview ? 'Didascalia…' : 'Scrivi un messaggio…'}
             placeholderTextColor={colors.faint}
             selectionColor={colors.accent}
             style={styles.input}
             multiline
           />
-          {hasText || editing ? (
+          {hasText || editing || mediaPreview ? (
             <Pressable
               onPress={onSend}
               disabled={!canSendText}
@@ -308,6 +337,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   replyLine: { width: 3, alignSelf: 'stretch', borderRadius: 2, backgroundColor: colors.accent },
+  // Thumbnail della foto in attesa d'invio (CM5).
+  mediaThumb: { width: 48, height: 48, borderRadius: radius.sm, backgroundColor: colors.elevated },
   replyBody: { flex: 1, gap: 2 },
   replyAuthor: { color: colors.accentSoft, fontSize: fontSize.xs, fontFamily: fontFamily.semibold },
   replyText: { color: colors.muted, fontSize: fontSize.sm, fontFamily: fontFamily.sans },

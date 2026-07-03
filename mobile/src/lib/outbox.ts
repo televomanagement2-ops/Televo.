@@ -11,9 +11,10 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 import { onlineManager } from '@tanstack/react-query';
-import { sendAudioMessage, sendTextMessage } from '@/lib/chat';
+import { sendAudioMessage, sendMediaMessage, sendTextMessage } from '@/lib/chat';
 import { conversationsPrefix, upsertMessage } from '@/lib/chat-cache';
 import { uploadVocale } from '@/lib/audio';
+import { uploadFoto } from '@/lib/media';
 import { chatErrorMessage } from '@/lib/errors';
 import { useChatStore, type OutboxItem } from '@/store/chatStore';
 
@@ -46,14 +47,29 @@ export async function attemptSend(
   if (!item || inVolo.has(tempId)) return;
   inVolo.add(tempId);
   try {
+    // Vocali e foto: upload PRIMA dell'insert (caso limite 7 SRS §15 — mai un
+    // messaggio senza file dietro). Un retry dopo insert fallito ricarica il
+    // file: l'eventuale orfano nel bucket è in carico alla pulizia CM8.
     const row =
       item.type === 'text'
         ? await sendTextMessage(item.conversationId, item.body ?? '', item.replyTo)
-        : await sendAudioMessage(
-            item.conversationId,
-            await uploadVocale(item.conversationId, uid, item.audioLocalUri as string),
-            item.replyTo,
-          );
+        : item.type === 'media'
+          ? await sendMediaMessage(
+              item.conversationId,
+              await uploadFoto(
+                item.conversationId,
+                uid,
+                item.mediaLocalUri as string,
+                item.mediaMimeType ?? 'image/jpeg',
+              ),
+              item.body,
+              item.replyTo,
+            )
+          : await sendAudioMessage(
+              item.conversationId,
+              await uploadVocale(item.conversationId, uid, item.audioLocalUri as string),
+              item.replyTo,
+            );
     // Prima rimuovo il temp, poi upserto la riga reale: mai due bolle insieme.
     useChatStore.getState().outboxRemove(tempId);
     upsertMessage(queryClient, item.conversationId, row);
@@ -85,6 +101,8 @@ export function enqueueText(
     body,
     audioLocalUri: null,
     audioSeconds: null,
+    mediaLocalUri: null,
+    mediaMimeType: null,
     replyTo,
     createdAt: new Date().toISOString(),
     status: 'pending',
@@ -110,6 +128,37 @@ export function enqueueAudio(
     body: null,
     audioLocalUri,
     audioSeconds,
+    mediaLocalUri: null,
+    mediaMimeType: null,
+    replyTo,
+    createdAt: new Date().toISOString(),
+    status: 'pending',
+    errorMessage: null,
+  };
+  useChatStore.getState().outboxAdd(item);
+  if (onlineManager.isOnline()) void attemptSend(queryClient, uid, item.tempId);
+}
+
+/** Accoda una foto (URI locale + MIME; upload al momento dell'invio, la
+ *  caption opzionale viaggia in `body`). */
+export function enqueueMedia(
+  queryClient: QueryClient,
+  uid: string,
+  convId: string,
+  mediaLocalUri: string,
+  mediaMimeType: string,
+  caption: string | null,
+  replyTo: string | null,
+): void {
+  const item: OutboxItem = {
+    tempId: nuovoTempId(),
+    conversationId: convId,
+    type: 'media',
+    body: caption,
+    audioLocalUri: null,
+    audioSeconds: null,
+    mediaLocalUri,
+    mediaMimeType,
     replyTo,
     createdAt: new Date().toISOString(),
     status: 'pending',

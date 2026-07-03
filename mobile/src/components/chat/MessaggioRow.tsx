@@ -32,6 +32,8 @@ interface Props {
   /** Invio ottimistico (CM2). */
   status?: SendStatus;
   audioSeconds?: number | null;
+  /** Foto in coda d'invio (CM5): URI locale. */
+  mediaLocalUri?: string | null;
   errorMessage?: string | null;
   /** Reazioni di QUESTO messaggio (CM4) — già filtrate dal chiamante. */
   reactions?: ReactionRow[];
@@ -47,6 +49,8 @@ interface Props {
   onToggleReaction?: (m: MessageRow, emoji: string) => void;
   /** Tap sulla citazione → scroll al messaggio originale. */
   onQuotePress?: (m: MessageRow) => void;
+  /** Tap sulla foto → viewer full-screen (CM5). */
+  onMediaPress?: (m: MessageRow) => void;
 }
 
 function MessaggioRowBase({
@@ -61,6 +65,7 @@ function MessaggioRowBase({
   highlighted,
   status = null,
   audioSeconds,
+  mediaLocalUri,
   errorMessage,
   reactions,
   myUid,
@@ -70,6 +75,7 @@ function MessaggioRowBase({
   onLongPress,
   onToggleReaction,
   onQuotePress,
+  onMediaPress,
 }: Props) {
   // Chip: raggruppa per emoji → { emoji, count, mine } (ordine stabile per emoji).
   const chips = useMemo(() => {
@@ -128,9 +134,14 @@ function MessaggioRowBase({
               readByPeer={readByPeer}
               status={status}
               audioSeconds={audioSeconds}
+              mediaLocalUri={mediaLocalUri}
               errorMessage={errorMessage}
               onQuotePress={
                 onQuotePress && message.reply_to ? () => onQuotePress(message) : undefined
+              }
+              onMediaPress={
+                // In modalità selezione il tap sulla riga fa il toggle, non il viewer.
+                onMediaPress && !selectionMode ? () => onMediaPress(message) : undefined
               }
             />
           </View>

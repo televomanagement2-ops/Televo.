@@ -474,11 +474,49 @@ anteprima "📷 Foto" nell'hub e nelle notifiche (già pronta lato backend).
 minori (bucket privato + RLS: MAI URL pubblici, solo signed URL).
 
 **Checklist**:
-- [ ] Invio foto da galleria e fotocamera con caption
-- [ ] Thumbnail in bolla + viewer zoom (solo membri)
-- [ ] Upload fallito → retry, nessun messaggio orfano
-- [ ] Vocale/foto scaduti/cancellati gestiti nel viewer
-- [ ] `tsc` + `eslint` puliti
+- [x] Invio foto da galleria e fotocamera con caption — graffetta esistente →
+      Alert a 2 voci; picker `quality 0.7` senza base64 (ricodifica JPEG, copre
+      HEIC); anteprima con caption nel composer (`mediaPreview`); invio via
+      outbox CM2 (upload PRIMA dell'insert, pending/failed/retry, offline-safe)
+- [x] Thumbnail in bolla + viewer zoom (solo membri) — `BollaMedia` (signed URL
+      EAGER con cache 1h condivisa, box 4:3 fisso senza layout shift,
+      `cacheKey=path` perché i signed URL ruotano) + `ViewerMedia` (Modal
+      full-screen, pinch 1–4x, pan clampato, doppio tap 2.5x, tap = header;
+      `GestureHandlerRootView` DENTRO il Modal — necessario su Android)
+- [x] Upload fallito → retry, nessun messaggio orfano (insert SOLO dopo upload
+      riuscito — caso limite 7 §15; errori storage mappati IT:
+      `media_too_large`, `invalid_media_type`)
+- [x] Vocale/foto scaduti/cancellati gestiti nel viewer — foto soft-cancellata =
+      "Messaggio eliminato"; file assente/GDPR-azzerato = "Foto non più
+      disponibile" (bolla e viewer)
+- [x] `tsc --noEmit` + `eslint` puliti (0 errori, 0 warning)
+
+> ⚠️ Scope allargato in corso d'opera (decisioni utente 2026-07-03): **foto
+> PERMANENTI** (niente `expires_at`; solo i vocali restano effimeri) e CM5
+> include la migrazione **`20260703130000_chat_media_hardening`** — l'audit
+> pre-CM5 aveva trovato il trigger SENZA validazione media. La migrazione:
+> valida i media in insert (`media_url` obbligatorio con prefisso
+> `<conv>/<sender>/` anti cross-conversazione, `media_type` solo `image`,
+> `expires_at` vietato, colonne media vietate sugli altri tipi), rende i media
+> immutabili in update (con eccezione SOLO-azzeramento nel ramo soft-delete:
+> il GDPR azzera media+deleted_at nello stesso update), estende
+> `process_account_deletion` (azzera `media_url`/`media_type`; file orfani nel
+> bucket → CM8) ed estende l'**INOLTRO alle FOTO** (promesso in CM4): origine
+> `text|media`, tipo coerente; il client COPIA il file nella destinazione via
+> `storage.copy` server-side (la RLS path-based fa da doppio cancello; il
+> prefisso obbligatorio rende la copia non aggirabile). UI inoltro estesa
+> (menu, selezione multipla, `forwardMessage` con `copiaFotoInoltro`).
+> pgTAP 166→**177/177 verdi SUL REMOTO** + smoke runtime via pooler (10 casi
+> trigger con JWT simulato, incluso inoltro media valido e vocale rifiutato).
+> Nota operativa: la CLI supabase è bloccata da un criterio di controllo
+> applicazioni Windows → migrazione applicata E registrata in
+> `schema_migrations` via pooler (equivalente a `db push`).
+
+> Verifica su 2 device (criterio di completamento): da eseguire in Expo Go
+> (smoke manuale utente: foto live sui 2 device, aereo-mode → flush, inoltro
+> verso non-membro dell'origine, RLS cross-utente sul bucket con
+> `createSignedUrl`); tutto il resto è verificato (pgTAP remoto + smoke
+> runtime + tsc/eslint).
 
 **Criteri di completamento**: flusso foto end-to-end su 2 device, RLS verificata
 (un non-membro con il path NON accede al file).

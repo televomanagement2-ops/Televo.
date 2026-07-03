@@ -10,6 +10,7 @@
 import { decode as decodeBase64 } from 'base64-arraybuffer';
 import { supabase } from '@/lib/supabase';
 import { callRpc } from '@/lib/rpc';
+import { copiaFotoInoltro } from '@/lib/media';
 import { fetchProfileCards } from '@/lib/social';
 import { timeHHmm } from '@/lib/datetime';
 import type {
@@ -506,6 +507,34 @@ export async function sendAudioMessage(
   return data as unknown as MessageRow;
 }
 
+/**
+ * Invia una foto (CM5, D3). `mediaPath` = PATH storage nel bucket privato
+ * `chat-media` (non un URL): la visualizzazione lo firma alla lettura.
+ * Le foto sono PERMANENTI: mai `expires_at` (il trigger lo rifiuterebbe).
+ * La caption opzionale viaggia in `body` (cap 4096 come il testo).
+ */
+export async function sendMediaMessage(
+  convId: string,
+  mediaPath: string,
+  caption?: string | null,
+  replyTo?: string | null,
+): Promise<MessageRow> {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: convId,
+      type: 'media',
+      media_url: mediaPath,
+      media_type: 'image',
+      body: caption?.trim() || null,
+      reply_to: replyTo ?? null,
+    } as never)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as unknown as MessageRow;
+}
+
 /** Soft-delete del proprio messaggio (deleted_at). */
 export async function softDeleteMessage(id: string): Promise<void> {
   const { error } = await supabase
@@ -532,21 +561,30 @@ export async function editMessage(id: string, body: string): Promise<MessageRow>
 }
 
 /**
- * Inoltra un messaggio di TESTO in un'altra conversazione (RC-06): copia il
- * body e referenzia l'origine (`forwarded_from` → intestazione "Inoltrato").
- * Il trigger valida origine visibile/non cancellata/solo testo; i vocali non
- * si inoltrano (effimeri), i media arrivano con CM5.
+ * Inoltra un messaggio in un'altra conversazione (RC-06 + CM5): testo e FOTO;
+ * i vocali non si inoltrano (effimeri, il trigger li rifiuta). Per le foto il
+ * file viene COPIATO server-side nella destinazione (`copiaFotoInoltro`: la
+ * RLS storage è path-based, il path dell'origine non sarebbe leggibile ai
+ * destinatari) e la caption viaggia con la foto. `forwarded_from` referenzia
+ * l'origine → intestazione "Inoltrato".
  */
-export async function forwardTextMessage(
+export async function forwardMessage(
   destConvId: string,
   original: MessageRow,
+  uid: string,
 ): Promise<MessageRow> {
+  const isMedia = original.type === 'media' && !!original.media_url;
+  const mediaPath = isMedia
+    ? await copiaFotoInoltro(original.media_url as string, destConvId, uid)
+    : null;
   const { data, error } = await supabase
     .from('messages')
     .insert({
       conversation_id: destConvId,
-      type: 'text',
+      type: isMedia ? 'media' : 'text',
       body: original.body,
+      media_url: mediaPath,
+      media_type: isMedia ? 'image' : null,
       forwarded_from: original.id,
     } as never)
     .select('*')

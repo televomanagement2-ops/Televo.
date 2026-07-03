@@ -6,9 +6,9 @@
 // interni (menu → prop/info/segnala): i modali impilati su Android sono
 // inaffidabili. La visibilità delle voci segue la SRS S16:
 //   Rispondi/Salva (non cancellati) · Copia (testo) · Modifica (miei, testo,
-//   <48h — R-15) · Inoltra (testo — i vocali sono effimeri, RC-06) · Dai un
-//   prop / Segnala (altrui) · Info messaggio (miei, nei gruppi — RC-09) ·
-//   Seleziona · Elimina (miei).
+//   <48h — R-15) · Inoltra (testo e foto da CM5 — i vocali sono effimeri,
+//   RC-06) · Dai un prop / Segnala (altrui) · Info messaggio (miei, nei
+//   gruppi — RC-09) · Seleziona · Elimina (miei).
 
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -109,6 +109,8 @@ export function MenuMessaggio({
 
   const deleted = !!message.deleted_at;
   const isText = message.type === 'text' && !!message.body;
+  // Inoltrabili (CM5): testo e foto; i vocali restano vietati (effimeri).
+  const isForwardable = isText || (message.type === 'media' && !!message.media_url);
   const inEditWindow = Date.now() - new Date(message.created_at).getTime() < EDIT_WINDOW_MS;
 
   const chiudiE = (fn: () => void) => () => {
@@ -148,7 +150,7 @@ export function MenuMessaggio({
                 {isMine && isText && !deleted && inEditWindow ? (
                   <Voce icon="pencil-outline" label="Modifica" onPress={chiudiE(onEdit)} />
                 ) : null}
-                {isText && !deleted ? (
+                {isForwardable && !deleted ? (
                   <Voce icon="arrow-redo-outline" label="Inoltra" onPress={chiudiE(onForward)} />
                 ) : null}
                 {!deleted ? <Voce icon="bookmark-outline" label="Salva" onPress={chiudiE(onSave)} /> : null}

@@ -9,6 +9,7 @@
 
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { BollaMedia } from '@/components/chat/BollaMedia';
 import { PlayerVocale } from '@/components/chat/PlayerVocale';
 import { timeHHmm } from '@/lib/datetime';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
@@ -34,10 +35,14 @@ interface Props {
   status?: SendStatus;
   /** Durata del vocale in coda d'invio (placeholder, niente player). */
   audioSeconds?: number | null;
+  /** Foto in coda d'invio (CM5): URI locale mostrata con overlay upload. */
+  mediaLocalUri?: string | null;
   /** Motivo del fallimento (mostrato sotto il contenuto quando failed). */
   errorMessage?: string | null;
   /** Tap sulla citazione → scroll al messaggio originale. */
   onQuotePress?: () => void;
+  /** Tap sulla foto → viewer full-screen (solo messaggi confermati). */
+  onMediaPress?: () => void;
 }
 
 /** secondi → "m:ss" (per il placeholder del vocale in invio). */
@@ -80,16 +85,24 @@ export function BollaParlante({
   readByPeer,
   status = null,
   audioSeconds,
+  mediaLocalUri,
   errorMessage,
   onQuotePress,
+  onMediaPress,
 }: Props) {
   const deleted = !!message.deleted_at;
+  // Foto (CM5): la thumbnail rompe il padding della bolla (edge-to-edge nel
+  // border radius); caption, errori e footer stanno in una sub-view che
+  // riprende il padding normale.
+  const isMedia = message.type === 'media' && !deleted;
 
   return (
-    <View style={[styles.bubble, isMine ? styles.mine : styles.theirs]}>
+    <View
+      style={[styles.bubble, isMine ? styles.mine : styles.theirs, isMedia && styles.bubbleMedia]}
+    >
       {message.forwarded_from && !deleted ? (
         // Inoltro (CM4, RC-06): provenienza sempre dichiarata (trasparenza).
-        <View style={styles.forwarded}>
+        <View style={[styles.forwarded, isMedia && styles.mediaPad]}>
           <Ionicons
             name="arrow-redo-outline"
             size={12}
@@ -102,7 +115,11 @@ export function BollaParlante({
         <Pressable
           onPress={onQuotePress}
           disabled={!onQuotePress}
-          style={[styles.quote, isMine ? styles.quoteMine : styles.quoteTheirs]}
+          style={[
+            styles.quote,
+            isMine ? styles.quoteMine : styles.quoteTheirs,
+            isMedia && styles.mediaPad,
+          ]}
         >
           {quoted.author ? <Text style={styles.quoteAuthor}>{quoted.author}</Text> : null}
           <Text style={styles.quoteText} numberOfLines={1}>
@@ -117,6 +134,23 @@ export function BollaParlante({
         </Text>
       ) : message.type === 'text' ? (
         <TestoConLink body={message.body ?? ''} isMine={isMine} />
+      ) : message.type === 'media' ? (
+        // Foto (CM5): thumbnail (+ caption opzionale). In coda d'invio mostra
+        // il file locale; il viewer si apre solo sui messaggi confermati.
+        <>
+          <BollaMedia
+            path={message.media_url}
+            localUri={status ? mediaLocalUri : null}
+            uploading={status === 'pending'}
+            isMine={isMine}
+            onPress={status ? undefined : onMediaPress}
+          />
+          {message.body ? (
+            <View style={styles.mediaPad}>
+              <TestoConLink body={message.body} isMine={isMine} />
+            </View>
+          ) : null}
+        </>
       ) : message.type === 'audio' || message.type === 'voice_thread' ? (
         status ? (
           // Vocale ancora in coda: il file è locale → placeholder senza player.
@@ -134,10 +168,10 @@ export function BollaParlante({
       )}
 
       {status === 'failed' && errorMessage ? (
-        <Text style={styles.errorText}>{errorMessage}</Text>
+        <Text style={[styles.errorText, isMedia && styles.mediaPad]}>{errorMessage}</Text>
       ) : null}
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, isMedia && styles.mediaPad]}>
         {message.edited_at && !deleted ? (
           // Edit tracciato (RC-05/R-15): l'indicatore è SEMPRE visibile.
           <Text style={[styles.time, isMine && styles.timeMine]}>modificato</Text>
@@ -171,6 +205,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     gap: spacing.xs,
   },
+  // Bolla-foto: cornice sottile attorno alla thumbnail (edge-to-edge); gli
+  // elementi testuali riprendono il rientro con mediaPad.
+  bubbleMedia: { paddingHorizontal: 4, paddingTop: 4, paddingBottom: 6 },
+  mediaPad: { marginHorizontal: spacing.md - 4 },
   mine: { backgroundColor: colors.accentDeep, borderTopRightRadius: 6 },
   theirs: {
     backgroundColor: colors.elevated,

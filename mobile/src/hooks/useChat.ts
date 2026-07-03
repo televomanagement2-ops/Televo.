@@ -27,7 +27,7 @@ import {
   fetchGroupSenders,
   fetchMessagesPage,
   fetchSavedMessages,
-  forwardTextMessage,
+  forwardMessage,
   leaveConversation,
   markConversationRead,
   MESSAGES_PAGE,
@@ -53,7 +53,7 @@ import {
   setReactionInCache,
   upsertMessage,
 } from '@/lib/chat-cache';
-import { enqueueAudio, enqueueText, flushOutbox, retrySend } from '@/lib/outbox';
+import { enqueueAudio, enqueueMedia, enqueueText, flushOutbox, retrySend } from '@/lib/outbox';
 import { initRete, onRiconnessione } from '@/lib/rete';
 import { usePresenceHeartbeat } from '@/hooks/usePresenza';
 import { useChatStore } from '@/store/chatStore';
@@ -211,10 +211,11 @@ export function useEditMessage(convId: string) {
 }
 
 /**
- * Inoltro (RC-06): uno o più messaggi di testo verso una conversazione, in
- * ordine cronologico, SEQUENZIALE (al primo errore ci si ferma: niente inoltri
- * "a metà" silenziosi). Niente outbox: si inoltra da un picker e si naviga
- * alla destinazione — l'ottimismo non aggiunge nulla qui.
+ * Inoltro (RC-06 + CM5): uno o più messaggi (testo/foto) verso una
+ * conversazione, in ordine cronologico, SEQUENZIALE (al primo errore ci si
+ * ferma: niente inoltri "a metà" silenziosi). Le foto vengono copiate
+ * server-side nel bucket della destinazione. Niente outbox: si inoltra da un
+ * picker e si naviga alla destinazione — l'ottimismo non aggiunge nulla qui.
  */
 export function useForwardMessages() {
   const queryClient = useQueryClient();
@@ -222,9 +223,10 @@ export function useForwardMessages() {
   const uid = session?.user.id;
   return useMutation({
     mutationFn: async (input: { destConvId: string; messages: MessageRow[] }) => {
+      if (!uid) throw new Error('not_authenticated');
       const ordered = [...input.messages].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
       for (const m of ordered) {
-        const row = await forwardTextMessage(input.destConvId, m);
+        const row = await forwardMessage(input.destConvId, m, uid);
         upsertMessage(queryClient, input.destConvId, row);
       }
       return input.destConvId;
@@ -569,6 +571,14 @@ export function useOutbox(convId: string) {
     [queryClient, uid, convId],
   );
 
+  const sendMedia = useCallback(
+    (mediaLocalUri: string, mediaMimeType: string, caption: string | null, replyTo: string | null) => {
+      if (!uid) return;
+      enqueueMedia(queryClient, uid, convId, mediaLocalUri, mediaMimeType, caption, replyTo);
+    },
+    [queryClient, uid, convId],
+  );
+
   const retry = useCallback(
     (tempId: string) => {
       if (!uid) return;
@@ -577,7 +587,7 @@ export function useOutbox(convId: string) {
     [queryClient, uid],
   );
 
-  return { outbox, sendText, sendAudio, retry, discard: discardStore };
+  return { outbox, sendText, sendAudio, sendMedia, retry, discard: discardStore };
 }
 
 // --- Runtime chat globale (CM2): rete, hub realtime, flush riconnessione -------

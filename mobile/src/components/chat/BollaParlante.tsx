@@ -87,6 +87,17 @@ export function BollaParlante({
 
   return (
     <View style={[styles.bubble, isMine ? styles.mine : styles.theirs]}>
+      {message.forwarded_from && !deleted ? (
+        // Inoltro (CM4, RC-06): provenienza sempre dichiarata (trasparenza).
+        <View style={styles.forwarded}>
+          <Ionicons
+            name="arrow-redo-outline"
+            size={12}
+            color={isMine ? 'rgba(255,255,255,0.7)' : colors.muted}
+          />
+          <Text style={[styles.forwardedText, isMine && styles.forwardedTextMine]}>Inoltrato</Text>
+        </View>
+      ) : null}
       {quoted ? (
         <Pressable
           onPress={onQuotePress}
@@ -127,6 +138,10 @@ export function BollaParlante({
       ) : null}
 
       <View style={styles.footer}>
+        {message.edited_at && !deleted ? (
+          // Edit tracciato (RC-05/R-15): l'indicatore è SEMPRE visibile.
+          <Text style={[styles.time, isMine && styles.timeMine]}>modificato</Text>
+        ) : null}
         <Text style={[styles.time, isMine && styles.timeMine]}>{timeHHmm(message.created_at)}</Text>
         {status === 'pending' ? (
           <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.7)" />
@@ -182,4 +197,12 @@ const styles = StyleSheet.create({
   quoteTheirs: { borderLeftColor: colors.accent, backgroundColor: 'rgba(255,255,255,0.04)' },
   quoteAuthor: { color: colors.accentSoft, fontSize: fontSize.xs, fontFamily: fontFamily.semibold },
   quoteText: { color: colors.muted, fontSize: fontSize.sm, fontFamily: fontFamily.sans },
+  forwarded: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  forwardedText: {
+    color: colors.muted,
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.sans,
+    fontStyle: 'italic',
+  },
+  forwardedTextMine: { color: 'rgba(255,255,255,0.7)' },
 });

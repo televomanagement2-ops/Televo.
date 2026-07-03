@@ -16,35 +16,50 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import {
   addConversationMember,
+  addReaction,
   clearConversationHistory,
   createGroupConversation,
+  editMessage,
   fetchComposerDisabledReason,
   fetchConversationHeader,
+  fetchConversationReactions,
   fetchConversations,
   fetchGroupSenders,
   fetchMessagesPage,
   fetchSavedMessages,
+  forwardTextMessage,
   leaveConversation,
   markConversationRead,
   MESSAGES_PAGE,
+  promoteConversationAdmin,
   removeConversationMember,
+  removeReaction,
   saveMessage,
+  searchMessages,
   sendAudioMessage,
   sendTextMessage,
   setConversationFlag,
   setConversationMute,
   softDeleteMessage,
   unsaveMessage,
+  updateConversationMeta,
   type ConversationView,
 } from '@/lib/chat';
 import { subscribeConversation, subscribeMessagesAll } from '@/lib/chat-realtime';
-import { chatKeys, conversationsPrefix, upsertMessage } from '@/lib/chat-cache';
+import {
+  chatKeys,
+  conversationsPrefix,
+  removeReactionFromCache,
+  setReactionInCache,
+  upsertMessage,
+} from '@/lib/chat-cache';
 import { enqueueAudio, enqueueText, flushOutbox, retrySend } from '@/lib/outbox';
 import { initRete, onRiconnessione } from '@/lib/rete';
 import { usePresenceHeartbeat } from '@/hooks/usePresenza';
 import { useChatStore } from '@/store/chatStore';
-import type { MessageRow } from '@/types';
+import type { MessageRow, ReactionRow } from '@/types';
 import type { ConversationType } from '@/types/supabase';
+import type { ReactionEmoji } from '@/constants/chat';
 
 // Query keys e manipolazione cache: estratte in lib/chat-cache (CM2), perché
 // servono anche al motore dell'outbox fuori dagli hook. Ri-esportate per compat.
@@ -179,6 +194,114 @@ export function useDeleteMessage(convId: string) {
   });
 }
 
+/** Modifica del proprio messaggio (RC-05): upsert in cache; il realtime
+ *  onUpdate riconferma a tutti (badge "modificato" da edited_at). */
+export function useEditMessage(convId: string) {
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  const uid = session?.user.id;
+  return useMutation({
+    mutationFn: (input: { id: string; body: string }) => editMessage(input.id, input.body),
+    onSuccess: (msg) => {
+      upsertMessage(queryClient, convId, msg);
+      // L'anteprima nell'hub può essere il messaggio editato.
+      if (uid) void queryClient.invalidateQueries({ queryKey: conversationsPrefix(uid) });
+    },
+  });
+}
+
+/**
+ * Inoltro (RC-06): uno o più messaggi di testo verso una conversazione, in
+ * ordine cronologico, SEQUENZIALE (al primo errore ci si ferma: niente inoltri
+ * "a metà" silenziosi). Niente outbox: si inoltra da un picker e si naviga
+ * alla destinazione — l'ottimismo non aggiunge nulla qui.
+ */
+export function useForwardMessages() {
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  const uid = session?.user.id;
+  return useMutation({
+    mutationFn: async (input: { destConvId: string; messages: MessageRow[] }) => {
+      const ordered = [...input.messages].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+      for (const m of ordered) {
+        const row = await forwardTextMessage(input.destConvId, m);
+        upsertMessage(queryClient, input.destConvId, row);
+      }
+      return input.destConvId;
+    },
+    onSuccess: () => {
+      if (uid) void queryClient.invalidateQueries({ queryKey: conversationsPrefix(uid) });
+    },
+  });
+}
+
+// --- Reazioni emoji (CM4, RC-07) -----------------------------------------------
+
+/** Tutte le reazioni della conversazione (lista piatta; raggruppare per
+ *  message_id in UI). Aggiornata live dal realtime (insert/delete). */
+export function useReactions(convId: string) {
+  return useQuery({
+    queryKey: chatKeys.reactions(convId),
+    enabled: !!convId,
+    queryFn: () => fetchConversationReactions(convId),
+  });
+}
+
+/**
+ * Toggle della propria reazione: stessa emoji → rimuove; diversa → sostituisce
+ * (delete+insert: il DB non ha path UPDATE). Ottimistica: patch immediata della
+ * cache, invalidazione su errore (il realtime riconferma comunque).
+ */
+export function useToggleReaction(convId: string) {
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  const uid = session?.user.id;
+  return useMutation({
+    mutationFn: async (input: { messageId: string; emoji: ReactionEmoji; mine: string | null }) => {
+      if (!uid) throw new Error('not_authenticated');
+      if (input.mine != null) await removeReaction(input.messageId, uid);
+      if (input.mine !== input.emoji) return addReaction(input.messageId, input.emoji);
+      return null;
+    },
+    onMutate: (input) => {
+      if (!uid) return;
+      removeReactionFromCache(queryClient, convId, input.messageId, uid);
+      if (input.mine !== input.emoji) {
+        setReactionInCache(queryClient, convId, {
+          message_id: input.messageId,
+          user_id: uid,
+          conversation_id: convId,
+          emoji: input.emoji,
+          created_at: new Date().toISOString(),
+        } as ReactionRow);
+      }
+    },
+    onError: () => {
+      // Rollback semplice: il refetch riporta la verità del server.
+      void queryClient.invalidateQueries({ queryKey: chatKeys.reactions(convId) });
+    },
+    onSuccess: (row) => {
+      if (row) setReactionInCache(queryClient, convId, row);
+    },
+  });
+}
+
+// --- Ricerca full-text (CM4, RC-08) ----------------------------------------------
+
+/**
+ * Ricerca messaggi server-side: in-chat (`convId`) o globale (null). Attiva da
+ * 2 caratteri; il debounce sta al chiamante (la query key cambia per termine).
+ */
+export function useSearchMessages(term: string, convId: string | null) {
+  const q = term.trim();
+  return useQuery({
+    queryKey: ['chat', 'search', convId ?? 'global', q] as const,
+    enabled: q.length >= 2,
+    queryFn: () => searchMessages(q, convId),
+    staleTime: 30_000,
+  });
+}
+
 // --- Letto -------------------------------------------------------------------
 
 export function useMarkRead(convId: string) {
@@ -247,6 +370,25 @@ export function useLeaveConversation(convId: string) {
     onSuccess: () => {
       if (uid) void queryClient.invalidateQueries({ queryKey: conversationsPrefix(uid) });
     },
+  });
+}
+
+/** Rinomina gruppo / cambia avatar (solo admin, CM4). Invalida header + liste. */
+export function useUpdateConversationMeta(convId: string) {
+  const invalidate = useInvalidateMembers(convId);
+  return useMutation({
+    mutationFn: (input: { name: string; avatarUrl: string | null }) =>
+      updateConversationMeta(convId, input.name, input.avatarUrl),
+    onSuccess: invalidate,
+  });
+}
+
+/** Promuove un membro ad admin (solo admin, R-09). */
+export function usePromoteAdmin(convId: string) {
+  const invalidate = useInvalidateMembers(convId);
+  return useMutation({
+    mutationFn: (userId: string) => promoteConversationAdmin(convId, userId),
+    onSuccess: invalidate,
   });
 }
 
@@ -347,6 +489,16 @@ export function useConversationRealtime(convId: string, onIncoming?: (m: Message
       onUpdate: (m) => upsertMessage(queryClient, convId, m),
       onMemberUpdate: () =>
         void queryClient.invalidateQueries({ queryKey: chatKeys.header(convId) }),
+      // Reazioni (CM4): patch diretta della cache della conversazione. Il DELETE
+      // arriva senza filtro (solo PK): se la PK non è in questa cache è un no-op.
+      onReactionInsert: (r) => setReactionInCache(queryClient, convId, r),
+      onReactionDelete: (pk) =>
+        removeReactionFromCache(queryClient, convId, pk.message_id, pk.user_id),
+      // Rinomina/avatar del gruppo: header e lista chat si aggiornano live.
+      onConversationUpdate: () => {
+        void queryClient.invalidateQueries({ queryKey: chatKeys.header(convId) });
+        if (uid) void queryClient.invalidateQueries({ queryKey: conversationsPrefix(uid) });
+      },
       onTyping: (userId) => {
         if (userId === uid) return;
         const prev = typingTimers.current.get(userId);

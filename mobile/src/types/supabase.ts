@@ -168,10 +168,11 @@ export interface Database {
           reply_to: string | null;
           expires_at: string | null;
           edited_at: string | null; // timestamp ultima modifica (max 48h dall'invio)
+          forwarded_from: string | null; // origine di un inoltro (CM4, RC-06); null se non inoltrato
           created_at: string;
           deleted_at: string | null;
         };
-        // Grant insert: (conversation_id, type, body, audio_url, media_url, media_type, reply_to, expires_at).
+        // Grant insert: (conversation_id, type, body, audio_url, media_url, media_type, reply_to, expires_at, forwarded_from).
         Insert: {
           conversation_id: string;
           type?: MessageType;
@@ -181,9 +182,28 @@ export interface Database {
           media_type?: string | null;
           reply_to?: string | null;
           expires_at?: string | null;
+          forwarded_from?: string | null;
         };
         // Grant update (body, deleted_at): edit del proprio testo + soft-delete.
         Update: { body?: string | null; deleted_at?: string | null };
+      };
+      message_reactions: {
+        // Reazioni emoji (CM4, RC-07): 1 per utente per messaggio, set curato
+        // (REACTION_EMOJIS in constants/chat.ts, byte-identico al CHECK DB).
+        // conversation_id è derivata dal trigger (serve al filtro realtime).
+        // Cambio emoji = delete + insert (nessun grant UPDATE).
+        Row: {
+          message_id: string;
+          user_id: string;
+          conversation_id: string;
+          emoji: string;
+          created_at: string;
+        };
+        Insert: {
+          message_id: string;
+          emoji: string;
+        };
+        Update: never;
       };
       streaks: {
         // Streak per conversazione (giorni consecutivi, con freeze). Sola lettura.
@@ -437,6 +457,27 @@ export interface Database {
       // Messaggi salvati (D4) — jsonb { ok }.
       save_message: { Args: { p_message: string }; Returns: Json };
       unsave_message: { Args: { p_message: string }; Returns: Json };
+      // Ricerca full-text (CM4, RC-08): in-chat (p_conv) o globale (p_conv null).
+      // Visibilità identica alla lista messaggi (membership/cleared/hidden/deleted).
+      search_messages: {
+        Args: { p_query: string; p_conv?: string | null; p_limit?: number; p_before?: string | null };
+        Returns: {
+          message_id: string;
+          conversation_id: string;
+          body: string | null;
+          created_at: string;
+          sender_id: string;
+          sender_username: string | null;
+          conv_type: ConversationType;
+          conv_title: string;
+        }[];
+      };
+      // Gestione gruppo (CM4, R-09) — jsonb { ok }. Solo admin, mai su DM.
+      update_conversation_meta: {
+        Args: { p_conv: string; p_name: string; p_avatar_url?: string | null };
+        Returns: Json;
+      };
+      promote_conversation_admin: { Args: { p_conv: string; p_user: string }; Returns: Json };
       // Presenza "ultimo accesso" (§3.13) — jsonb { ok }.
       touch_presence: { Args: Record<string, never>; Returns: Json };
       // Presenza del peer, privacy-safe (CM1, R-03): amici/co-membri + reciprocità.

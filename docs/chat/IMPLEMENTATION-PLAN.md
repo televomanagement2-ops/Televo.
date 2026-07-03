@@ -414,14 +414,35 @@ esistente: riusarlo); FTS su citext/italian da validare con testi reali; inoltro
 vocali effimeri (vietarlo: il file scade — regola: inoltrabili solo testo/media).
 
 **Checklist**:
-- [ ] Migrazione modern applicata + pgTAP verdi
-- [ ] Edit entro 48h con badge; rifiuto oltre finestra gestito in UI
-- [ ] Inoltro singolo e multiplo con intestazione; vocali non inoltrabili
-- [ ] Reazioni live su 2 device; 1 per utente; solo set curato
-- [ ] Ricerca in-chat e globale con evidenziazione
-- [ ] Rinomina gruppo/avatar (admin) + promozione admin + auto-promozione
-- [ ] Prop da messaggio (rispetta unicità/cap backend) e Segnala funzionanti
-- [ ] `tsc` + `eslint` puliti
+- [x] Migrazione modern applicata (`20260703120000`, push al primo colpo) + pgTAP
+      166/166 verdi SUL REMOTO + smoke runtime via pooler (search_messages eseguita
+      con JWT simulato, reazione inserita col trigger, emoji fuori set rifiutata)
+- [x] Edit entro 48h con badge "modificato" (banner matita nel composer, update
+      diretto, realtime onUpdate già cablato); rifiuto oltre finestra → errore IT
+- [x] Inoltro singolo (menu) e multiplo (selezione, cap 10 per il rate-limit) con
+      intestazione "Inoltrato"; SOLO testo (vocali vietati dal trigger; media → CM5)
+- [x] Reazioni: set curato ❤️😂👍😮😢🔥 (CHECK DB byte-identico alla costante
+      client), 1 per utente (PK), toggle ottimistico delete+insert, chip sotto le
+      bolle, realtime INSERT filtrato + DELETE con scoping client (compromesso
+      documentato in migrazione). Niente notifiche/Aura (decisione utente)
+- [x] Ricerca FTS in-chat (barra header, contatore i/N, frecce, salto+flash) e
+      globale (cerca.tsx ricostruita: Persone + Messaggi → deep-link ?highlight=)
+- [x] Rinomina gruppo/avatar (pannello admin in info) + promozione admin (scudo)
+      + auto-promozione del più anziano server-side (leave_conversation v2)
+- [x] Prop da messaggio (insert diretta, trait picker nel menu; 23505 → "già
+      dato") e Segnala (file_report target message, 4 motivi) funzionanti
+- [x] `tsc` + `eslint` puliti (0 errori, 0 warning)
+
+> Verifica su 2 device (criterio di completamento): da eseguire in Expo Go (smoke
+> manuale utente: reazioni live, edit, inoltro, ricerca con accenti); tutto il
+> resto è verificato (pgTAP remoto + smoke runtime).
+>
+> ⚠️ Scoperta CM4 (sistemica, rimandata a CM8): il progetto hosted ha DEFAULT
+> PRIVILEGES che concedono ALL ad anon/authenticated su OGNI nuova tabella — i
+> grant espliciti delle migrazioni sono di fatto cosmetici e la RLS è l'unico
+> cancello reale. Su `message_reactions` i privilegi sono stati revocati e
+> ri-concessi al minimo (invariante pgTAP dedicata); l'audit delle altre tabelle
+> è aggiunto a CM8.
 
 **Criteri di completamento**: tutte le voci del menu messaggio della SRS S16 operative.
 
@@ -554,6 +575,11 @@ lasciare il modulo documentato e testabile.
   server delle spunte/`last_read_at` se deciso (compromesso CM3).
 - **moderate-text opzionale sull'invio** (fire-and-forget, degrada senza chiave).
 - **Cron cleanup gruppi orfani** (0 membri) — R-16.
+- **Audit grant vs default privileges** (scoperta CM4): il progetto hosted concede
+  ALL ad anon/authenticated su ogni nuova tabella via DEFAULT PRIVILEGES → i grant
+  espliciti delle migrazioni sono cosmetici, la RLS è l'unico cancello. Decidere:
+  revoca sistematica per-tabella (come fatto per `message_reactions`) o revoca dei
+  default a livello di schema; aggiungere invarianti pgTAP sui privilegi sensibili.
 - **`voice_thread`**: unificazione definitiva con `audio` nell'UI (R-12) o semantica
   dedicata se emersa nel frattempo.
 - **`docs/chat/MANUAL-TESTING.md`**: scenari end-to-end di tutto il modulo (per

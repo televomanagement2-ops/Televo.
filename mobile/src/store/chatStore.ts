@@ -35,11 +35,19 @@ interface ChatState {
   drafts: Record<string, string>;
   /** Messaggio a cui si sta rispondendo, per conversazione. */
   replyTo: Record<string, MessageRow | null>;
+  /** Messaggio in MODIFICA (CM4, RC-05), per conversazione. Mutuamente
+   *  esclusivo con replyTo: entrare in edit annulla la risposta e viceversa. */
+  editing: Record<string, MessageRow | null>;
+  /** Messaggi selezionati per l'inoltro (CM4, RC-06): il picker
+   *  (chat/inoltra) li legge da qui — niente id in URL. */
+  forwardDraft: MessageRow[] | null;
   /** Coda d'invio ottimistica (tutte le conversazioni, ordine di enqueue). */
   outbox: OutboxItem[];
   setDraft: (convId: string, text: string) => void;
   clearDraft: (convId: string) => void;
   setReplyTo: (convId: string, message: MessageRow | null) => void;
+  setEditing: (convId: string, message: MessageRow | null) => void;
+  setForwardDraft: (messages: MessageRow[] | null) => void;
   outboxAdd: (item: OutboxItem) => void;
   outboxMarkFailed: (tempId: string, errorMessage: string) => void;
   outboxMarkPending: (tempId: string) => void;
@@ -50,6 +58,8 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set) => ({
   drafts: {},
   replyTo: {},
+  editing: {},
+  forwardDraft: null,
   outbox: [],
   setDraft: (convId, text) => set((s) => ({ drafts: { ...s.drafts, [convId]: text } })),
   clearDraft: (convId) =>
@@ -57,7 +67,18 @@ export const useChatStore = create<ChatState>((set) => ({
       const { [convId]: _omit, ...rest } = s.drafts;
       return { drafts: rest };
     }),
-  setReplyTo: (convId, message) => set((s) => ({ replyTo: { ...s.replyTo, [convId]: message } })),
+  setReplyTo: (convId, message) =>
+    set((s) => ({
+      replyTo: { ...s.replyTo, [convId]: message },
+      // Rispondere mentre si modifica non ha senso: l'edit si annulla.
+      editing: message ? { ...s.editing, [convId]: null } : s.editing,
+    })),
+  setEditing: (convId, message) =>
+    set((s) => ({
+      editing: { ...s.editing, [convId]: message },
+      replyTo: message ? { ...s.replyTo, [convId]: null } : s.replyTo,
+    })),
+  setForwardDraft: (messages) => set({ forwardDraft: messages }),
   outboxAdd: (item) => set((s) => ({ outbox: [...s.outbox, item] })),
   outboxMarkFailed: (tempId, errorMessage) =>
     set((s) => ({
@@ -68,5 +89,5 @@ export const useChatStore = create<ChatState>((set) => ({
       outbox: s.outbox.map((o) => (o.tempId === tempId ? { ...o, status: 'pending' as const, errorMessage: null } : o)),
     })),
   outboxRemove: (tempId) => set((s) => ({ outbox: s.outbox.filter((o) => o.tempId !== tempId) })),
-  reset: () => set({ drafts: {}, replyTo: {}, outbox: [] }),
+  reset: () => set({ drafts: {}, replyTo: {}, editing: {}, forwardDraft: null, outbox: [] }),
 }));

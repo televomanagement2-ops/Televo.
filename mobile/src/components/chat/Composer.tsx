@@ -26,6 +26,11 @@ export interface AudioPreview {
   sending?: boolean;
 }
 
+/** Anteprima del messaggio in MODIFICA (CM4, RC-05). */
+export interface EditPreview {
+  text: string;
+}
+
 interface Props {
   value: string;
   onChangeText: (t: string) => void;
@@ -35,6 +40,10 @@ interface Props {
   disabledReason?: string | null;
   reply?: ReplyPreview | null;
   onCancelReply?: () => void;
+  /** Se presente, il composer è in modalità MODIFICA: l'invio aggiorna il
+   *  messaggio (niente mic/allegati — si edita solo testo). */
+  editing?: EditPreview | null;
+  onCancelEdit?: () => void;
   /** Tap sulla graffetta allegati (foto/file). Per ora → avviso "presto" (M6). */
   onAttach?: () => void;
   // --- Vocali (M2) ---
@@ -64,6 +73,8 @@ export function Composer({
   disabledReason,
   reply,
   onCancelReply,
+  editing,
+  onCancelEdit,
   onAttach,
   onStartRecording,
   onStopRecording,
@@ -85,7 +96,21 @@ export function Composer({
 
   return (
     <View style={styles.wrap}>
-      {reply ? (
+      {editing ? (
+        // Barra di modifica (CM4): speculare alla risposta, con la matita.
+        <View style={styles.replyBar}>
+          <Ionicons name="pencil" size={16} color={colors.accent} />
+          <View style={styles.replyBody}>
+            <Text style={styles.replyAuthor}>Modifica messaggio</Text>
+            <Text style={styles.replyText} numberOfLines={1}>
+              {editing.text}
+            </Text>
+          </View>
+          <Pressable onPress={onCancelEdit} hitSlop={8}>
+            <Ionicons name="close" size={18} color={colors.muted} />
+          </Pressable>
+        </View>
+      ) : reply ? (
         <View style={styles.replyBar}>
           <View style={styles.replyLine} />
           <View style={styles.replyBody}>
@@ -136,15 +161,18 @@ export function Composer({
         </View>
       ) : (
         // --- Idle: graffetta allegati + input testo + microfono / invio ---
+        // In MODIFICA niente allegati né mic: si edita solo il testo (RC-05).
         <View style={styles.row}>
-          <Pressable
-            onPress={onAttach}
-            style={({ pressed }) => [styles.attachBtn, pressed && styles.pressed]}
-            hitSlop={6}
-            accessibilityLabel="Allega"
-          >
-            <Ionicons name="add-circle-outline" size={26} color={colors.muted} />
-          </Pressable>
+          {!editing ? (
+            <Pressable
+              onPress={onAttach}
+              style={({ pressed }) => [styles.attachBtn, pressed && styles.pressed]}
+              hitSlop={6}
+              accessibilityLabel="Allega"
+            >
+              <Ionicons name="add-circle-outline" size={26} color={colors.muted} />
+            </Pressable>
+          ) : null}
           <TextInput
             value={value}
             onChangeText={onChangeText}
@@ -154,7 +182,7 @@ export function Composer({
             style={styles.input}
             multiline
           />
-          {hasText ? (
+          {hasText || editing ? (
             <Pressable
               onPress={onSend}
               disabled={!canSendText}
@@ -164,7 +192,11 @@ export function Composer({
                 pressed && canSendText && styles.pressed,
               ]}
             >
-              <Ionicons name="arrow-up" size={20} color={canSendText ? '#ffffff' : colors.faint} />
+              <Ionicons
+                name={editing ? 'checkmark' : 'arrow-up'}
+                size={20}
+                color={canSendText ? '#ffffff' : colors.faint}
+              />
             </Pressable>
           ) : (
             <Pressable

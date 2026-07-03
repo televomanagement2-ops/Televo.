@@ -37,8 +37,20 @@ const MESSAGES: Record<string, string> = {
   blocked_pair: 'Non è possibile inviare il messaggio.',
   message_too_long: 'Il messaggio è troppo lungo (max 4096 caratteri).',
   rate_limited: 'Stai scrivendo troppo velocemente. Aspetta un secondo.',
-  edit_window_expired: 'Puoi editare solo nei primi 48h dal messaggio.',
-  cannot_edit_message: 'Questo messaggio non può essere editato.',
+  edit_window_expired: 'Puoi modificare solo nelle prime 48 ore dal messaggio.',
+  cannot_edit_message: 'Questo messaggio non può essere modificato.',
+  // Inoltro (CM4)
+  invalid_forward: 'Il messaggio da inoltrare non è più disponibile.',
+  cannot_forward_type: 'I vocali non si possono inoltrare.',
+  // Gestione gruppo (CM4)
+  cannot_edit_dm: 'Le chat 1:1 non si possono modificare.',
+  invalid_name: 'Il nome del gruppo deve avere da 1 a 80 caratteri.',
+  invalid_avatar_url: 'Immagine del gruppo non valida.',
+  target_not_member: 'Questo utente non fa parte del gruppo.',
+  // Props (CM4: "Dai un prop" da un messaggio)
+  cannot_prop_self: 'Non puoi dare un prop a te stesso.',
+  recipient_not_found: 'Utente non trovato.',
+  daily_prop_limit: 'Hai raggiunto il limite di prop di oggi. Torna domani!',
   // Moderazione (CM1)
   user_muted: 'Sei silenziato fino a un certo orario. Torna dopo.',
   user_banned: 'Il tuo account è stato sospeso.',
@@ -58,4 +70,16 @@ const MESSAGES: Record<string, string> = {
 export function chatErrorMessage(error: unknown): string {
   const code = authErrorCode(error);
   return MESSAGES[code] ?? 'Qualcosa è andato storto. Riprova.';
+}
+
+/**
+ * Variante per l'insert diretta in `props`: la violazione dell'indice unico
+ * (giver, recipient, tratto, contenuto) arriva come codice SQL 23505, non come
+ * codice-stringa — qui (e solo qui) 23505 significa "prop già dato".
+ */
+export function propErrorMessage(error: unknown): string {
+  if ((error as { code?: string })?.code === '23505') {
+    return 'Hai già dato questo prop per questo messaggio.';
+  }
+  return chatErrorMessage(error);
 }

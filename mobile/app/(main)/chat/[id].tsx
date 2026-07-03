@@ -8,6 +8,9 @@
 // raggruppamento bolle consecutive, haptic all'invio, banner offline.
 // CM3: sottotitolo header (typing > presenza DM > "N membri"), spunte gated dai
 // toggle privacy (reciprocità R-03), emissione "sta scrivendo…" dal composer.
+// CM4: menu messaggio completo (MenuMessaggio: reazioni, edit, inoltro, prop,
+// info, segnala), modalità SELEZIONE con barra azioni, ricerca in-chat (S12b)
+// con navigazione tra i match, deep-link ?highlight= dalla ricerca globale.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -17,6 +20,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -31,6 +35,7 @@ import { MessaggioRow } from '@/components/chat/MessaggioRow';
 import { DataSeparatore } from '@/components/chat/DataSeparatore';
 import { Composer } from '@/components/chat/Composer';
 import { StreakBadge } from '@/components/chat/StreakBadge';
+import { MenuMessaggio, type ReadByEntry } from '@/components/chat/MenuMessaggio';
 import type { QuotedRef, SendStatus } from '@/components/chat/BollaParlante';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -40,16 +45,20 @@ import {
   useConversationRealtime,
   useConversationSenders,
   useDeleteMessage,
+  useEditMessage,
   useLeaveConversation,
   useMarkRead,
   useMessages,
   useOutbox,
+  useReactions,
   useSaveMessage,
+  useSearchMessages,
+  useToggleReaction,
 } from '@/hooks/useChat';
 import { usePeerPresence, presenceLabel } from '@/hooks/usePresenza';
 import { useMyProfile } from '@/hooks/useProfilo';
 import { useChatStore } from '@/store/chatStore';
-import { previewText } from '@/lib/chat';
+import { giveMessageProp, previewText, reportMessage } from '@/lib/chat';
 import { useOnline } from '@/lib/rete';
 import {
   avviaRegistrazione,
@@ -57,10 +66,12 @@ import {
   richiediPermessoMic,
 } from '@/lib/audio';
 import { dayLabel, isSameDay } from '@/lib/datetime';
-import { chatErrorMessage } from '@/lib/errors';
-import { dynamicRoutes } from '@/constants/routes';
+import { chatErrorMessage, propErrorMessage } from '@/lib/errors';
+import { dynamicRoutes, ROUTES } from '@/constants/routes';
+import { MAX_FORWARD_SELECTION, type ReactionEmoji } from '@/constants/chat';
+import type { AuraTrait } from '@/constants/aura';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
-import type { MessageRow } from '@/types';
+import type { MessageRow, ReactionRow } from '@/types';
 
 type Item =
   | { kind: 'sep'; id: string; label: string }
@@ -86,7 +97,7 @@ function isGrouped(prev: MessageRow | null, m: MessageRow): boolean {
 }
 
 export default function Chat() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, highlight } = useLocalSearchParams<{ id: string; highlight?: string }>();
   const convId = id ?? '';
   const router = useRouter();
   const { session } = useAuth();
@@ -98,6 +109,7 @@ export default function Chat() {
   // (così "Cancella cronologia" filtra DENTRO la chat, senza flash dei vecchi).
   const messagesQ = useMessages(convId, header.data ? header.data.myClearedAt ?? null : undefined);
   const del = useDeleteMessage(convId);
+  const editMut = useEditMessage(convId);
   const markRead = useMarkRead(convId);
   const org = useConversationOrg(convId);
   const leave = useLeaveConversation(convId);
@@ -112,6 +124,10 @@ export default function Chat() {
   const clearDraft = useChatStore((s) => s.clearDraft);
   const reply = useChatStore((s) => s.replyTo[convId] ?? null);
   const setReplyTo = useChatStore((s) => s.setReplyTo);
+  // CM4 (RC-05/RC-06): messaggio in modifica + selezione per l'inoltro.
+  const editing = useChatStore((s) => s.editing[convId] ?? null);
+  const setEditing = useChatStore((s) => s.setEditing);
+  const setForwardDraft = useChatStore((s) => s.setForwardDraft);
 
   // Segna letto all'apertura. `mutate` di react-query è stabile.
   const markReadMutate = markRead.mutate;
@@ -166,6 +182,34 @@ export default function Chat() {
     [senders],
   );
 
+  // CM4 (RC-07): reazioni della conversazione, raggruppate per messaggio.
+  const reactionsQ = useReactions(convId);
+  const reactionsByMsg = useMemo(() => {
+    const map = new Map<string, ReactionRow[]>();
+    for (const r of reactionsQ.data ?? []) {
+      const arr = map.get(r.message_id);
+      if (arr) arr.push(r);
+      else map.set(r.message_id, [r]);
+    }
+    return map;
+  }, [reactionsQ.data]);
+  const toggleReaction = useToggleReaction(convId);
+  const myReactionOn = useCallback(
+    (messageId: string) =>
+      reactionsByMsg.get(messageId)?.find((r) => r.user_id === uid)?.emoji ?? null,
+    [reactionsByMsg, uid],
+  );
+  const onToggleReaction = useCallback(
+    (m: MessageRow, emoji: string) => {
+      if (m.id.startsWith('temp-')) return;
+      toggleReaction.mutate(
+        { messageId: m.id, emoji: emoji as ReactionEmoji, mine: myReactionOn(m.id) },
+        { onError: (e) => Alert.alert('Ops', chatErrorMessage(e)) },
+      );
+    },
+    [toggleReaction, myReactionOn],
+  );
+
   // CM3: sottotitolo dell'header — priorità: typing > presenza (DM) > membri.
   const typingLabel = useMemo(() => {
     if (typingUserIds.length === 0) return null;
@@ -205,6 +249,7 @@ export default function Chat() {
           reply_to: o.replyTo,
           expires_at: null,
           edited_at: null,
+          forwarded_from: null,
           created_at: o.createdAt,
           deleted_at: null,
         } as MessageRow,
@@ -263,18 +308,29 @@ export default function Chat() {
         return true;
       };
       if (scrollSePresente()) return;
-      // Non ancora caricato: pagina all'indietro (cap di sicurezza), poi riprova.
-      for (let i = 0; i < 5; i++) {
+      // Non ancora caricato: pagina all'indietro, poi riprova. Cap alzato in CM4
+      // (la ricerca può puntare a messaggi molto vecchi: 20 pagine = 800 msg).
+      for (let i = 0; i < 20; i++) {
         const res = await messagesQ.fetchNextPage();
         const trovato = res.data?.pages.some((p) => p.some((m) => m.id === messageId));
         if (trovato || !res.hasNextPage) break;
       }
       setTimeout(() => {
-        void scrollSePresente();
+        if (!scrollSePresente()) {
+          Alert.alert('Non raggiungibile', 'Il messaggio è troppo indietro nella cronologia.');
+        }
       }, 120);
     },
     [messagesQ, evidenzia],
   );
+
+  // Deep-link ?highlight=<messageId> dalla ricerca globale (S12a): salto one-shot.
+  const highlightDone = useRef(false);
+  useEffect(() => {
+    if (!highlight || highlightDone.current || messages.length === 0) return;
+    highlightDone.current = true;
+    void scrollToMessage(highlight);
+  }, [highlight, messages.length, scrollToMessage]);
 
   // scrollToIndex su liste paginate può fallire su indici non renderizzati:
   // fallback standard con offset stimato + retry.
@@ -313,6 +369,117 @@ export default function Chat() {
     [msgById, uid, peerName, isGroup, senderName],
   );
 
+  // --- Selezione multipla (CM4, RC-06) ----------------------------------------
+  // null = modalità spenta. Cap a MAX_FORWARD_SELECTION (rate-limit server).
+  const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null);
+
+  const toggleSelect = useCallback(
+    (m: MessageRow) => {
+      if (m.id.startsWith('temp-') || !selectedIds) return;
+      const next = new Set(selectedIds);
+      if (next.has(m.id)) {
+        next.delete(m.id);
+        setSelectedIds(next.size === 0 ? null : next);
+        return;
+      }
+      if (next.size >= MAX_FORWARD_SELECTION) {
+        Alert.alert('Limite selezione', `Puoi selezionare al massimo ${MAX_FORWARD_SELECTION} messaggi.`);
+        return;
+      }
+      next.add(m.id);
+      setSelectedIds(next);
+    },
+    [selectedIds],
+  );
+
+  // Selezionati in ordine cronologico (per copia/inoltro coerenti).
+  const selectedMessages = useMemo(() => {
+    if (!selectedIds) return [];
+    return messages
+      .filter((m) => selectedIds.has(m.id))
+      .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+  }, [selectedIds, messages]);
+  const selHasText = selectedMessages.some((m) => m.type === 'text' && m.body && !m.deleted_at);
+  const selCanForward =
+    selectedMessages.length > 0 &&
+    selectedMessages.every((m) => m.type === 'text' && !!m.body && !m.deleted_at);
+  const selCanDelete =
+    selectedMessages.length > 0 &&
+    selectedMessages.every((m) => m.sender_id === uid && !m.deleted_at);
+
+  const selCopy = () => {
+    const testo = selectedMessages
+      .filter((m) => m.type === 'text' && m.body && !m.deleted_at)
+      .map((m) => m.body)
+      .join('\n');
+    if (testo) void Clipboard.setStringAsync(testo);
+    setSelectedIds(null);
+  };
+  const selSave = () => {
+    for (const m of selectedMessages) {
+      if (!m.deleted_at) save.mutate(m.id);
+    }
+    setSelectedIds(null);
+  };
+  const selForward = () => {
+    setForwardDraft(selectedMessages);
+    setSelectedIds(null);
+    router.push(ROUTES.chatInoltra);
+  };
+  const selDelete = () => {
+    Alert.alert('Elimina messaggi', `Eliminare ${selectedMessages.length} messaggi?`, [
+      { text: 'Annulla', style: 'cancel' },
+      {
+        text: 'Elimina',
+        style: 'destructive',
+        onPress: () => {
+          for (const m of selectedMessages) del.mutate(m.id);
+          setSelectedIds(null);
+        },
+      },
+    ]);
+  };
+
+  // --- Ricerca in-chat (CM4, S12b) --------------------------------------------
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedTerm, setDebouncedTerm] = useState('');
+  const [searchIdx, setSearchIdx] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedTerm(searchTerm), 350);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+  const searchQ = useSearchMessages(searchOpen ? debouncedTerm : '', convId);
+  const searchResults = useMemo(() => searchQ.data ?? [], [searchQ.data]);
+
+  // Al primo risultato di un nuovo termine: salto automatico al match più recente.
+  const lastJumpTerm = useRef('');
+  useEffect(() => {
+    if (!searchOpen || searchResults.length === 0) return;
+    if (lastJumpTerm.current === debouncedTerm) return;
+    lastJumpTerm.current = debouncedTerm;
+    setSearchIdx(0);
+    const first = searchResults[0];
+    if (first) void scrollToMessage(first.messageId);
+  }, [searchOpen, searchResults, debouncedTerm, scrollToMessage]);
+
+  const gotoMatch = (idx: number) => {
+    const r = searchResults[idx];
+    if (!r) return;
+    setSearchIdx(idx);
+    void scrollToMessage(r.messageId);
+  };
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchTerm('');
+    setDebouncedTerm('');
+    lastJumpTerm.current = '';
+    setSearchIdx(0);
+  };
+
+  // --- Menu messaggio (CM4, S16) ----------------------------------------------
+  const [menuFor, setMenuFor] = useState<MessageRow | null>(null);
+
   const onLongPress = useCallback(
     (m: MessageRow) => {
       // Pseudo-messaggi dell'outbox: menu dedicato Riprova/Elimina.
@@ -331,35 +498,68 @@ export default function Chat() {
         );
         return;
       }
-
-      const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [];
-      if (!m.deleted_at) {
-        buttons.push({ text: 'Rispondi', onPress: () => setReplyTo(convId, m) });
-        if (m.type === 'text' && m.body) {
-          buttons.push({
-            text: 'Copia',
-            onPress: () => void Clipboard.setStringAsync(m.body as string),
-          });
-        }
-        buttons.push({
-          text: 'Salva',
-          onPress: () =>
-            save.mutate(m.id, { onError: (e) => Alert.alert('Ops', chatErrorMessage(e)) }),
-        });
-      }
-      if (m.sender_id === uid && !m.deleted_at) {
-        buttons.push({ text: 'Elimina', style: 'destructive', onPress: () => del.mutate(m.id) });
-      }
-      buttons.push({ text: 'Annulla', style: 'cancel' });
-      Alert.alert('Messaggio', undefined, buttons);
+      setMenuFor(m);
     },
-    [convId, uid, del, save, setReplyTo, outbox, outboxApi],
+    [outbox, outboxApi],
   );
+
+  // "Letto da N" (RC-09): membri (escluso io) con last_read_at ≥ created_at del
+  // messaggio. Solo gruppi (nelle DM bastano le spunte). Confronto tra ISO
+  // string dello stesso formato: ordinabile lessicograficamente.
+  const menuReadBy = useMemo<ReadByEntry[]>(() => {
+    if (!menuFor || !isGroup || !header.data) return [];
+    return header.data.members
+      .filter((mb) => mb.userId !== uid && mb.lastReadAt >= menuFor.created_at)
+      .map((mb) => ({ name: mb.profile?.username ?? 'Utente', readAt: mb.lastReadAt }));
+  }, [menuFor, isGroup, header.data, uid]);
+  const menuRecipients = header.data ? Math.max(header.data.members.length - 1, 0) : 0;
+
+  const onMenuEdit = (m: MessageRow) => {
+    // La bozza corrente viene sovrascritta dal testo in modifica
+    // (semplificazione documentata nel piano CM4).
+    setEditing(convId, m);
+    setDraft(convId, m.body ?? '');
+  };
+  const onMenuForward = (m: MessageRow) => {
+    setForwardDraft([m]);
+    router.push(ROUTES.chatInoltra);
+  };
+  const onMenuProp = async (m: MessageRow, trait: AuraTrait) => {
+    try {
+      await giveMessageProp(m.sender_id, trait, m.id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      Alert.alert('Fatto ✨', 'Prop inviato: alimenta la sua Aura.');
+    } catch (e) {
+      Alert.alert('Ops', propErrorMessage(e));
+    }
+  };
+  const onMenuReport = async (m: MessageRow, reason: string) => {
+    try {
+      await reportMessage(m.id, reason);
+      Alert.alert('Grazie', 'Segnalazione inviata ai moderatori.');
+    } catch (e) {
+      Alert.alert('Ops', chatErrorMessage(e));
+    }
+  };
 
   const handleSend = () => {
     const body = draft.trim();
     if (!body || !uid) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+
+    // CM4 (RC-05): in modalità modifica l'invio aggiorna il messaggio.
+    if (editing) {
+      if (body !== (editing.body ?? '').trim()) {
+        editMut.mutate(
+          { id: editing.id, body },
+          { onError: (e) => Alert.alert('Ops', chatErrorMessage(e)) },
+        );
+      }
+      setEditing(convId, null);
+      clearDraft(convId);
+      return;
+    }
+
     // Ottimistico: bolla immediata, input libero subito (anche offline → pending).
     outboxApi.sendText(body, reply?.id ?? null);
     clearDraft(convId);
@@ -458,7 +658,7 @@ export default function Chat() {
     if (header.data?.peer) router.push(dynamicRoutes.profiloUtente(header.data.peer.id));
   };
 
-  // Menu overflow chat (S5): Silenzia / Cancella cronologia / Elimina chat.
+  // Menu overflow chat (S5): Cerca / Silenzia / Cancella cronologia / Elimina chat.
   const onOrgErr = (e: unknown) => Alert.alert('Ops', chatErrorMessage(e));
   const isDm = (header.data?.type ?? 'dm') === 'dm';
 
@@ -508,6 +708,7 @@ export default function Chat() {
 
   const openChatMenu = () => {
     Alert.alert(header.data?.title ?? 'Chat', undefined, [
+      { text: 'Cerca', onPress: () => setSearchOpen(true) },
       { text: 'Silenzia', onPress: openMuteMenu },
       { text: 'Cancella cronologia', style: 'destructive', onPress: confirmClear },
       {
@@ -549,7 +750,13 @@ export default function Chat() {
         status={item.status}
         audioSeconds={item.audioSeconds}
         errorMessage={item.errorMessage}
+        reactions={reactionsByMsg.get(m.id)}
+        myUid={uid ?? null}
+        selectionMode={!!selectedIds}
+        selected={selectedIds?.has(m.id) ?? false}
+        onPressRow={toggleSelect}
         onLongPress={onLongPress}
+        onToggleReaction={onToggleReaction}
         onQuotePress={onQuotePress}
       />
     );
@@ -557,44 +764,114 @@ export default function Chat() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <Ionicons name="chevron-back" size={26} color={colors.ink} />
-        </Pressable>
-        <Pressable style={styles.headerCenter} onPress={openPeer}>
-          <Avatar uri={header.data?.avatarUrl} name={header.data?.title} size={36} />
-          <View style={styles.headerText}>
-            <View style={styles.headerTitleRow}>
-              <Text style={styles.headerTitle} numberOfLines={1}>
-                {header.data?.title ?? 'Chat'}
-              </Text>
-              {header.data?.streak ? <StreakBadge count={header.data.streak} compact /> : null}
-            </View>
-            {/* CM3: typing > presenza (DM) > membri (gruppi); assente = nascosto. */}
-            {subtitle ? (
-              <Text
-                style={[styles.headerSubtitle, subtitleLive && styles.headerSubtitleLive]}
-                numberOfLines={1}
-              >
-                {subtitle}
-              </Text>
-            ) : null}
-          </View>
-        </Pressable>
-        <View style={styles.headerActions}>
-          {/* Chiamata: differita (LiveKit + Dev Build) → visibile ma "presto". */}
-          <Pressable hitSlop={8} onPress={() => Alert.alert('Presto', 'Le chiamate arrivano presto.')}>
-            <Ionicons name="call-outline" size={20} color={colors.faint} />
+      {/* Header: normale / barra di ricerca (S12b) / barra selezione (RC-06). */}
+      {searchOpen ? (
+        <View style={styles.header}>
+          <Pressable onPress={closeSearch} hitSlop={10}>
+            <Ionicons name="arrow-back" size={24} color={colors.ink} />
           </Pressable>
-          <Pressable hitSlop={8} onPress={() => router.push(dynamicRoutes.chatInfo(convId))}>
-            <Ionicons name="information-circle-outline" size={22} color={colors.ink} />
+          <TextInput
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            placeholder="Cerca nella chat…"
+            placeholderTextColor={colors.faint}
+            selectionColor={colors.accent}
+            style={styles.searchInput}
+            autoFocus
+            returnKeyType="search"
+          />
+          <Text style={styles.searchCount}>
+            {searchResults.length > 0
+              ? `${searchIdx + 1}/${searchResults.length}`
+              : debouncedTerm.trim().length >= 2 && !searchQ.isFetching
+                ? '0'
+                : ''}
+          </Text>
+          <Pressable
+            hitSlop={8}
+            disabled={searchIdx >= searchResults.length - 1}
+            onPress={() => gotoMatch(searchIdx + 1)}
+          >
+            <Ionicons
+              name="chevron-up"
+              size={22}
+              color={searchIdx >= searchResults.length - 1 ? colors.faint : colors.ink}
+            />
           </Pressable>
-          <Pressable hitSlop={8} onPress={openChatMenu}>
-            <Ionicons name="ellipsis-vertical" size={20} color={colors.ink} />
+          <Pressable hitSlop={8} disabled={searchIdx <= 0} onPress={() => gotoMatch(searchIdx - 1)}>
+            <Ionicons
+              name="chevron-down"
+              size={22}
+              color={searchIdx <= 0 ? colors.faint : colors.ink}
+            />
           </Pressable>
         </View>
-      </View>
+      ) : selectedIds ? (
+        <View style={styles.header}>
+          <Pressable onPress={() => setSelectedIds(null)} hitSlop={10}>
+            <Ionicons name="close" size={24} color={colors.ink} />
+          </Pressable>
+          <Text style={styles.selCount}>{selectedIds.size} selezionati</Text>
+          <View style={styles.headerActions}>
+            {selHasText ? (
+              <Pressable hitSlop={8} onPress={selCopy}>
+                <Ionicons name="copy-outline" size={20} color={colors.ink} />
+              </Pressable>
+            ) : null}
+            <Pressable hitSlop={8} onPress={selSave}>
+              <Ionicons name="bookmark-outline" size={20} color={colors.ink} />
+            </Pressable>
+            {selCanForward ? (
+              <Pressable hitSlop={8} onPress={selForward}>
+                <Ionicons name="arrow-redo-outline" size={20} color={colors.ink} />
+              </Pressable>
+            ) : null}
+            {selCanDelete ? (
+              <Pressable hitSlop={8} onPress={selDelete}>
+                <Ionicons name="trash-outline" size={20} color={colors.danger} />
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      ) : (
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} hitSlop={10}>
+            <Ionicons name="chevron-back" size={26} color={colors.ink} />
+          </Pressable>
+          <Pressable style={styles.headerCenter} onPress={openPeer}>
+            <Avatar uri={header.data?.avatarUrl} name={header.data?.title} size={36} />
+            <View style={styles.headerText}>
+              <View style={styles.headerTitleRow}>
+                <Text style={styles.headerTitle} numberOfLines={1}>
+                  {header.data?.title ?? 'Chat'}
+                </Text>
+                {header.data?.streak ? <StreakBadge count={header.data.streak} compact /> : null}
+              </View>
+              {/* CM3: typing > presenza (DM) > membri (gruppi); assente = nascosto. */}
+              {subtitle ? (
+                <Text
+                  style={[styles.headerSubtitle, subtitleLive && styles.headerSubtitleLive]}
+                  numberOfLines={1}
+                >
+                  {subtitle}
+                </Text>
+              ) : null}
+            </View>
+          </Pressable>
+          <View style={styles.headerActions}>
+            {/* Chiamata: differita (LiveKit + Dev Build) → visibile ma "presto". */}
+            <Pressable hitSlop={8} onPress={() => Alert.alert('Presto', 'Le chiamate arrivano presto.')}>
+              <Ionicons name="call-outline" size={20} color={colors.faint} />
+            </Pressable>
+            <Pressable hitSlop={8} onPress={() => router.push(dynamicRoutes.chatInfo(convId))}>
+              <Ionicons name="information-circle-outline" size={22} color={colors.ink} />
+            </Pressable>
+            <Pressable hitSlop={8} onPress={openChatMenu}>
+              <Ionicons name="ellipsis-vertical" size={20} color={colors.ink} />
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {/* Banner offline (RC-02): i messaggi composti restano pending e partono
           alla riconnessione (flush in ChatRuntime). */}
@@ -678,6 +955,11 @@ export default function Chat() {
           disabledReason={composerBlock.data ?? null}
           reply={reply ? { author: reply.sender_id === uid ? 'Tu' : peerName, text: previewText(reply) } : null}
           onCancelReply={() => setReplyTo(convId, null)}
+          editing={editing ? { text: editing.body ?? '' } : null}
+          onCancelEdit={() => {
+            setEditing(convId, null);
+            clearDraft(convId);
+          }}
           onAttach={() => Alert.alert('Presto', 'Gli allegati arrivano presto.')}
           onStartRecording={handleStartRec}
           onStopRecording={handleStopRec}
@@ -695,6 +977,31 @@ export default function Chat() {
           }
         />
       </KeyboardAvoidingView>
+
+      {/* Menu contestuale del messaggio (S16, CM4). */}
+      <MenuMessaggio
+        visible={!!menuFor}
+        message={menuFor}
+        isMine={menuFor?.sender_id === uid}
+        isGroup={isGroup}
+        myReaction={menuFor ? myReactionOn(menuFor.id) : null}
+        readBy={menuReadBy}
+        recipientCount={menuRecipients}
+        onClose={() => setMenuFor(null)}
+        onReact={(emoji) => menuFor && onToggleReaction(menuFor, emoji)}
+        onReply={() => menuFor && setReplyTo(convId, menuFor)}
+        onCopy={() => menuFor?.body && void Clipboard.setStringAsync(menuFor.body)}
+        onEdit={() => menuFor && onMenuEdit(menuFor)}
+        onForward={() => menuFor && onMenuForward(menuFor)}
+        onSave={() =>
+          menuFor &&
+          save.mutate(menuFor.id, { onError: (e) => Alert.alert('Ops', chatErrorMessage(e)) })
+        }
+        onSelect={() => menuFor && setSelectedIds(new Set([menuFor.id]))}
+        onDelete={() => menuFor && del.mutate(menuFor.id)}
+        onProp={(trait) => menuFor && void onMenuProp(menuFor, trait)}
+        onReport={(reason) => menuFor && void onMenuReport(menuFor, reason)}
+      />
     </SafeAreaView>
   );
 }
@@ -725,6 +1032,29 @@ const styles = StyleSheet.create({
   headerSubtitle: { color: colors.muted, fontSize: fontSize.xs, fontFamily: fontFamily.sans },
   headerSubtitleLive: { color: colors.accentSoft },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+  // Barra di ricerca in-chat (S12b): input + contatore i/N + frecce.
+  searchInput: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    color: colors.ink,
+    fontSize: fontSize.sm,
+    fontFamily: fontFamily.sans,
+  },
+  searchCount: {
+    color: colors.muted,
+    fontSize: fontSize.xs,
+    fontFamily: fontFamily.semibold,
+    minWidth: 34,
+    textAlign: 'center',
+  },
+  // Barra selezione (RC-06).
+  selCount: { flex: 1, color: colors.ink, fontSize: fontSize.base, fontFamily: fontFamily.semibold },
   listContent: { paddingVertical: spacing.md },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
   vuoto: { color: colors.muted, fontSize: fontSize.sm, fontFamily: fontFamily.sans, textAlign: 'center' },

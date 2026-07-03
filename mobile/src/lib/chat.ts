@@ -7,6 +7,7 @@
 // assembliamo lato client con poche query (scala MVP; una vista/RPC dedicata è
 // un'ottimizzazione futura per storici molto lunghi).
 
+import { decode as decodeBase64 } from 'base64-arraybuffer';
 import { supabase } from '@/lib/supabase';
 import { callRpc } from '@/lib/rpc';
 import { fetchProfileCards } from '@/lib/social';
@@ -16,9 +17,12 @@ import type {
   ConversationRow,
   MessageRow,
   ProfileCard,
+  ReactionRow,
   SavedMessage,
 } from '@/types';
 import type { ConversationRole, ConversationType } from '@/types/supabase';
+import type { ReactionEmoji } from '@/constants/chat';
+import type { AuraTrait } from '@/constants/aura';
 
 // Finestra di messaggi recenti scandagliata per costruire anteprime + unread.
 // Oltre questa, l'unread potrebbe essere approssimato (vedi nota SRS §8.5).
@@ -177,6 +181,8 @@ export interface ConversationMemberCard {
   userId: string;
   role: ConversationRole;
   profile: ProfileCard | null;
+  /** last_read_at del membro: base di "letto da N" nei gruppi (RC-09). */
+  lastReadAt: string;
 }
 
 export interface ConversationHeader {
@@ -256,6 +262,7 @@ export async function fetchConversationHeader(
       userId: m.user_id,
       role: m.role,
       profile: cards.get(m.user_id) ?? null,
+      lastReadAt: m.last_read_at,
     }));
   }
 
@@ -320,9 +327,42 @@ export const addConversationMember = (convId: string, userId: string) =>
 export const removeConversationMember = (convId: string, userId: string) =>
   callRpc('remove_conversation_member', { p_conv: convId, p_user: userId });
 
-/** Esci da una conversazione (rimuove la propria membership). */
+/** Esci da una conversazione (rimuove la propria membership). Se esce l'ultimo
+ *  admin e restano membri, il server auto-promuove il più anziano (R-09). */
 export const leaveConversation = (convId: string) =>
   callRpc('leave_conversation', { p_conv: convId });
+
+/** Rinomina il gruppo / cambia avatar (solo admin, mai su DM). `avatarUrl` null
+ *  rimuove l'immagine: passare SEMPRE il valore corrente se non cambia. */
+export const updateConversationMeta = (
+  convId: string,
+  name: string,
+  avatarUrl: string | null,
+) => callRpc('update_conversation_meta', { p_conv: convId, p_name: name, p_avatar_url: avatarUrl });
+
+/** Promuove un membro ad admin (solo admin; idempotente su già-admin). */
+export const promoteConversationAdmin = (convId: string, userId: string) =>
+  callRpc('promote_conversation_admin', { p_conv: convId, p_user: userId });
+
+/**
+ * Carica l'avatar del gruppo sul bucket pubblico `avatars`, nella cartella
+ * dell'UPLOADER (`<uid>/group-…`): le policy storage esistenti consentono la
+ * scrittura solo lì. L'URL pubblico va poi passato a updateConversationMeta.
+ */
+export async function uploadGroupAvatar(
+  uid: string,
+  convId: string,
+  base64: string,
+  mime: string,
+): Promise<string> {
+  const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
+  const path = `${uid}/group-${convId}-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage
+    .from('avatars')
+    .upload(path, decodeBase64(base64), { contentType: mime, upsert: true });
+  if (error) throw error;
+  return supabase.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+}
 
 // --- Organizzazione conversazione per-utente (D4) ----------------------------
 
@@ -472,6 +512,165 @@ export async function softDeleteMessage(id: string): Promise<void> {
     .from('messages')
     .update({ deleted_at: new Date().toISOString() } as never)
     .eq('id', id);
+  if (error) throw error;
+}
+
+/**
+ * Modifica il testo del proprio messaggio (RC-05). Il trigger before-update
+ * applica finestra 48h / solo testo / cap 4096 e timbra `edited_at`
+ * (errori: edit_window_expired, cannot_edit_message, message_too_long).
+ */
+export async function editMessage(id: string, body: string): Promise<MessageRow> {
+  const { data, error } = await supabase
+    .from('messages')
+    .update({ body } as never)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as unknown as MessageRow;
+}
+
+/**
+ * Inoltra un messaggio di TESTO in un'altra conversazione (RC-06): copia il
+ * body e referenzia l'origine (`forwarded_from` → intestazione "Inoltrato").
+ * Il trigger valida origine visibile/non cancellata/solo testo; i vocali non
+ * si inoltrano (effimeri), i media arrivano con CM5.
+ */
+export async function forwardTextMessage(
+  destConvId: string,
+  original: MessageRow,
+): Promise<MessageRow> {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: destConvId,
+      type: 'text',
+      body: original.body,
+      forwarded_from: original.id,
+    } as never)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as unknown as MessageRow;
+}
+
+// --- Reazioni emoji (CM4, RC-07) ----------------------------------------------
+
+/** Tutte le reazioni della conversazione (lista piatta; la UI raggruppa per
+ *  messaggio). Volume basso a scala Televo: niente paginazione per ora. */
+export async function fetchConversationReactions(convId: string): Promise<ReactionRow[]> {
+  const { data, error } = await supabase
+    .from('message_reactions')
+    .select('*')
+    .eq('conversation_id', convId);
+  if (error) throw error;
+  return (data ?? []) as unknown as ReactionRow[];
+}
+
+/** Reagisce a un messaggio (il trigger deriva user_id/conversation_id e valida
+ *  membership/blocco; il CHECK limita al set curato REACTION_EMOJIS). */
+export async function addReaction(messageId: string, emoji: ReactionEmoji): Promise<ReactionRow> {
+  const { data, error } = await supabase
+    .from('message_reactions')
+    .insert({ message_id: messageId, emoji } as never)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as unknown as ReactionRow;
+}
+
+/** Rimuove la PROPRIA reazione (RLS: delete solo delle proprie). */
+export async function removeReaction(messageId: string, uid: string): Promise<void> {
+  const { error } = await supabase
+    .from('message_reactions')
+    .delete()
+    .eq('message_id', messageId)
+    .eq('user_id', uid);
+  if (error) throw error;
+}
+
+// --- Ricerca full-text (CM4, RC-08) --------------------------------------------
+
+/** Risultato di search_messages, in forma comoda per la UI. */
+export interface MessageSearchResult {
+  messageId: string;
+  conversationId: string;
+  body: string | null;
+  createdAt: string;
+  senderId: string;
+  senderUsername: string | null;
+  convType: ConversationType;
+  convTitle: string;
+}
+
+/**
+ * Ricerca full-text server-side (tsvector 'italian' + websearch): in-chat con
+ * `convId`, globale con null. La RPC replica la visibilità della lista messaggi
+ * (membership, cleared_at, hidden_at, deleted, effimeri scaduti).
+ */
+export async function searchMessages(
+  query: string,
+  convId: string | null,
+  limit = 20,
+  before?: string | null,
+): Promise<MessageSearchResult[]> {
+  const rows = await callRpc<
+    {
+      message_id: string;
+      conversation_id: string;
+      body: string | null;
+      created_at: string;
+      sender_id: string;
+      sender_username: string | null;
+      conv_type: ConversationType;
+      conv_title: string;
+    }[]
+  >('search_messages', {
+    p_query: query,
+    p_conv: convId,
+    p_limit: limit,
+    p_before: before ?? null,
+  });
+  return (rows ?? []).map((r) => ({
+    messageId: r.message_id,
+    conversationId: r.conversation_id,
+    body: r.body,
+    createdAt: r.created_at,
+    senderId: r.sender_id,
+    senderUsername: r.sender_username,
+    convType: r.conv_type,
+    convTitle: r.conv_title,
+  }));
+}
+
+// --- Segnalazione messaggio (S16 → moderazione) ---------------------------------
+
+/** Segnala un messaggio ai moderatori (RPC file_report, target 'message'). */
+export const reportMessage = (messageId: string, reason: string) =>
+  callRpc('file_report', { p_target_type: 'message', p_target_id: messageId, p_reason: reason });
+
+// --- Prop da messaggio (S16 → Aura) --------------------------------------------
+
+/**
+ * "Dai un prop" dal menu messaggio: insert diretta in `props` con
+ * source_type='message' (grant per-colonna; il trigger applica anti-gaming:
+ * unicità per contenuto, cap giornaliero, no self, no coppie bloccate).
+ * L'Aura al destinatario la emette il DB — qui nessuna logica di punteggio.
+ */
+export async function giveMessageProp(
+  recipientId: string,
+  trait: AuraTrait,
+  messageId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('props')
+    .insert({
+      recipient: recipientId,
+      trait,
+      source_type: 'message',
+      source_id: messageId,
+    } as never);
   if (error) throw error;
 }
 

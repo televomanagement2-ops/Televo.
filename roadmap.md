@@ -251,8 +251,20 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
   gruppi, throttle 2.5s + TTL 4s), S10 `messaggi/impostazioni.tsx` (toggle
   ultimo accesso/spunte con update ottimistico), gating client delle spunte ✓✓
   (§6.4, reciprocità). Da fare: smoke manuale su 2 device.
-- **Prossimo**: CM4 (edit/inoltro/reazioni/ricerca/gruppi) → … → CM8. Dettagli,
-  rischi e checklist nel piano dedicato.
+- ✅ **CM4 fatto** (2026-07-03): migrazione `20260703120000_chat_modern` LIVE
+  (inoltro `forwarded_from`, `message_reactions` con set curato ❤️😂👍😮😢🔥,
+  FTS italiano + `search_messages`, RPC gruppo + auto-promozione admin R-09,
+  GDPR esteso alle reazioni; pgTAP 166/166 sul remoto + smoke runtime via
+  pooler). Frontend: menu messaggio nuovo `MenuMessaggio` (reazioni, edit con
+  banner+badge "modificato", inoltro con picker `chat/inoltra`, prop-da-messaggio,
+  Info messaggio "letto da N", Segnala), selezione multipla con barra azioni,
+  ricerca in-chat (contatore/frecce/salto) e globale (`cerca.tsx` ricostruita),
+  rinomina/avatar gruppo + promozione admin in info. Niente push per le reazioni
+  (anti-vanity, decisione utente). Da fare: smoke manuale su 2 device.
+  ⚠️ Scoperta sistemica: DEFAULT PRIVILEGES del progetto concedono ALL su ogni
+  nuova tabella (RLS = unico cancello reale) → audit rimandato a CM8.
+- **Prossimo**: CM5 (foto/media) → … → CM8. Dettagli, rischi e checklist nel
+  piano dedicato.
 - **Verifica:** DM solo tra amici, vocale che scade a 24h, streak con freeze +
   criteri di completamento per milestone in `docs/chat/IMPLEMENTATION-PLAN.md`.
 

@@ -6,7 +6,7 @@
 // restano identiche a prima → nessuna invalidazione cambia comportamento.
 
 import type { InfiniteData, QueryClient } from '@tanstack/react-query';
-import type { MessageRow } from '@/types';
+import type { MessageRow, ReactionRow } from '@/types';
 import type { ConversationView } from '@/lib/chat';
 
 // --- Query keys ---------------------------------------------------------------
@@ -18,6 +18,8 @@ export const chatKeys = {
   messages: (convId: string) => ['chat', 'messages', convId] as const,
   senders: (convId: string) => ['chat', 'senders', convId] as const,
   saved: (uid: string) => ['chat', uid, 'saved'] as const,
+  /** Reazioni emoji della conversazione (CM4): lista piatta, raggruppata in UI. */
+  reactions: (convId: string) => ['chat', 'reactions', convId] as const,
 };
 
 /** Prefisso per invalidare TUTTE le viste della lista conversazioni. */
@@ -47,4 +49,32 @@ export function upsertMessage(queryClient: QueryClient, convId: string, msg: Mes
     pages[0] = [msg, ...(pages[0] ?? [])];
     return { ...old, pages };
   });
+}
+
+// --- Reazioni (CM4) -----------------------------------------------------------
+// La cache è la lista piatta delle reazioni della conversazione; PK logica
+// (message_id, user_id) → una insert dello stesso utente sullo stesso messaggio
+// SOSTITUISCE la precedente (il DB fa delete+insert, il realtime può arrivare
+// in qualsiasi ordine: l'upsert per PK rende l'operazione idempotente).
+
+/** Inserisce/sostituisce una reazione nella cache della conversazione. */
+export function setReactionInCache(queryClient: QueryClient, convId: string, row: ReactionRow) {
+  queryClient.setQueryData<ReactionRow[]>(chatKeys.reactions(convId), (old) => {
+    const rest = (old ?? []).filter(
+      (r) => !(r.message_id === row.message_id && r.user_id === row.user_id),
+    );
+    return [...rest, row];
+  });
+}
+
+/** Rimuove una reazione (per PK) dalla cache della conversazione. */
+export function removeReactionFromCache(
+  queryClient: QueryClient,
+  convId: string,
+  messageId: string,
+  userId: string,
+) {
+  queryClient.setQueryData<ReactionRow[]>(chatKeys.reactions(convId), (old) =>
+    old ? old.filter((r) => !(r.message_id === messageId && r.user_id === userId)) : old,
+  );
 }

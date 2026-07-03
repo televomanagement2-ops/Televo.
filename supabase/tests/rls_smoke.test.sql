@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(142);
+select plan(166);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -301,6 +301,106 @@ select ok((select prosrc like '%contact_hashes%' and prosrc like '%saved_message
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'process_account_deletion'),
   'process_account_deletion pulisce contact_hashes e saved_messages');
+
+-- =============================================================================
+-- CM4 — chat modern (20260703120000): inoltro, reazioni, ricerca FTS, gruppi
+-- =============================================================================
+
+-- Inoltro (RC-06): colonna + FK "on delete set null" (la copia sopravvive
+-- alla cancellazione dell'originale).
+select has_column('public', 'messages', 'forwarded_from',
+  'messages.forwarded_from esiste (inoltro)');
+select ok((select confdeltype = 'n' from pg_constraint
+           where conname = 'messages_forwarded_from_fkey'),
+  'forwarded_from è on delete set null');
+
+-- Ricerca (RC-08): colonna generata + indice GIN.
+select has_column('public', 'messages', 'body_tsv',
+  'messages.body_tsv esiste (full-text)');
+select has_index('public', 'messages', 'messages_body_tsv_idx',
+  'indice GIN su body_tsv esiste');
+
+-- Reazioni (RC-07): tabella, PK composita, colonna denormalizzata, set curato.
+select has_table('public', 'message_reactions', 'message_reactions esiste');
+select ok((select relrowsecurity from pg_class where oid = 'public.message_reactions'::regclass),
+  'RLS attiva su message_reactions');
+select has_column('public', 'message_reactions', 'conversation_id',
+  'message_reactions.conversation_id esiste (filtro realtime)');
+select col_is_pk('public', 'message_reactions', array['message_id','user_id'],
+  'PK (message_id, user_id): 1 reazione per utente per messaggio');
+select ok((select count(*)::int from pg_constraint
+           where conrelid = 'public.message_reactions'::regclass
+             and contype = 'c'
+             and pg_get_constraintdef(oid) like '%emoji%') = 1,
+  'message_reactions ha il CHECK sul set curato di emoji');
+select has_trigger('public', 'message_reactions', 'message_reactions_before_insert_trg',
+  'trigger before-insert delle reazioni presente');
+
+-- Policy: esattamente 3 (select membro, insert propria, delete propria);
+-- l''insert passa da is_active_user (unico punto di enforcement mute/ban).
+select ok((select count(*)::int from pg_policies
+           where schemaname='public' and tablename='message_reactions') = 3,
+  'message_reactions ha 3 policy (select/insert/delete)');
+select ok((select with_check like '%is_active_user%' from pg_policies
+           where schemaname='public' and tablename='message_reactions'
+             and policyname='message_reactions_insert_own'),
+  'insert reazioni gated da is_active_user (mute/ban)');
+
+-- Realtime: la tabella è nella publication della chat.
+select ok((select count(*)::int from pg_publication_tables
+           where pubname='supabase_realtime' and schemaname='public'
+             and tablename='message_reactions') = 1,
+  'message_reactions è in supabase_realtime');
+
+-- Niente path UPDATE: il cambio emoji è delete+insert (meno superficie).
+select ok(not has_table_privilege('authenticated', 'public.message_reactions', 'update'),
+  'authenticated non ha UPDATE su message_reactions');
+
+-- RPC nuove: ricerca + gestione gruppo.
+select has_function('public', 'search_messages', array['text','uuid','integer','timestamptz'],
+  'search_messages(text,uuid,int,timestamptz) esiste');
+select has_function('public', 'update_conversation_meta', array['uuid','text','text'],
+  'update_conversation_meta(uuid,text,text) esiste');
+select has_function('public', 'promote_conversation_admin', array['uuid','uuid'],
+  'promote_conversation_admin(uuid,uuid) esiste');
+select ok(has_function_privilege('authenticated', 'public.search_messages(text,uuid,int,timestamptz)', 'execute')
+      and has_function_privilege('authenticated', 'public.update_conversation_meta(uuid,text,text)', 'execute')
+      and has_function_privilege('authenticated', 'public.promote_conversation_admin(uuid,uuid)', 'execute'),
+  'le 3 RPC CM4 sono eseguibili da authenticated');
+
+-- search_messages: sintassi websearch + visibilità identica alla lista messaggi.
+select ok((select prosrc like '%websearch_to_tsquery%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'search_messages'),
+  'search_messages usa websearch_to_tsquery');
+select ok((select prosrc like '%cleared_at%' and prosrc like '%hidden_at%'
+             and prosrc like '%deleted_at%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'search_messages'),
+  'search_messages rispetta cleared/hidden/deleted');
+
+-- R-09: l''uscita dell''ultimo admin promuove il membro più anziano.
+select ok((select prosrc like '%joined_at%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'leave_conversation'),
+  'leave_conversation auto-promuove per anzianità (R-09)');
+
+-- Guardie di regressione (lezione CM1): i trigger ridefiniti contengono i
+-- blocchi nuovi E conservano quelli vecchi (le guardie CM1 sopra restano valide).
+select ok((select prosrc like '%forwarded_from%' and prosrc like '%cannot_forward_type%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'before_insert valida l''inoltro (solo testo, origine visibile)');
+select ok((select prosrc like '%forwarded_from%' and prosrc like '%edit_window_expired%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_update'),
+  'before_update: forwarded_from immutabile + finestra edit intatta');
+
+-- GDPR: la cancellazione account pulisce anche le reazioni.
+select ok((select prosrc like '%message_reactions%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'process_account_deletion'),
+  'process_account_deletion pulisce message_reactions');
 
 select * from finish();
 rollback;

@@ -10,7 +10,7 @@
 // ("sta scrivendo…", RC-03) — effimero, nessuna persistenza.
 
 import { supabase } from '@/lib/supabase';
-import type { MessageRow } from '@/types';
+import type { MessageRow, ReactionRow } from '@/types';
 
 export interface ConversationRealtimeHandlers {
   /** Nuovo messaggio inserito nella conversazione. */
@@ -21,6 +21,12 @@ export interface ConversationRealtimeHandlers {
   onMemberUpdate?: () => void;
   /** Un altro membro sta scrivendo (CM3, RC-03 — evento broadcast effimero). */
   onTyping?: (userId: string) => void;
+  /** Reazione aggiunta/sostituita nella conversazione (CM4, RC-07). */
+  onReactionInsert?: (r: ReactionRow) => void;
+  /** Reazione rimossa: il payload DELETE porta SOLO la PK (vedi nota sotto). */
+  onReactionDelete?: (pk: { message_id: string; user_id: string }) => void;
+  /** Meta della conversazione cambiata (rinomina/avatar gruppo, CM4). */
+  onConversationUpdate?: () => void;
 }
 
 /** Sottoscrizione a una conversazione: cleanup + invio del segnale "sta scrivendo". */
@@ -82,6 +88,33 @@ export function subscribeConversation(
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'conversation_members', filter },
       () => handlers.onMemberUpdate?.(),
+    )
+    // Reazioni (CM4): l'INSERT arriva filtrato per conversazione (la colonna
+    // denormalizzata conversation_id esiste apposta). Il DELETE invece NON è
+    // filtrabile: Realtime non applica filtri/RLS ai delete e il payload `old`
+    // porta solo la PK (message_id, user_id) — compromesso documentato nella
+    // migrazione 20260703120000. Lo scoping è client-side: il gestore rimuove
+    // solo dalla cache di QUESTA conversazione (PK altrui = no-op innocuo).
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'message_reactions', filter },
+      (payload) => handlers.onReactionInsert?.(payload.new as ReactionRow),
+    )
+    .on(
+      'postgres_changes',
+      { event: 'DELETE', schema: 'public', table: 'message_reactions' },
+      (payload) => {
+        const old = payload.old as Partial<ReactionRow> | undefined;
+        if (old?.message_id && old.user_id) {
+          handlers.onReactionDelete?.({ message_id: old.message_id, user_id: old.user_id });
+        }
+      },
+    )
+    // Meta del gruppo (CM4): rinomina/avatar propagati live ai membri.
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'conversations', filter: `id=eq.${convId}` },
+      () => handlers.onConversationUpdate?.(),
     )
     .on('broadcast', { event: 'typing' }, (payload) => {
       const userId = (payload.payload as { user_id?: string } | undefined)?.user_id;

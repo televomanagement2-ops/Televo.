@@ -15,6 +15,7 @@ export type ProfileRow = Tables['profiles']['Row'];
 export type ConversationRow = Tables['conversations']['Row'];
 export type ConversationMemberRow = Tables['conversation_members']['Row'];
 export type MessageRow = Tables['messages']['Row'];
+export type ReactionRow = Tables['message_reactions']['Row'];
 export type StreakRow = Tables['streaks']['Row'];
 export type FriendshipRow = Tables['friendships']['Row'];
 export type DropRow = Tables['drops']['Row'];

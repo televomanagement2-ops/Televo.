@@ -32,6 +32,7 @@ export const ROUTES = {
   cerca: '/cerca',
   amici: '/amici',
   nuovoGruppo: '/chat/nuovo-gruppo',
+  chatInoltra: '/chat/inoltra',
   messaggiImportante: '/messaggi/importante',
   messaggiImpostazioni: '/messaggi/impostazioni',
 } as const;

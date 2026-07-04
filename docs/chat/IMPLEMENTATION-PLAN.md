@@ -590,7 +590,7 @@ piattaforma reale.
 
 ---
 
-### CM6.5 — Sistema dialoghi dark (fuori piano originale, decisione utente 2026-07-04)
+### CM6.5 — Sistema dialoghi dark ✅ (fuori piano originale, decisione utente 2026-07-04)
 
 **Obiettivo**: TUTTI i popup dell'app (menu contestuali, overflow, conferme, picker
 e — decisione utente — anche gli alert di errore/info) allineati allo stile dark,
@@ -631,7 +631,7 @@ dall'app (eccetto share/permessi OS); tap fuori chiude sempre.
 
 ---
 
-### CM7 — "I tuoi contatti su Televo" (D1 — solo email)
+### CM7 — "I tuoi contatti su Televo" (D1 — solo email) ✅ (2026-07-04)
 
 **Obiettivo**: S11 — trovare i contatti della rubrica già su Televo (match per
 **hash email**; decisione utente: niente telefono per ora).
@@ -690,38 +690,62 @@ dallo smoke runtime server-side; sul device resta il giro completo UI).
 
 ---
 
-### CM8 — Rifiniture, scala e chiusura
+### CM8 — Rifiniture, scala e chiusura ✅ (2026-07-04)
 
 **Obiettivo**: eliminare il tech-debt noto, completare la moderazione lato UI e
 lasciare il modulo documentato e testabile.
 
 **Dipendenze**: CM1–CM7 (contenuti da rifinire).
 
-**Attività**:
-- **RPC `chat_overview()`** server-side (lista conversazioni con ultimo messaggio +
-  unread in una query) al posto dello scan client di 400 messaggi — misurare prima,
-  applicare se serve.
-- **Block/unblock UI completa**: da info DM + elenco bloccati in S10; enforcement
-  server delle spunte/`last_read_at` se deciso (compromesso CM3).
-- **moderate-text opzionale sull'invio** (fire-and-forget, degrada senza chiave).
-- **Cron cleanup gruppi orfani** (0 membri) — R-16.
-- **Audit grant vs default privileges** (scoperta CM4): il progetto hosted concede
-  ALL ad anon/authenticated su ogni nuova tabella via DEFAULT PRIVILEGES → i grant
-  espliciti delle migrazioni sono cosmetici, la RLS è l'unico cancello. Decidere:
-  revoca sistematica per-tabella (come fatto per `message_reactions`) o revoca dei
-  default a livello di schema; aggiungere invarianti pgTAP sui privilegi sensibili.
-- **`voice_thread`**: unificazione definitiva con `audio` nell'UI (R-12) o semantica
-  dedicata se emersa nel frattempo.
-- **`docs/chat/MANUAL-TESTING.md`**: scenari end-to-end di tutto il modulo (per
-  regression test manuali pre-lancio).
-- Passata finale su stati loading/vuoto/errore di ogni schermata (SRS §14).
+**Decisioni CM8 (2026-07-04, product owner)**: `chat_overview()` SUBITO (niente
+"misura prima": correggeva anche l'unread approssimato); enforcement SERVER
+delle spunte SÌ (chiuso il compromesso CM3 e, nello stesso giro, quello CM1 su
+`last_active_at`).
 
-**Checklist**:
-- [ ] Hub fluido con molte conversazioni (misura prima/dopo)
-- [ ] Blocca/sblocca end-to-end dalla UI
-- [ ] MANUAL-TESTING.md scritto e verificato una volta per intero
-- [ ] Nessuno stato UI muto (loading/vuoto/errore ovunque)
-- [ ] `tsc` + `eslint` puliti
+**Checklist** (8 sotto-blocchi, un commit ciascuno):
+- [x] **`chat_overview()`** (`20260705110000`): l'hub in UNA query server-side
+      (org D4, ultimo messaggio valido jsonb, UNREAD ESATTO, peer DM, streak);
+      `fetchConversations` = wrapper della RPC (hook/viste/sort invariati);
+      smoke pooler 9/9 (unread confrontato col conteggio diretto).
+- [x] **Spunte enforcement server** (`20260705120000`): RPC `get_read_receipts`
+      (membership + reciprocità §6.4; chi nasconde è escluso, denominatore
+      membri−1 WhatsApp-like) + grant SELECT per-colonna: via `last_read_at`
+      da conversation_members e `last_active_at`/`expo_push_token` da profiles
+      (token push esposti = spam diretto). Client: `useReadReceipts` (spunte DM
+      + letto-da-N), realtime membro = solo segnale. Smoke 4/4.
+- [x] **Utenti bloccati in S10** (senza migrazione: friendships leggibile via
+      RLS, invisibilità Instagram è client-side) + **moderate-text sull'invio**
+      (fire-and-forget nell'outbox dopo il successo + sull'edit; mai bloccante,
+      degrada senza chiave).
+- [x] **Gruppi orfani (R-16)** (`20260705130000`): `expire_content` v4
+      (verbatim+add) cancella group/house a 0 membri (FK cascade). ⚠️ Scoperta:
+      l'hosted VIETA la DELETE diretta su `storage.objects` → pulizia file dei
+      bucket = DEBITO (serve job Edge con Storage API). Smoke 3/3.
+- [x] **Audit grant vs DEFAULT PRIVILEGES** (`20260705140000`): confermato ALL
+      (arwdDxtm) ad anon/authenticated da defacl di postgres E supabase_admin;
+      revoke all + re-grant minimo su TUTTE le 39 tabelle; anon azzerato;
+      `alter default privileges for role postgres … revoke` per il futuro (il
+      defacl di supabase_admin non è alterabile → resta la regola "ogni nuova
+      tabella dichiara revoke+grant"). Smoke 22/22 (letture reali del client
+      intatte, scritture di sistema negate).
+- [x] **Edge v2 in coda deploy owner**: `send-push` v2 (marcatura pushed_at
+      PER-CHUNK, pruning token DeviceNotRegistered dai ticket, campo `badge` =
+      notifiche non lette) + `gdpr-export` esteso a `message_reactions`
+      (conversations/streaks esclusi: dati di gruppo). Typecheck deno con stub.
+- [x] **Stati UI uniformi**: `ui/StatoErrore` (icona+testo+Riprova) su hub,
+      chat, info, nuovo-gruppo, inoltra, cerca, impostazioni, importante,
+      contatti. **`voice_thread`** chiuso in SRS (valore riservato mai emesso,
+      enum conservato).
+- [x] **MANUAL-TESTING.md** scritto (16 sezioni, prerequisiti A/B adulti + C
+      minore, scenari Passi/Atteso/Device/Rif).
+- [x] `tsc` + `eslint` puliti; pgTAP **209/209 SUL REMOTO**; migrazioni
+      applicate e registrate via pooler.
+- [ ] MANUAL-TESTING eseguito una volta PER INTERO su 2 device (smoke utente)
+- [ ] Deploy manuale owner: `gdpr-export` v2 + `send-push` v2
+
+**Coda deploy manuale owner** (la CLI è bloccata su questa macchina e il
+management API risponde 403): `supabase functions deploy gdpr-export send-push`
+dall'account owner. Nessuna feature client dipende dal deploy.
 
 **Criteri di completamento**: il modulo chat regge l'intero MANUAL-TESTING senza
 sorprese; roadmap.md aggiornata (M5 chiusa).

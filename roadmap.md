@@ -17,12 +17,13 @@ Progetto Supabase hosted `mmunnybytyfybncohkky` ("Televo Project"), org
 
 | Area | Stato |
 |------|-------|
-| **37 migrazioni** (Fasi 0–8 + GDPR + onboarding + Aura v3 + chat 25–33 + hardening CM1 34–35 + chat modern CM4 36 + media hardening CM5 37) | ✅ tutte applicate (la 37 applicata e registrata via pooler: CLI bloccata da criterio app Windows, vedi nota) |
-| 10 Edge Functions | ✅ deployate — ⚠️ `gdpr-export` ha un aggiornamento in repo NON deployato (CLI 403 → serve l'account owner) |
+| **42 migrazioni** (Fasi 0–8 + GDPR + onboarding + Aura v3 + chat 25–33 + hardening CM1 34–35 + chat modern CM4 36 + media hardening CM5 37 + CM7/CM8 38–42: contact_revoke, chat_overview, chat_receipts, chat_cleanup, grants_audit) | ✅ tutte applicate (le 38–42 via pooler: CLI bloccata da criterio app Windows, vedi nota) |
+| 10 Edge Functions | ✅ deployate — ⚠️ coda deploy owner: `gdpr-export` v2 + `send-push` v2 (repo aggiornato, CLI 403 → serve l'account owner) |
 | 3 Vault secrets (`edge_base_url`, `service_role_key`, `cron_secret`) | ✅ registrati il 2026-07-02 (`dispatch_push` attivo) |
-| 177 invarianti pgTAP | ✅ 177/177 verdi SUL REMOTO (suite eseguita via pooler il 2026-07-03) |
-| 7 cron job pg_cron (`aura-recompute` ora **daily**) | ✅ attivi e verificati |
+| 209 invarianti pgTAP | ✅ 209/209 verdi SUL REMOTO (suite eseguita via pooler il 2026-07-04; pgtap creata DENTRO la transazione della suite, rollback) |
+| 7 cron job pg_cron (`aura-recompute` ora **daily**; `expire_content` v4 pulisce anche i gruppi orfani) | ✅ attivi e verificati |
 | Publication realtime (`messages`, `conversations`, `conversation_members`) | ✅ verificata server-side |
+| **Grant minimi reali** (CM8): revoke all + re-grant esplicito su 39 tabelle, anon azzerato, default privileges di `postgres` revocati | ✅ smoke 22/22 (letture client intatte) |
 
 **Domini coperti dal backend** (dettaglio in `CLAUDE.md` §4): identità + inviti +
 age-gate ≥16 · Aura v2 (props, decadimento half-life 14gg, classifiche) · Stanze
@@ -228,7 +229,7 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
 - `src/hooks/useStanze.ts`, `src/store/stanzeStore.ts`.
 - **Verifica:** join stanza, audio bidirezionale, sali sul palco.
 
-### 💬 M5 — Social + Chat — 🟡 IN CORSO (~70% costruito, roadmap dedicata)
+### 💬 M5 — Social + Chat — ✅ COSTRUITA (CM0–CM8 completi; resta lo smoke finale su 2 device)
 *Obiettivo: sistema chat completo, maturità funzionale livello Telegram.*
 > **Aggiornamento 2026-07-02**: la chat ha ora una **roadmap ufficiale dedicata**:
 > `docs/chat/IMPLEMENTATION-PLAN.md` (milestone CM0–CM8), basata sulla specifica
@@ -313,9 +314,21 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
   Aggiungi/Inviata/Messaggia → revoca in-page), ingressi da hub overflow e da
   Amici. Deps: expo-contacts + expo-crypto (ok in Expo Go). Da fare: smoke su
   device con 2 account con email in rubrica.
-- **Prossimo**: CM8 (chiusura: chat_overview, enforcement spunte, bloccati in
-  S10, moderate-text, gruppi orfani, audit grant, Edge v2 in coda owner,
-  MANUAL-TESTING). Dettagli, rischi e checklist nel piano dedicato.
+- ✅ **CM8 fatto** (2026-07-04) — **MODULO CHAT COMPLETO (CM0–CM8)**. Otto
+  sotto-blocchi: `chat_overview()` (hub in 1 query, unread ESATTO), enforcement
+  SERVER delle spunte (`get_read_receipts` + grant per-colonna: chiusi i
+  compromessi CM3 e CM1; `expo_push_token` non più leggibile), lista bloccati
+  in S10 + moderate-text sull'invio (fire-and-forget), `expire_content` v4
+  (gruppi orfani; file bucket = debito: l'hosted vieta DELETE su
+  storage.objects), audit grant/default privileges (39 tabelle a grant minimo
+  reale, anon azzerato), Edge v2 in coda deploy owner (send-push: marcatura
+  per-chunk + pruning token + badge; gdpr-export + message_reactions),
+  StatoErrore ovunque (SRS §14), voice_thread chiuso (R-12),
+  `docs/chat/MANUAL-TESTING.md` (16 sezioni). pgTAP 209/209 sul remoto.
+  **Restano**: MANUAL-TESTING eseguito per intero su 2 device (smoke utente) +
+  deploy owner di gdpr-export/send-push.
+- **Prossimo (M5 chiusa salvo smoke)**: eseguire MANUAL-TESTING.md su 2 device;
+  poi M4 (Stanze Live) o M6 (Drops) secondo priorità di prodotto.
 - **Verifica:** DM solo tra amici, vocale che scade a 24h, streak con freeze +
   criteri di completamento per milestone in `docs/chat/IMPLEMENTATION-PLAN.md`.
 

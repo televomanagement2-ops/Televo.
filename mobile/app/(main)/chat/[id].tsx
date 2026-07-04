@@ -16,7 +16,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Pressable,
@@ -62,6 +61,7 @@ import { usePeerPresence, presenceLabel } from '@/hooks/usePresenza';
 import { useMyProfile } from '@/hooks/useProfilo';
 import { useChatStore } from '@/store/chatStore';
 import { giveMessageProp, previewText, reportMessage } from '@/lib/chat';
+import { avvisa, conferma, mostraMenu, type VoceMenu } from '@/lib/dialoghi';
 import { useOnline } from '@/lib/rete';
 import {
   avviaRegistrazione,
@@ -220,7 +220,7 @@ export default function Chat() {
       if (m.id.startsWith('temp-')) return;
       toggleReaction.mutate(
         { messageId: m.id, emoji: emoji as ReactionEmoji, mine: myReactionOn(m.id) },
-        { onError: (e) => Alert.alert('Ops', chatErrorMessage(e)) },
+        { onError: (e) => avvisa('Ops', chatErrorMessage(e)) },
       );
     },
     [toggleReaction, myReactionOn],
@@ -340,7 +340,7 @@ export default function Chat() {
       }
       setTimeout(() => {
         if (!scrollSePresente()) {
-          Alert.alert('Non raggiungibile', 'Il messaggio è troppo indietro nella cronologia.');
+          avvisa('Non raggiungibile', 'Il messaggio è troppo indietro nella cronologia.');
         }
       }, 120);
     },
@@ -406,7 +406,7 @@ export default function Chat() {
         return;
       }
       if (next.size >= MAX_FORWARD_SELECTION) {
-        Alert.alert('Limite selezione', `Puoi selezionare al massimo ${MAX_FORWARD_SELECTION} messaggi.`);
+        avvisa('Limite selezione', `Puoi selezionare al massimo ${MAX_FORWARD_SELECTION} messaggi.`);
         return;
       }
       next.add(m.id);
@@ -452,17 +452,16 @@ export default function Chat() {
     router.push(ROUTES.chatInoltra);
   };
   const selDelete = () => {
-    Alert.alert('Elimina messaggi', `Eliminare ${selectedMessages.length} messaggi?`, [
-      { text: 'Annulla', style: 'cancel' },
-      {
-        text: 'Elimina',
-        style: 'destructive',
-        onPress: () => {
-          for (const m of selectedMessages) del.mutate(m.id);
-          setSelectedIds(null);
-        },
+    conferma({
+      titolo: 'Elimina messaggi',
+      messaggio: `Eliminare ${selectedMessages.length} messaggi?`,
+      confermaLabel: 'Elimina',
+      distruttiva: true,
+      onConferma: () => {
+        for (const m of selectedMessages) del.mutate(m.id);
+        setSelectedIds(null);
       },
-    ]);
+    });
   };
 
   // --- Ricerca in-chat (CM4, S12b) --------------------------------------------
@@ -510,17 +509,16 @@ export default function Chat() {
       // Pseudo-messaggi dell'outbox: menu dedicato Riprova/Elimina.
       if (m.id.startsWith('temp-')) {
         const o = outbox.find((x) => x.tempId === m.id);
-        const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [];
+        const voci: VoceMenu[] = [];
         if (o?.status === 'failed') {
-          buttons.push({ text: 'Riprova', onPress: () => outboxApi.retry(m.id) });
+          voci.push({ label: 'Riprova', icon: 'refresh-outline', onPress: () => outboxApi.retry(m.id) });
         }
-        buttons.push({ text: 'Elimina', style: 'destructive', onPress: () => outboxApi.discard(m.id) });
-        buttons.push({ text: 'Annulla', style: 'cancel' });
-        Alert.alert(
-          o?.status === 'failed' ? 'Messaggio non inviato' : 'Messaggio in invio',
-          o?.errorMessage ?? undefined,
-          buttons,
-        );
+        voci.push({ label: 'Elimina', icon: 'trash-outline', danger: true, onPress: () => outboxApi.discard(m.id) });
+        mostraMenu({
+          titolo: o?.status === 'failed' ? 'Messaggio non inviato' : 'Messaggio in invio',
+          sottotitolo: o?.errorMessage ?? undefined,
+          voci,
+        });
         return;
       }
       setMenuFor(m);
@@ -555,17 +553,17 @@ export default function Chat() {
     try {
       await giveMessageProp(m.sender_id, trait, m.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      Alert.alert('Fatto ✨', 'Prop inviato: alimenta la sua Aura.');
+      avvisa('Fatto ✨', 'Prop inviato: alimenta la sua Aura.');
     } catch (e) {
-      Alert.alert('Ops', propErrorMessage(e));
+      avvisa('Ops', propErrorMessage(e));
     }
   };
   const onMenuReport = async (m: MessageRow, reason: string) => {
     try {
       await reportMessage(m.id, reason);
-      Alert.alert('Grazie', 'Segnalazione inviata ai moderatori.');
+      avvisa('Grazie', 'Segnalazione inviata ai moderatori.');
     } catch (e) {
-      Alert.alert('Ops', chatErrorMessage(e));
+      avvisa('Ops', chatErrorMessage(e));
     }
   };
 
@@ -580,7 +578,7 @@ export default function Chat() {
       if (body !== (editing.body ?? '').trim()) {
         editMut.mutate(
           { id: editing.id, body },
-          { onError: (e) => Alert.alert('Ops', chatErrorMessage(e)) },
+          { onError: (e) => avvisa('Ops', chatErrorMessage(e)) },
         );
       }
       setEditing(convId, null);
@@ -637,7 +635,7 @@ export default function Chat() {
   const handleStartRec = async () => {
     const ok = await richiediPermessoMic();
     if (!ok) {
-      Alert.alert('Permesso microfono', 'Attiva il microfono per registrare un vocale.');
+      avvisa('Permesso microfono', 'Attiva il microfono per registrare un vocale.');
       return;
     }
     try {
@@ -645,7 +643,7 @@ export default function Chat() {
       setRecordingSeconds(0);
       setIsRecording(true);
     } catch {
-      Alert.alert('Ops', 'Impossibile avviare la registrazione.');
+      avvisa('Ops', 'Impossibile avviare la registrazione.');
     }
   };
 
@@ -658,7 +656,7 @@ export default function Chat() {
       const { uri, durationMillis } = await fermaRegistrazione(rec);
       setPreview({ uri, seconds: Math.max(1, Math.round(durationMillis / 1000)) });
     } catch {
-      Alert.alert('Ops', 'Registrazione non riuscita, riprova.');
+      avvisa('Ops', 'Registrazione non riuscita, riprova.');
     }
   };
 
@@ -681,7 +679,7 @@ export default function Chat() {
         if (s.isLoaded && s.didJustFinish) void sound.setPositionAsync(0);
       });
     } catch {
-      Alert.alert('Ops', 'Impossibile riprodurre il vocale.');
+      avvisa('Ops', 'Impossibile riprodurre il vocale.');
     }
   };
 
@@ -707,16 +705,18 @@ export default function Chat() {
       if (foto) setFotoPreview(foto);
     } catch (e) {
       // Permesso OS negato: invito alle impostazioni (specchio del microfono).
-      Alert.alert('Permesso necessario', chatErrorMessage(e));
+      avvisa('Permesso necessario', chatErrorMessage(e));
     }
   };
 
   const onAttach = () => {
-    Alert.alert('Allega', undefined, [
-      { text: 'Foto dalla galleria', onPress: () => void pickFoto(scegliFotoDaGalleria) },
-      { text: 'Scatta una foto', onPress: () => void pickFoto(scattaFoto) },
-      { text: 'Annulla', style: 'cancel' },
-    ]);
+    mostraMenu({
+      titolo: 'Allega',
+      voci: [
+        { label: 'Foto dalla galleria', icon: 'images-outline', onPress: () => void pickFoto(scegliFotoDaGalleria) },
+        { label: 'Scatta una foto', icon: 'camera-outline', onPress: () => void pickFoto(scattaFoto) },
+      ],
+    });
   };
 
   const onMediaPress = useCallback((m: MessageRow) => setViewerFor(m), []);
@@ -726,65 +726,65 @@ export default function Chat() {
   };
 
   // Menu overflow chat (S5): Cerca / Silenzia / Cancella cronologia / Elimina chat.
-  const onOrgErr = (e: unknown) => Alert.alert('Ops', chatErrorMessage(e));
+  const onOrgErr = (e: unknown) => avvisa('Ops', chatErrorMessage(e));
   const isDm = (header.data?.type ?? 'dm') === 'dm';
 
   const openMuteMenu = () => {
     const until = (h: number) => new Date(Date.now() + h * 3600e3).toISOString();
-    Alert.alert('Silenzia', 'Per quanto tempo?', [
-      { text: '8 ore', onPress: () => org.mute.mutate(until(8), { onError: onOrgErr }) },
-      { text: '1 settimana', onPress: () => org.mute.mutate(until(24 * 7), { onError: onOrgErr }) },
-      { text: 'Sempre', onPress: () => org.mute.mutate(until(24 * 365 * 100), { onError: onOrgErr }) },
-      { text: 'Annulla', style: 'cancel' },
-    ]);
+    mostraMenu({
+      titolo: 'Silenzia',
+      sottotitolo: 'Per quanto tempo?',
+      voci: [
+        { label: '8 ore', onPress: () => org.mute.mutate(until(8), { onError: onOrgErr }) },
+        { label: '1 settimana', onPress: () => org.mute.mutate(until(24 * 7), { onError: onOrgErr }) },
+        { label: 'Sempre', onPress: () => org.mute.mutate(until(24 * 365 * 100), { onError: onOrgErr }) },
+      ],
+    });
   };
 
   const confirmClear = () => {
-    Alert.alert('Cancella cronologia', 'Nasconde i messaggi precedenti solo per te. Procedere?', [
-      { text: 'Annulla', style: 'cancel' },
-      {
-        text: 'Cancella',
-        style: 'destructive',
-        onPress: () => org.clearHistory.mutate(undefined, { onError: onOrgErr }),
-      },
-    ]);
+    conferma({
+      titolo: 'Cancella cronologia',
+      messaggio: 'Nasconde i messaggi precedenti solo per te. Procedere?',
+      confermaLabel: 'Cancella',
+      distruttiva: true,
+      onConferma: () => org.clearHistory.mutate(undefined, { onError: onOrgErr }),
+    });
   };
 
   const confirmDelete = () => {
-    Alert.alert(
-      isDm ? 'Elimina chat' : 'Esci dal gruppo',
-      isDm
+    conferma({
+      titolo: isDm ? 'Elimina chat' : 'Esci dal gruppo',
+      messaggio: isDm
         ? 'La chat sparisce dalla tua lista; riappare se arriva un nuovo messaggio.'
         : 'Uscirai dal gruppo.',
-      [
-        { text: 'Annulla', style: 'cancel' },
-        {
-          text: isDm ? 'Elimina' : 'Esci',
-          style: 'destructive',
-          onPress: () =>
-            isDm
-              ? org.flag.mutate({ flag: 'hidden', on: true }, {
-                  onSuccess: () => router.back(),
-                  onError: onOrgErr,
-                })
-              : leave.mutate(undefined, { onSuccess: () => router.back(), onError: onOrgErr }),
-        },
-      ],
-    );
+      confermaLabel: isDm ? 'Elimina' : 'Esci',
+      distruttiva: true,
+      onConferma: () =>
+        isDm
+          ? org.flag.mutate({ flag: 'hidden', on: true }, {
+              onSuccess: () => router.back(),
+              onError: onOrgErr,
+            })
+          : leave.mutate(undefined, { onSuccess: () => router.back(), onError: onOrgErr }),
+    });
   };
 
   const openChatMenu = () => {
-    Alert.alert(header.data?.title ?? 'Chat', undefined, [
-      { text: 'Cerca', onPress: () => setSearchOpen(true) },
-      { text: 'Silenzia', onPress: openMuteMenu },
-      { text: 'Cancella cronologia', style: 'destructive', onPress: confirmClear },
-      {
-        text: isDm ? 'Elimina chat' : 'Esci dal gruppo',
-        style: 'destructive',
-        onPress: confirmDelete,
-      },
-      { text: 'Annulla', style: 'cancel' },
-    ]);
+    mostraMenu({
+      titolo: header.data?.title ?? 'Chat',
+      voci: [
+        { label: 'Cerca', icon: 'search-outline', onPress: () => setSearchOpen(true) },
+        { label: 'Silenzia', icon: 'notifications-off-outline', onPress: openMuteMenu },
+        { label: 'Cancella cronologia', icon: 'trash-bin-outline', danger: true, onPress: confirmClear },
+        {
+          label: isDm ? 'Elimina chat' : 'Esci dal gruppo',
+          icon: isDm ? 'trash-outline' : 'exit-outline',
+          danger: true,
+          onPress: confirmDelete,
+        },
+      ],
+    });
   };
 
   const onQuotePress = useCallback(
@@ -929,7 +929,7 @@ export default function Chat() {
           </Pressable>
           <View style={styles.headerActions}>
             {/* Chiamata: differita (LiveKit + Dev Build) → visibile ma "presto". */}
-            <Pressable hitSlop={8} onPress={() => Alert.alert('Presto', 'Le chiamate arrivano presto.')}>
+            <Pressable hitSlop={8} onPress={() => avvisa('Presto', 'Le chiamate arrivano presto.')}>
               <Ionicons name="call-outline" size={20} color={colors.faint} />
             </Pressable>
             <Pressable hitSlop={8} onPress={() => router.push(dynamicRoutes.chatInfo(convId))}>
@@ -1069,7 +1069,7 @@ export default function Chat() {
         onForward={() => menuFor && onMenuForward(menuFor)}
         onSave={() =>
           menuFor &&
-          save.mutate(menuFor.id, { onError: (e) => Alert.alert('Ops', chatErrorMessage(e)) })
+          save.mutate(menuFor.id, { onError: (e) => avvisa('Ops', chatErrorMessage(e)) })
         }
         onSelect={() => menuFor && setSelectedIds(new Set([menuFor.id]))}
         onDelete={() => menuFor && del.mutate(menuFor.id)}

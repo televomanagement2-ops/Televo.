@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { useCallback } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +21,7 @@ import {
 } from '@/hooks/useChat';
 import { usePushBanner } from '@/hooks/useNotifiche';
 import { dynamicRoutes, ROUTES } from '@/constants/routes';
+import { avvisa, conferma, mostraMenu, type VoceMenu } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
 import { useOnline } from '@/lib/rete';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
@@ -52,12 +53,14 @@ export default function Messages() {
 
   // Menu overflow dell'hub (S6): Nuovo gruppo / Importante / Impostazioni (S10).
   const openHubMenu = () => {
-    Alert.alert('Messaggi', undefined, [
-      { text: 'Nuovo gruppo', onPress: () => router.push(ROUTES.nuovoGruppo) },
-      { text: 'Importante', onPress: () => router.push(ROUTES.messaggiImportante) },
-      { text: 'Impostazioni', onPress: () => router.push(ROUTES.messaggiImpostazioni) },
-      { text: 'Annulla', style: 'cancel' },
-    ]);
+    mostraMenu({
+      titolo: 'Messaggi',
+      voci: [
+        { label: 'Nuovo gruppo', icon: 'people-outline', onPress: () => router.push(ROUTES.nuovoGruppo) },
+        { label: 'Importante', icon: 'bookmark-outline', onPress: () => router.push(ROUTES.messaggiImportante) },
+        { label: 'Impostazioni', icon: 'settings-outline', onPress: () => router.push(ROUTES.messaggiImpostazioni) },
+      ],
+    });
   };
 
   return (
@@ -157,64 +160,65 @@ function ConversazioneRowContainer({
   const org = useConversationOrg(conv.id);
   const markRead = useMarkRead(conv.id);
   const leave = useLeaveConversation(conv.id);
-  const onErr = (e: unknown) => Alert.alert('Ops', chatErrorMessage(e));
+  const onErr = (e: unknown) => avvisa('Ops', chatErrorMessage(e));
 
+  // Sotto-menu durate (SRS R-06): aperto dalla voce "Silenzia" — lo slot unico
+  // del DialogHost rimpiazza il menu precedente senza flicker.
   const openMuteMenu = () => {
-    Alert.alert('Silenzia', 'Per quanto tempo?', [
-      { text: '8 ore', onPress: () => org.mute.mutate(muteUntilFromChoice('8h'), { onError: onErr }) },
-      { text: '1 settimana', onPress: () => org.mute.mutate(muteUntilFromChoice('1w'), { onError: onErr }) },
-      { text: 'Sempre', onPress: () => org.mute.mutate(muteUntilFromChoice('always'), { onError: onErr }) },
-      { text: 'Annulla', style: 'cancel' },
-    ]);
+    mostraMenu({
+      titolo: 'Silenzia',
+      sottotitolo: 'Per quanto tempo?',
+      voci: [
+        { label: '8 ore', onPress: () => org.mute.mutate(muteUntilFromChoice('8h'), { onError: onErr }) },
+        { label: '1 settimana', onPress: () => org.mute.mutate(muteUntilFromChoice('1w'), { onError: onErr }) },
+        { label: 'Sempre', onPress: () => org.mute.mutate(muteUntilFromChoice('always'), { onError: onErr }) },
+      ],
+    });
   };
 
   const confirmDelete = () => {
     const isDm = conv.type === 'dm';
-    Alert.alert(
-      isDm ? 'Elimina chat' : 'Esci dal gruppo',
-      isDm
+    conferma({
+      titolo: isDm ? 'Elimina chat' : 'Esci dal gruppo',
+      messaggio: isDm
         ? 'La chat sparisce dalla tua lista; riappare se arriva un nuovo messaggio.'
         : 'Uscirai dal gruppo. Potrai rientrare solo se ti riaggiungono.',
-      [
-        { text: 'Annulla', style: 'cancel' },
-        {
-          text: isDm ? 'Elimina' : 'Esci',
-          style: 'destructive',
-          onPress: () =>
-            isDm
-              ? org.flag.mutate({ flag: 'hidden', on: true }, { onError: onErr })
-              : leave.mutate(undefined, { onError: onErr }),
-        },
-      ],
-    );
+      confermaLabel: isDm ? 'Elimina' : 'Esci',
+      distruttiva: true,
+      onConferma: () =>
+        isDm
+          ? org.flag.mutate({ flag: 'hidden', on: true }, { onError: onErr })
+          : leave.mutate(undefined, { onError: onErr }),
+    });
   };
 
   const openMenu = () => {
-    const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [];
-    buttons.push(
+    const voci: VoceMenu[] = [];
+    voci.push(
       conv.muted
-        ? { text: 'Riattiva notifiche', onPress: () => org.mute.mutate(null, { onError: onErr }) }
-        : { text: 'Silenzia', onPress: openMuteMenu },
+        ? { label: 'Riattiva notifiche', icon: 'notifications-outline', onPress: () => org.mute.mutate(null, { onError: onErr }) }
+        : { label: 'Silenzia', icon: 'notifications-off-outline', onPress: openMuteMenu },
     );
-    buttons.push(
+    voci.push(
       conv.pinnedAt
-        ? { text: 'Sblocca dall’alto', onPress: () => org.flag.mutate({ flag: 'pinned', on: false }, { onError: onErr }) }
-        : { text: 'Fissa in cima', onPress: () => org.flag.mutate({ flag: 'pinned', on: true }, { onError: onErr }) },
+        ? { label: 'Sblocca dall’alto', icon: 'pin-outline', onPress: () => org.flag.mutate({ flag: 'pinned', on: false }, { onError: onErr }) }
+        : { label: 'Fissa in cima', icon: 'pin-outline', onPress: () => org.flag.mutate({ flag: 'pinned', on: true }, { onError: onErr }) },
     );
-    buttons.push({
-      text: 'Archivia',
+    voci.push({
+      label: 'Archivia',
+      icon: 'archive-outline',
       onPress: () => org.flag.mutate({ flag: 'archived', on: true }, { onError: onErr }),
     });
     if (conv.unreadCount > 0) {
-      buttons.push({ text: 'Segna come letto', onPress: () => markRead.mutate() });
+      voci.push({ label: 'Segna come letto', icon: 'checkmark-done-outline', onPress: () => markRead.mutate() });
     }
-    buttons.push({
-      text: conv.type === 'dm' ? 'Elimina chat' : 'Esci dal gruppo',
-      style: 'destructive',
+    voci.push({
+      label: conv.type === 'dm' ? 'Elimina chat' : 'Esci dal gruppo',
+      icon: conv.type === 'dm' ? 'trash-outline' : 'exit-outline',
+      danger: true,
       onPress: confirmDelete,
     });
-    buttons.push({ text: 'Annulla', style: 'cancel' });
-    Alert.alert(conv.title ?? 'Chat', undefined, buttons);
+    mostraMenu({ titolo: conv.title ?? 'Chat', voci });
   };
 
   return <ConversazioneRow conv={conv} onPress={onPress} onLongPress={openMenu} />;

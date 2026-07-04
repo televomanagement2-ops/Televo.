@@ -12,7 +12,6 @@
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -40,6 +39,7 @@ import {
   useUpdateConversationMeta,
 } from '@/hooks/useChat';
 import { uploadGroupAvatar } from '@/lib/chat';
+import { avvisa, conferma } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
@@ -99,7 +99,7 @@ export default function ChatInfo() {
       const url = await uploadGroupAvatar(uid, convId, asset.base64, asset.mimeType ?? 'image/jpeg');
       setMetaAvatar(url);
     } catch {
-      Alert.alert('Ops', 'Caricamento immagine non riuscito.');
+      avvisa('Ops', 'Caricamento immagine non riuscito.');
     } finally {
       setUploadingFoto(false);
     }
@@ -110,23 +110,22 @@ export default function ChatInfo() {
       { name: metaNome.trim(), avatarUrl: metaAvatar },
       {
         onSuccess: () => setEditMeta(false),
-        onError: (e) => Alert.alert('Ops', chatErrorMessage(e)),
+        onError: (e) => avvisa('Ops', chatErrorMessage(e)),
       },
     );
   };
 
   const handlePromote = (m: ConversationMemberCard) => {
     const nome = m.profile?.displayName || m.profile?.username || 'questo membro';
-    Alert.alert('Rendi admin', `${nome} potrà gestire membri e impostazioni del gruppo.`, [
-      { text: 'Annulla', style: 'cancel' },
-      {
-        text: 'Rendi admin',
-        onPress: () =>
-          promote.mutate(m.userId, {
-            onError: (e) => Alert.alert('Ops', chatErrorMessage(e)),
-          }),
-      },
-    ]);
+    conferma({
+      titolo: 'Rendi admin',
+      messaggio: `${nome} potrà gestire membri e impostazioni del gruppo.`,
+      confermaLabel: 'Rendi admin',
+      onConferma: () =>
+        promote.mutate(m.userId, {
+          onError: (e) => avvisa('Ops', chatErrorMessage(e)),
+        }),
+    });
   };
 
   // DM: relazione col peer per l'azione Blocca/Sblocca.
@@ -141,25 +140,24 @@ export default function ChatInfo() {
 
   const handleBlocca = () => {
     if (!peerId) return;
-    Alert.alert('Blocca utente', 'Non potrete più scrivervi né trovarvi.', [
-      { text: 'Annulla', style: 'cancel' },
-      {
-        text: 'Blocca',
-        style: 'destructive',
-        onPress: () =>
-          azioni.blocca.mutate(peerId, {
-            onSuccess: aggiornaComposer,
-            onError: (e) => Alert.alert('Ops', chatErrorMessage(e)),
-          }),
-      },
-    ]);
+    conferma({
+      titolo: 'Blocca utente',
+      messaggio: 'Non potrete più scrivervi né trovarvi.',
+      confermaLabel: 'Blocca',
+      distruttiva: true,
+      onConferma: () =>
+        azioni.blocca.mutate(peerId, {
+          onSuccess: aggiornaComposer,
+          onError: (e) => avvisa('Ops', chatErrorMessage(e)),
+        }),
+    });
   };
 
   const handleSblocca = () => {
     if (!peerId) return;
     azioni.sblocca.mutate(peerId, {
       onSuccess: aggiornaComposer,
-      onError: (e) => Alert.alert('Ops', chatErrorMessage(e)),
+      onError: (e) => avvisa('Ops', chatErrorMessage(e)),
     });
   };
 
@@ -167,32 +165,30 @@ export default function ChatInfo() {
 
   const handleRemove = (m: ConversationMemberCard) => {
     const nome = m.profile?.displayName || m.profile?.username || 'questo membro';
-    Alert.alert('Rimuovi membro', `Rimuovere ${nome} dal gruppo?`, [
-      { text: 'Annulla', style: 'cancel' },
-      {
-        text: 'Rimuovi',
-        style: 'destructive',
-        onPress: () =>
-          removeMember.mutate(m.userId, {
-            onError: (e) => Alert.alert('Ops', chatErrorMessage(e)),
-          }),
-      },
-    ]);
+    conferma({
+      titolo: 'Rimuovi membro',
+      messaggio: `Rimuovere ${nome} dal gruppo?`,
+      confermaLabel: 'Rimuovi',
+      distruttiva: true,
+      onConferma: () =>
+        removeMember.mutate(m.userId, {
+          onError: (e) => avvisa('Ops', chatErrorMessage(e)),
+        }),
+    });
   };
 
   const handleLeave = () => {
-    Alert.alert('Esci dal gruppo', 'Vuoi davvero uscire da questa conversazione?', [
-      { text: 'Annulla', style: 'cancel' },
-      {
-        text: 'Esci',
-        style: 'destructive',
-        onPress: () =>
-          leave.mutate(undefined, {
-            onSuccess: () => router.back(),
-            onError: (e) => Alert.alert('Ops', chatErrorMessage(e)),
-          }),
-      },
-    ]);
+    conferma({
+      titolo: 'Esci dal gruppo',
+      messaggio: 'Vuoi davvero uscire da questa conversazione?',
+      confermaLabel: 'Esci',
+      distruttiva: true,
+      onConferma: () =>
+        leave.mutate(undefined, {
+          onSuccess: () => router.back(),
+          onError: (e) => avvisa('Ops', chatErrorMessage(e)),
+        }),
+    });
   };
 
   return (
@@ -304,7 +300,7 @@ export default function ChatInfo() {
                     adding={addMember.isPending ? (addMember.variables ?? null) : null}
                     onAdd={(userId) =>
                       addMember.mutate(userId, {
-                        onError: (e) => Alert.alert('Ops', chatErrorMessage(e)),
+                        onError: (e) => avvisa('Ops', chatErrorMessage(e)),
                       })
                     }
                     onClose={() => setShowAdd(false)}

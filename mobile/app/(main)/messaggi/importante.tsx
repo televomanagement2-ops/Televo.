@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { StatoErrore } from '@/components/ui/StatoErrore';
 import { ConversazioneRow } from '@/components/chat/ConversazioneRow';
 import {
   useConversationOrg,
@@ -80,7 +81,9 @@ function SalvatiList() {
   const { unsave } = useSaveMessage();
 
   if (saved.isLoading) return <LoadingSpinner label="Carico i salvati…" style={styles.flex} />;
-  if (saved.isError) return <Vuoto icon="alert-circle-outline" text="Non riesco a caricare i salvati." />;
+  if (saved.isError) {
+    return <StatoErrore messaggio="Non riesco a caricare i salvati." onRetry={() => void saved.refetch()} />;
+  }
   if ((saved.data?.length ?? 0) === 0) {
     return <Vuoto icon="bookmark-outline" text="Nessun messaggio salvato. Tienine da parte uno con un tocco lungo." />;
   }
@@ -138,7 +141,9 @@ function ConversazioniList({
   const list = useConversations(view);
 
   if (list.isLoading) return <LoadingSpinner label="Carico…" style={styles.flex} />;
-  if (list.isError) return <Vuoto icon="alert-circle-outline" text="Non riesco a caricare." />;
+  if (list.isError) {
+    return <StatoErrore messaggio="Non riesco a caricare." onRetry={() => void list.refetch()} />;
+  }
   if ((list.data?.length ?? 0) === 0) {
     return (
       <Vuoto

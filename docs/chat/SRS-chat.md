@@ -223,8 +223,11 @@ richiesti dalle decisioni D1–D4.
 ### 3.5 VoiceNote (vocale effimero)
 - È un `message` con `type ∈ {audio, voice_thread}`, `audio_url` valorizzato,
   `expires_at ≤ now()+24h`. File nel bucket `voice-messages`.
-- `voice_thread` = interpretazione: "vocale drop-in" effimero (thread di voce). Da
-  confermare la differenza semantica con `audio` (§17 R-12).
+- `voice_thread` = **valore RISERVATO, mai emesso** (chiusura CM8, R-12): nessun
+  percorso di creazione lo produce (`sendAudioMessage` inserisce sempre `audio`),
+  la UI lo tratta identico ad `audio` (rami difensivi mantenuti). Non si rimuove
+  dall'enum (Postgres non supporta DROP VALUE); riservato per eventuali thread
+  vocali delle Stanze.
 - Cleanup: `expire_content()` (cron 5 min) elimina/oscura gli scaduti.
 
 ### 3.6 ReadState & spunte

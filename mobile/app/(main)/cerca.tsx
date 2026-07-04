@@ -22,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
+import { StatoErrore } from '@/components/ui/StatoErrore';
 import { useAuth } from '@/hooks/useAuth';
 import { useSearchMessages } from '@/hooks/useChat';
 import { searchProfiles } from '@/lib/social';
@@ -54,9 +55,13 @@ export default function Cerca() {
   const messaggi = useSearchMessages(attiva ? debounced : '', null);
 
   const loading = attiva && (persone.isFetching || messaggi.isFetching);
+  // Errore (CM8, SRS §14): se ENTRAMBE le ricerche falliscono non c'è nulla da
+  // mostrare → StatoErrore con retry; un fallimento parziale mostra l'altra metà.
+  const errore = attiva && !loading && persone.isError && messaggi.isError;
   const vuoto =
     attiva &&
     !loading &&
+    !errore &&
     (persone.data?.length ?? 0) === 0 &&
     (messaggi.data?.length ?? 0) === 0;
 
@@ -109,6 +114,14 @@ export default function Cerca() {
           <View style={styles.stateBox}>
             <ActivityIndicator color={colors.muted} />
           </View>
+        ) : errore ? (
+          <StatoErrore
+            messaggio="Non riesco a cercare in questo momento."
+            onRetry={() => {
+              void persone.refetch();
+              void messaggi.refetch();
+            }}
+          />
         ) : vuoto ? (
           <View style={styles.stateBox}>
             <Text style={styles.stateText}>Nessun risultato per “{debounced.trim()}”.</Text>

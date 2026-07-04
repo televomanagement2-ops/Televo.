@@ -32,6 +32,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { StatoErrore } from '@/components/ui/StatoErrore';
 import { MessaggioRow } from '@/components/chat/MessaggioRow';
 import { DataSeparatore } from '@/components/chat/DataSeparatore';
 import { Composer } from '@/components/chat/Composer';
@@ -967,6 +968,14 @@ export default function Chat() {
       >
         {header.isLoading || messagesQ.isPending ? (
           <LoadingSpinner label="Carico la conversazione…" style={styles.flex} />
+        ) : header.isError || messagesQ.isError ? (
+          <StatoErrore
+            messaggio="Non riesco a caricare la conversazione."
+            onRetry={() => {
+              void header.refetch();
+              void messagesQ.refetch();
+            }}
+          />
         ) : !header.data ? (
           <View style={styles.center}>
             <Text style={styles.vuoto}>Conversazione non disponibile.</Text>

@@ -28,6 +28,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { StreakBadge } from '@/components/chat/StreakBadge';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { StatoErrore } from '@/components/ui/StatoErrore';
 import { useAuth } from '@/hooks/useAuth';
 import { useAmici, useAzioniAmicizia, useRelazione } from '@/hooks/useAmici';
 import {
@@ -203,6 +204,11 @@ export default function ChatInfo() {
 
       {header.isLoading ? (
         <LoadingSpinner label="Carico le informazioni…" style={styles.flex} />
+      ) : header.isError ? (
+        <StatoErrore
+          messaggio="Non riesco a caricare le informazioni."
+          onRetry={() => void header.refetch()}
+        />
       ) : !data ? (
         <View style={styles.center}>
           <Text style={styles.vuoto}>Conversazione non disponibile.</Text>

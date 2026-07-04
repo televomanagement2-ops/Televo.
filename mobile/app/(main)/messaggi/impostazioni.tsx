@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { StatoErrore } from '@/components/ui/StatoErrore';
 import { useMyProfile, useUpdateProfile } from '@/hooks/useProfilo';
 import { useAzioniAmicizia, useBloccati } from '@/hooks/useAmici';
 import { presenzaPrefix } from '@/hooks/usePresenza';
@@ -87,10 +88,10 @@ export default function ImpostazioniChat() {
       {profilo.isLoading ? (
         <LoadingSpinner label="Carico le impostazioni…" style={styles.flex} />
       ) : profilo.isError ? (
-        <View style={styles.center}>
-          <Ionicons name="alert-circle-outline" size={40} color={colors.faint} />
-          <Text style={styles.vuoto}>Non riesco a caricare le impostazioni.</Text>
-        </View>
+        <StatoErrore
+          messaggio="Non riesco a caricare le impostazioni."
+          onRetry={() => void profilo.refetch()}
+        />
       ) : (
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
           <Text style={styles.sezione}>Privacy</Text>

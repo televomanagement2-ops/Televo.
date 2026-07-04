@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { StatoErrore } from '@/components/ui/StatoErrore';
 import { ConversazioneRow } from '@/components/chat/ConversazioneRow';
 import {
   useConversationOrg,
@@ -109,10 +110,7 @@ export default function Messages() {
       {conversazioni.isLoading ? (
         <LoadingSpinner label="Carico le chat…" style={styles.flex} />
       ) : conversazioni.isError ? (
-        <View style={styles.center}>
-          <Text style={styles.vuoto}>Non riesco a caricare le chat.</Text>
-          <Button label="Riprova" variant="secondary" onPress={() => refetch()} />
-        </View>
+        <StatoErrore messaggio="Non riesco a caricare le chat." onRetry={() => void refetch()} />
       ) : (conversazioni.data?.length ?? 0) === 0 ? (
         <View style={styles.center}>
           <Ionicons name="chatbubbles-outline" size={44} color={colors.faint} />

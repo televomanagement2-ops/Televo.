@@ -21,6 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { StatoErrore } from '@/components/ui/StatoErrore';
 import { useAmici } from '@/hooks/useAmici';
 import { useCreateGroup } from '@/hooks/useChat';
 import { avvisa } from '@/lib/dialoghi';
@@ -90,6 +91,11 @@ export default function NuovoGruppo() {
             <View style={styles.stateBox}>
               <ActivityIndicator color={colors.muted} />
             </View>
+          ) : amici.isError ? (
+            <StatoErrore
+              messaggio="Non riesco a caricare gli amici."
+              onRetry={() => void amici.refetch()}
+            />
           ) : (amici.data?.length ?? 0) === 0 ? (
             <View style={styles.stateBox}>
               <Text style={styles.vuoto}>

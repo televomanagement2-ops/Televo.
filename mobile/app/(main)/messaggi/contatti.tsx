@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { StatoErrore } from '@/components/ui/StatoErrore';
 import { useAmici, useApriDm, useAzioniAmicizia, usePendingRequests } from '@/hooks/useAmici';
 import {
   useAttivaContatti,
@@ -110,10 +111,10 @@ export default function Contatti() {
     corpo = <LoadingSpinner label="Controllo il consenso…" style={styles.flex} />;
   } else if (consenso.isError) {
     corpo = (
-      <View style={styles.center}>
-        <Text style={styles.vuoto}>Non riesco a controllare il consenso.</Text>
-        <Button label="Riprova" variant="secondary" onPress={() => void consenso.refetch()} />
-      </View>
+      <StatoErrore
+        messaggio="Non riesco a controllare il consenso."
+        onRetry={() => void consenso.refetch()}
+      />
     );
   } else if (consenso.data !== true) {
     // 1. Opt-in GDPR: spiegazione chiara PRIMA di toccare la rubrica.

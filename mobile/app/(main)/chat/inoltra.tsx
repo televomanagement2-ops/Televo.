@@ -21,6 +21,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
+import { StatoErrore } from '@/components/ui/StatoErrore';
 import { useConversations, useForwardMessages } from '@/hooks/useChat';
 import { useChatStore } from '@/store/chatStore';
 import { avvisa } from '@/lib/dialoghi';
@@ -89,6 +90,11 @@ export default function Inoltra() {
             <View style={styles.stateBox}>
               <ActivityIndicator color={colors.muted} />
             </View>
+          ) : conversazioni.isError ? (
+            <StatoErrore
+              messaggio="Non riesco a caricare le conversazioni."
+              onRetry={() => void conversazioni.refetch()}
+            />
           ) : (conversazioni.data?.length ?? 0) === 0 ? (
             <View style={styles.stateBox}>
               <Text style={styles.vuoto}>Nessuna conversazione disponibile.</Text>

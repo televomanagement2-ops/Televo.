@@ -15,6 +15,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
+import { DialogHost } from '@/components/ui/DialogHost';
 import { useAuthListener } from '@/hooks/useAuth';
 import { useOnboardingStore } from '@/store/onboardingStore';
 import { colors } from '@/constants/theme';
@@ -68,6 +69,8 @@ export default function RootLayout() {
               contentStyle: { backgroundColor: colors.base },
             }}
           />
+          {/* Host unico dei popup dark (CM6.5): menu, conferme e avvisi. */}
+          <DialogHost />
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

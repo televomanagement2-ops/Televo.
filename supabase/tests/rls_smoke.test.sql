@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(177);
+select plan(181);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -459,6 +459,27 @@ select ok((select prosrc like '%media_url = null%' from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'process_account_deletion'),
   'process_account_deletion azzera media_url/media_type');
+
+-- =============================================================================
+-- CM7 — rubrica: revoca atomica del consenso (20260705100000)
+-- =============================================================================
+select has_function('public', 'revoke_contacts_sync', array[]::text[],
+  'revoke_contacts_sync() esiste');
+select ok((select has_function_privilege('authenticated', 'public.revoke_contacts_sync()', 'execute')),
+  'revoke_contacts_sync eseguibile da authenticated');
+-- Atomica: cancella gli hash propri E revoca il consenso nella stessa funzione.
+select ok((select prosrc like '%delete from public.contact_hashes%'
+             and prosrc like '%record_consent%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'revoke_contacts_sync'),
+  'revoke_contacts_sync cancella gli hash e revoca il consenso insieme');
+-- Guardia di regressione sulla regola di safety del match (confermata dal
+-- product owner il 2026-07-04): minori solo ad amici, mai coppie bloccate.
+select ok((select prosrc like '%is_adult%' and prosrc like '%are_friends%'
+             and prosrc like '%is_blocked_pair%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'match_contacts'),
+  'match_contacts conserva le regole minori-solo-amici e niente-bloccati');
 
 select * from finish();
 rollback;

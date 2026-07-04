@@ -251,6 +251,20 @@ export interface Database {
         Insert: never; // via RPC register_contact_hash
         Update: never;
       };
+      consents: {
+        // Consensi GDPR (select owner-only). Scrittura SOLO via record_consent /
+        // revoke_contacts_sync: il client li legge per mostrare lo stato (CM7).
+        Row: {
+          user_id: string;
+          consent_type: string;
+          version: string;
+          granted_at: string | null;
+          revoked_at: string | null;
+          updated_at: string;
+        };
+        Insert: never; // via RPC record_consent
+        Update: never;
+      };
       drops: {
         // Momenti effimeri (24h): niente soft-delete, scadono via expires_at.
         Row: {
@@ -491,6 +505,8 @@ export interface Database {
         Args: { p_hashes: string[] };
         Returns: { user_id: string; username: string; avatar_url: string | null }[];
       };
+      // Revoca ATOMICA del consenso rubrica (CM7): delete hash propri + revoca.
+      revoke_contacts_sync: { Args: Record<string, never>; Returns: Json };
       // Streak / presenza sana
       record_session: { Args: { p_seconds: number }; Returns: Json };
       // Notifiche / device

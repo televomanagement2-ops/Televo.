@@ -13,6 +13,7 @@ import { profiloKeys } from '@/hooks/useProfilo';
 import {
   acceptFriendRequest,
   blockUser,
+  fetchBlockedUsers,
   fetchProfileCard,
   fetchProfileCards,
   openDm,
@@ -29,6 +30,7 @@ export const amiciKeys = {
   pending: (uid: string) => ['amici', uid, 'pending'] as const,
   relazione: (uid: string, other: string) => ['amici', uid, 'rel', other] as const,
   ricerca: (term: string) => ['amici', 'search', term] as const,
+  bloccati: (uid: string) => ['amici', uid, 'bloccati'] as const,
 };
 
 /** Stato della relazione con un altro utente (per la schermata profilo altrui). */
@@ -109,6 +111,18 @@ export function usePendingRequests() {
   });
 }
 
+/** Gli utenti che ho bloccato io (lista "Utenti bloccati" in S10, CM8). */
+export function useBloccati() {
+  const { session } = useAuth();
+  const uid = session?.user.id;
+
+  return useQuery({
+    queryKey: uid ? amiciKeys.bloccati(uid) : ['amici', 'anon', 'bloccati'],
+    enabled: !!uid,
+    queryFn: () => fetchBlockedUsers(uid as string),
+  });
+}
+
 /** Ricerca utenti per username/nome (min 2 caratteri). */
 export function useSearchUsers(term: string) {
   const { session } = useAuth();
@@ -169,6 +183,7 @@ function useInvalidateAmici() {
       queryClient.invalidateQueries({ queryKey: amiciKeys.list(uid) }),
       queryClient.invalidateQueries({ queryKey: amiciKeys.pending(uid) }),
       queryClient.invalidateQueries({ queryKey: ['amici', uid, 'rel'] }),
+      queryClient.invalidateQueries({ queryKey: amiciKeys.bloccati(uid) }),
       queryClient.invalidateQueries({ queryKey: profiloKeys.friendCount(uid) }),
     ]);
   };

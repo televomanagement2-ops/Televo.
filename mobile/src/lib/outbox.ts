@@ -11,7 +11,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 import { onlineManager } from '@tanstack/react-query';
-import { sendAudioMessage, sendMediaMessage, sendTextMessage } from '@/lib/chat';
+import { moderaMessaggio, sendAudioMessage, sendMediaMessage, sendTextMessage } from '@/lib/chat';
 import { conversationsPrefix, upsertMessage } from '@/lib/chat-cache';
 import { uploadVocale } from '@/lib/audio';
 import { uploadFoto } from '@/lib/media';
@@ -74,6 +74,8 @@ export async function attemptSend(
     useChatStore.getState().outboxRemove(tempId);
     upsertMessage(queryClient, item.conversationId, row);
     void queryClient.invalidateQueries({ queryKey: conversationsPrefix(uid) });
+    // Moderazione in background (CM8): testo e caption foto, mai bloccante.
+    if (item.type === 'text' || item.type === 'media') moderaMessaggio(row.id, row.body);
   } catch (e) {
     if (erroreDiRete(e)) {
       // Offline/timeout: resta pending, ripartirà alla riconnessione.

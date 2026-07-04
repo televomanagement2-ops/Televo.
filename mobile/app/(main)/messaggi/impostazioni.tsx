@@ -8,17 +8,21 @@
 // Toggle ottimistici: flip immediato, rollback con avviso se il server rifiuta.
 
 import { useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
+import { Avatar } from '@/components/ui/Avatar';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useMyProfile, useUpdateProfile } from '@/hooks/useProfilo';
+import { useAzioniAmicizia, useBloccati } from '@/hooks/useAmici';
 import { presenzaPrefix } from '@/hooks/usePresenza';
-import { avvisa } from '@/lib/dialoghi';
+import { avvisa, conferma } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
+import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
+import type { ProfileCard } from '@/types';
 
 type ToggleField = 'show_last_seen' | 'show_read_receipts';
 
@@ -27,6 +31,17 @@ export default function ImpostazioniChat() {
   const queryClient = useQueryClient();
   const profilo = useMyProfile();
   const update = useUpdateProfile();
+  const bloccati = useBloccati();
+  const azioni = useAzioniAmicizia();
+
+  const sblocca = (utente: ProfileCard) =>
+    conferma({
+      titolo: 'Sblocca utente',
+      messaggio: `${utente.displayName || utente.username} potrà di nuovo scriverti e trovarti.`,
+      confermaLabel: 'Sblocca',
+      onConferma: () =>
+        azioni.sblocca.mutate(utente.id, { onError: (e) => avvisa('Ops', chatErrorMessage(e)) }),
+    });
 
   // Override ottimistico locale: presente solo mentre la mutazione è in volo
   // (successo → il profilo rivalidato prende il valore; errore → rollback).
@@ -77,7 +92,7 @@ export default function ImpostazioniChat() {
           <Text style={styles.vuoto}>Non riesco a caricare le impostazioni.</Text>
         </View>
       ) : (
-        <View style={styles.body}>
+        <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
           <Text style={styles.sezione}>Privacy</Text>
 
           <View style={styles.gruppo}>
@@ -101,7 +116,46 @@ export default function ImpostazioniChat() {
             altri. La tua attività resta visibile solo ad amici e persone con cui
             hai una chat.
           </Text>
-        </View>
+
+          {/* Utenti bloccati (S10, CM8): sblocco con conferma dark. */}
+          <Text style={styles.sezione}>Utenti bloccati</Text>
+          {bloccati.isLoading ? (
+            <ActivityIndicator color={colors.muted} style={{ marginTop: spacing.md }} />
+          ) : (bloccati.data?.length ?? 0) === 0 ? (
+            <Text style={styles.nota}>Nessun utente bloccato.</Text>
+          ) : (
+            <View style={styles.gruppo}>
+              {bloccati.data!.map((u, i) => (
+                <View key={u.id}>
+                  {i > 0 ? <View style={styles.divisore} /> : null}
+                  <Pressable
+                    style={styles.riga}
+                    onPress={() => router.push(dynamicRoutes.profiloUtente(u.id))}
+                  >
+                    <Avatar uri={u.avatarUrl} name={u.username} size={40} />
+                    <View style={styles.rigaTesto}>
+                      <Text style={styles.rigaTitolo} numberOfLines={1}>
+                        {u.displayName || u.username}
+                      </Text>
+                      <Text style={styles.rigaSottotitolo}>@{u.username}</Text>
+                    </View>
+                    <Pressable
+                      style={({ pressed }) => [styles.sbloccaBtn, pressed && { opacity: 0.7 }]}
+                      onPress={() => sblocca(u)}
+                      disabled={azioni.sblocca.isPending && azioni.sblocca.variables === u.id}
+                    >
+                      <Text style={styles.sbloccaText}>
+                        {azioni.sblocca.isPending && azioni.sblocca.variables === u.id
+                          ? 'Sblocco…'
+                          : 'Sblocca'}
+                      </Text>
+                    </Pressable>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          )}
+        </ScrollView>
       )}
     </SafeAreaView>
   );
@@ -185,6 +239,15 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     paddingHorizontal: spacing.xs,
   },
+  sbloccaBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.elevated,
+  },
+  sbloccaText: { color: colors.accentSoft, fontSize: fontSize.xs, fontFamily: fontFamily.semibold },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, padding: spacing.xl },
   vuoto: {
     color: colors.muted,

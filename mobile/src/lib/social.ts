@@ -77,6 +77,29 @@ export async function fetchProfileCards(ids: string[]): Promise<Map<string, Prof
   return out;
 }
 
+/**
+ * Gli utenti che HO bloccato io (per la lista "Utenti bloccati" in S10, CM8).
+ * `friendships_select_parties` mi lascia leggere le mie righe `blocked`; i loro
+ * profili restano leggibili (l'invisibilità stile Instagram nasconde solo chi
+ * ha bloccato ME). Da qui posso sbloccare.
+ */
+export async function fetchBlockedUsers(uid: string): Promise<ProfileCard[]> {
+  const { data, error } = await supabase
+    .from('friendships')
+    .select('user_id, friend_id, blocked_by')
+    .eq('status', 'blocked')
+    .eq('blocked_by', uid);
+  if (error) throw error;
+  const rows = (data ?? []) as unknown as {
+    user_id: string;
+    friend_id: string;
+    blocked_by: string;
+  }[];
+  const ids = rows.map((r) => (r.user_id === uid ? r.friend_id : r.user_id));
+  const cards = await fetchProfileCards(ids);
+  return ids.map((id) => cards.get(id)).filter((c): c is ProfileCard => !!c);
+}
+
 /** Card di un singolo profilo (per la schermata profilo altrui). */
 export async function fetchProfileCard(id: string): Promise<ProfileCard | null> {
   const { data, error } = await supabase

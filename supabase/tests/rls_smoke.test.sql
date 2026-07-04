@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(191);
+select plan(193);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -514,6 +514,19 @@ select ok((select has_column_privilege('authenticated', 'public.conversation_mem
   'conversation_members.cleared_at resta leggibile');
 select ok((select has_column_privilege('authenticated', 'public.profiles', 'username', 'SELECT')),
   'profiles.username resta leggibile');
+
+-- =============================================================================
+-- CM8 — pulizia gruppi orfani (20260705130000): expire_content v4
+-- =============================================================================
+-- La v3 resta intatta (verbatim) e si aggiunge la cancellazione degli orfani.
+select ok((select prosrc like '%room_locations%' and prosrc like '%live_presence%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content conserva la logica v3 (mappa/drops/messaggi)');
+select ok((select prosrc like '%conversation_members%' and prosrc like '%delete from public.conversations%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v4 cancella i gruppi orfani (0 membri)');
 
 select * from finish();
 rollback;

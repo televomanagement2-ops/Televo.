@@ -31,6 +31,9 @@
         "RECORD_AUDIO",
         "CAMERA",
         "ACCESS_COARSE_LOCATION"
+      ],
+      "blockedPermissions": [
+        "android.permission.WRITE_CONTACTS"
       ]
     },
     "plugins": [
@@ -56,6 +59,12 @@
         "expo-notifications",
         {
           "color": "#3b82f6"
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Televo confronta la rubrica in forma anonima (solo impronte, mai i contatti in chiaro) per trovare i tuoi amici."
         }
       ],
       "expo-web-browser"

@@ -28,7 +28,7 @@ import {
 } from '@/hooks/useAmici';
 import { avvisa } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
-import { dynamicRoutes } from '@/constants/routes';
+import { dynamicRoutes, ROUTES } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 import type { ProfileCard } from '@/types';
 
@@ -94,6 +94,18 @@ export default function Amici() {
           </Section>
         ) : (
           <>
+            {/* --- Trova contatti dalla rubrica (CM7, S11) --- */}
+            <Pressable
+              style={({ pressed }) => [styles.contattiRow, pressed && { opacity: 0.7 }]}
+              onPress={() => router.push(ROUTES.messaggiContatti)}
+            >
+              <View style={styles.contattiIcona}>
+                <Ionicons name="person-add-outline" size={20} color={colors.accent} />
+              </View>
+              <Text style={styles.contattiLabel}>Trova contatti dalla rubrica</Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.faint} />
+            </Pressable>
+
             {/* --- Richieste ricevute --- */}
             {(pending.data?.incoming.length ?? 0) > 0 ? (
               <Section title="Richieste ricevute">
@@ -273,6 +285,30 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+  },
+  // Ingresso rubrica (CM7): riga in testa, specchio di "Nuovo gruppo" nell'hub.
+  contattiRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  contattiIcona: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.elevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  contattiLabel: {
+    flex: 1,
+    color: colors.ink,
+    fontSize: fontSize.base,
+    fontFamily: fontFamily.semibold,
   },
   searchBox: {
     flex: 1,

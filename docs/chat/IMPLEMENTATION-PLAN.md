@@ -655,16 +655,38 @@ telefono valutato in futuro); privacy: la rubrica NON lascia mai il device in ch
 (solo hash); minori: già protetti server-side (scopribili solo da amici esistenti).
 
 **Checklist**:
-- [ ] Consenso registrato in `consents` (audit) e revocabile
-- [ ] Rubrica processata a batch senza inviare dati in chiaro
-- [ ] Match visibili con azioni amico/DM; bloccati esclusi
-- [ ] Permesso negato/revocato gestito
-- [ ] `tsc` + `eslint` puliti
+- [x] Consenso registrato in `consents` (audit) e revocabile — revoca ATOMICA
+      via nuova RPC `revoke_contacts_sync()` (migrazione `20260705100000`,
+      applicata via pooler): delete hash propri + `record_consent(false)` in
+      una transazione (due chiamate separate potevano lasciare hash orfani
+      senza consenso). Revoca in fondo alla schermata S11 con `conferma()` dark.
+- [x] Rubrica processata a batch senza inviare dati in chiaro — `lib/contatti.ts`:
+      solo campo email (`expo-contacts`), normalizzazione trim+lowercase, SHA-256
+      hex (`expo-crypto`), batch da 500 (cap server 1000), dedup per userId; il
+      PROPRIO hash da `session.user.email` (no-op se assente, match unidirezionale).
+- [x] Match visibili con azioni amico/DM; bloccati esclusi — stato per riga
+      derivato client-side dalle liste `useAmici`/`usePendingRequests` (zero
+      query extra): Aggiungi / chip "Inviata" / Messaggia (`useApriDm`); tap
+      riga → profilo. Esclusione bloccati e minori-solo-amici SERVER-side
+      (smoke runtime 9/9 via pooler con JWT simulato, transazione+rollback).
+- [x] Permesso negato/revocato gestito — stato dedicato con `Linking.openSettings()`
+      (pattern nuovo) + Riprova; permesso iOS/Android dichiarato in app.json
+      (plugin expo-contacts, stringa IT; `WRITE_CONTACTS` bloccato esplicitamente).
+- [x] `tsc` + `eslint` puliti + export bundle iOS OK
+- [ ] Smoke su device: flusso completo con 2 account reali con email in rubrica
 
 **Criteri di completamento**: flusso completo con 2 account reali con email in
-rubrica; verifica che un minore NON sia scopribile da un non-amico.
+rubrica; verifica che un minore NON sia scopribile da un non-amico (già coperta
+dallo smoke runtime server-side; sul device resta il giro completo UI).
 
 **Test**: manuale con account di test adulto/minore; controllo righe `contact_hashes`.
+
+> Decisioni CM7 (2026-07-04): regola di scopribilità CONFERMATA dal product
+> owner (adulti consenzienti trovabili da chiunque abbia la loro email; minori
+> solo da amici) → nessuna modifica a `match_contacts`, aggiunta guardia pgTAP
+> di regressione sulla regola (181 invarianti totali). Ingressi S11: menu
+> overflow dell'hub + riga in testa alla schermata Amici. La lettura della
+> rubrica parte SOLO da un gesto esplicito (cache di sessione, refresh manuale).
 
 ---
 

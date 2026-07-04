@@ -35,6 +35,7 @@ export const ROUTES = {
   chatInoltra: '/chat/inoltra',
   messaggiImportante: '/messaggi/importante',
   messaggiImpostazioni: '/messaggi/impostazioni',
+  messaggiContatti: '/messaggi/contatti',
 } as const;
 
 /** Route dinamiche: costruttori tipizzati per gli id (in arrivo nei prossimi M). */

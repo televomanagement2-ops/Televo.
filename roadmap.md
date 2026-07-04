@@ -300,8 +300,22 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
   TUTTI gli `Alert.alert` convertiti (hub, chat, info, importante, impostazioni,
   profilo, amici, nuovo-gruppo, inoltra, menu, welcome, HelpButton) + regola
   eslint anti-regressione. Restano nativi solo Share e permessi OS.
-- **Prossimo**: CM7 (contatti email-only) → CM8. Dettagli, rischi e
-  checklist nel piano dedicato.
+- ✅ **CM7 fatto** (2026-07-04): "I tuoi contatti su Televo" (S11, email-only).
+  Backend: migrazione `20260705100000_contact_revoke` LIVE via pooler (RPC
+  `revoke_contacts_sync`: revoca ATOMICA = delete hash propri + consenso
+  revocato in una transazione); pgTAP 181/181 sul remoto + smoke runtime 9/9
+  con JWT simulato (consent gate, minore invisibile a non-amico, bloccati
+  esclusi, cap 1000, revoca). Regola di scopribilità CONFERMATA dal product
+  owner (adulti opt-in trovabili da chiunque abbia la loro email; minori solo
+  da amici). Frontend: `lib/contatti.ts` (solo email, SHA-256 client, batch
+  500), `useContatti`, schermata `messaggi/contatti.tsx` a stati (opt-in GDPR →
+  permesso OS con Linking.openSettings → sync → risultati con
+  Aggiungi/Inviata/Messaggia → revoca in-page), ingressi da hub overflow e da
+  Amici. Deps: expo-contacts + expo-crypto (ok in Expo Go). Da fare: smoke su
+  device con 2 account con email in rubrica.
+- **Prossimo**: CM8 (chiusura: chat_overview, enforcement spunte, bloccati in
+  S10, moderate-text, gruppi orfani, audit grant, Edge v2 in coda owner,
+  MANUAL-TESTING). Dettagli, rischi e checklist nel piano dedicato.
 - **Verifica:** DM solo tra amici, vocale che scade a 24h, streak con freeze +
   criteri di completamento per milestone in `docs/chat/IMPLEMENTATION-PLAN.md`.
 

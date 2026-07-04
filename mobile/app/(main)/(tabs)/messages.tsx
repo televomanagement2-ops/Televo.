@@ -57,6 +57,7 @@ export default function Messages() {
       titolo: 'Messaggi',
       voci: [
         { label: 'Nuovo gruppo', icon: 'people-outline', onPress: () => router.push(ROUTES.nuovoGruppo) },
+        { label: 'Trova i tuoi contatti', icon: 'person-add-outline', onPress: () => router.push(ROUTES.messaggiContatti) },
         { label: 'Importante', icon: 'bookmark-outline', onPress: () => router.push(ROUTES.messaggiImportante) },
         { label: 'Impostazioni', icon: 'settings-outline', onPress: () => router.push(ROUTES.messaggiImpostazioni) },
       ],

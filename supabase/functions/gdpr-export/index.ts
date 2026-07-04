@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
     profile, profilePrivate, consents, auraEvents, auraSnapshots,
     friendships, messages, drops, propsGiven, propsReceived,
     achievements, wallet, txFrom, txTo, earnings, devices, reports, gdprReqs,
-    savedMessages, convMemberships, contactHashes,
+    savedMessages, convMemberships, contactHashes, messageReactions,
   ] = await Promise.all([
     db.from("profiles").select("*").eq("id", uid).maybeSingle(),
     db.from("profiles_private").select("*").eq("id", uid).maybeSingle(),
@@ -55,6 +55,10 @@ Deno.serve(async (req) => {
     db.from("saved_messages").select("*").eq("user_id", uid),
     db.from("conversation_members").select("*").eq("user_id", uid),
     db.from("contact_hashes").select("*").eq("user_id", uid),
+    // CM8: reazioni emoji proprie (CM4) — simmetria con process_account_deletion.
+    // conversations/streaks NO: dati di gruppo non personali, le membership
+    // proprie sono già esportate sopra.
+    db.from("message_reactions").select("*").eq("user_id", uid),
   ]);
 
   const data = {
@@ -78,6 +82,7 @@ Deno.serve(async (req) => {
     saved_messages: savedMessages.data ?? [],
     conversation_memberships: convMemberships.data ?? [],
     contact_hashes: contactHashes.data ?? [],
+    message_reactions: messageReactions.data ?? [],
   };
 
   // Marca completate le richieste di export pendenti + audit.

@@ -6,7 +6,7 @@
 // (get_or_create_dm) e naviga alla conversazione. Le azioni sono RPC (useAmici).
 
 import { useEffect } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +20,7 @@ import {
   useProfiloCard,
   useRelazione,
 } from '@/hooks/useAmici';
+import { avvisa, conferma } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
@@ -42,7 +43,7 @@ export default function ProfiloUtente() {
   const azioni = useAzioniAmicizia();
   const apriDm = useApriDm();
 
-  const onError = (e: unknown) => Alert.alert('Ops', chatErrorMessage(e));
+  const onError = (e: unknown) => avvisa('Ops', chatErrorMessage(e));
 
   const messaggia = () => {
     if (!id) return;
@@ -104,14 +105,13 @@ export default function ProfiloUtente() {
         label="Blocca"
         loading={azioni.blocca.isPending}
         onPress={() =>
-          Alert.alert('Blocca utente', 'Non potrete più scrivervi né trovarvi.', [
-            { text: 'Annulla', style: 'cancel' },
-            {
-              text: 'Blocca',
-              style: 'destructive',
-              onPress: () => azioni.blocca.mutate(id, { onError }),
-            },
-          ])
+          conferma({
+            titolo: 'Blocca utente',
+            messaggio: 'Non potrete più scrivervi né trovarvi.',
+            confermaLabel: 'Blocca',
+            distruttiva: true,
+            onConferma: () => azioni.blocca.mutate(id, { onError }),
+          })
         }
       />
     );
@@ -126,14 +126,13 @@ export default function ProfiloUtente() {
               label="Rimuovi amico"
               loading={azioni.rimuovi.isPending}
               onPress={() =>
-                Alert.alert('Rimuovi amico', 'Vuoi rimuovere questa amicizia?', [
-                  { text: 'Annulla', style: 'cancel' },
-                  {
-                    text: 'Rimuovi',
-                    style: 'destructive',
-                    onPress: () => azioni.rimuovi.mutate(id, { onError }),
-                  },
-                ])
+                conferma({
+                  titolo: 'Rimuovi amico',
+                  messaggio: 'Vuoi rimuovere questa amicizia?',
+                  confermaLabel: 'Rimuovi',
+                  distruttiva: true,
+                  onConferma: () => azioni.rimuovi.mutate(id, { onError }),
+                })
               }
             />
             {bloccaBtn}

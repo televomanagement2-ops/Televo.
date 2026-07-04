@@ -9,7 +9,6 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,6 +26,7 @@ import {
   useSearchUsers,
   useAzioniAmicizia,
 } from '@/hooks/useAmici';
+import { avvisa } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
@@ -47,7 +47,7 @@ export default function Amici() {
   const run = (
     mutation: { mutate: (id: string, opts?: { onError?: (e: unknown) => void }) => void },
     id: string,
-  ) => mutation.mutate(id, { onError: (e) => Alert.alert('Ops', chatErrorMessage(e)) });
+  ) => mutation.mutate(id, { onError: (e) => avvisa('Ops', chatErrorMessage(e)) });
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>

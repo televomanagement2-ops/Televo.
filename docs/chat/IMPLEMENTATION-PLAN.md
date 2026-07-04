@@ -590,6 +590,47 @@ piattaforma reale.
 
 ---
 
+### CM6.5 — Sistema dialoghi dark (fuori piano originale, decisione utente 2026-07-04)
+
+**Obiettivo**: TUTTI i popup dell'app (menu contestuali, overflow, conferme, picker
+e — decisione utente — anche gli alert di errore/info) allineati allo stile dark,
+con "Annulla" sempre presente e chiusura al tap fuori/back Android SEMPRE.
+Prima di CM7 così le schermate nuove nascono già dark.
+
+**Decisioni**:
+- API imperativa stile `Alert.alert` in `src/lib/dialoghi.ts` (callback, niente
+  Promise): `mostraMenu` (bottom sheet), `conferma` (card centrata, pattern
+  Telegram per le azioni distruttive), `avvisa` (card errore/info con "OK").
+- Store Zustand a SLOT SINGOLO + un solo `<DialogHost/>` nel root layout: i menu
+  a 2 livelli (es. long-press → Silenzia → durate) sostituiscono il contenuto
+  nello stesso Modal (zero modali impilati, inaffidabili su Android).
+- `BottomSheet.tsx` (era uno stub vuoto) implementato con gli stili di
+  `MenuMessaggio` → coerenza visiva; `MenuMessaggio` resta autonomo (step
+  interni/barra emoji fuori dal contratto generico, refactor = costo senza beneficio).
+- "Annulla" nei menu la appende sempre il host; nel dialogo `conferma` è il
+  bottone secondario. Haptics: Light all'apertura menu, Warning sulle conferme
+  distruttive, niente su `avvisa`.
+- Regola eslint `no-restricted-properties` su `Alert.alert` (anti-regressione).
+
+**Checklist**:
+- [x] Primitive + DialogHost montato nel root (`dialoghi.ts`, `BottomSheet.tsx`,
+      `DialogHost.tsx`, `_layout.tsx`)
+- [x] Conversione hub (`messages.tsx`: long-press S16-bis, overflow, mute, delete),
+      chat (`[id].tsx`: allega, overflow, mute, clear, delete, outbox, selezione,
+      ~15 avvisi) e info (`info.tsx`: promuovi, blocca, rimuovi, esci)
+- [x] Conversione schermate restanti (importante, impostazioni, profilo/[id],
+      amici, nuovo-gruppo, inoltra, menu, welcome, HelpButton)
+- [x] `Alert.alert` = 0 usi in `mobile/` + regola eslint attiva
+- [x] `tsc --noEmit` + `eslint` puliti
+- [ ] Smoke visivo su device (menu principali: dark, Annulla, tap-fuori, back)
+
+**Fuori perimetro** (restano nativi): `Share.share`, dialoghi permessi OS.
+
+**Criteri di completamento**: nessun popup chiaro di sistema raggiungibile
+dall'app (eccetto share/permessi OS); tap fuori chiude sempre.
+
+---
+
 ### CM7 — "I tuoi contatti su Televo" (D1 — solo email)
 
 **Obiettivo**: S11 — trovare i contatti della rubrica già su Televo (match per
@@ -668,8 +709,8 @@ sorprese; roadmap.md aggiornata (M5 chiusa).
 ## 4. Ordine e razionale
 
 ```
-CM0 ──► CM1 ──► CM2 ──► CM3 ──► CM4 ──► CM5 ──► CM6 ──► CM7 ──► CM8
-(live)  (fix)   (UX)   (vita)  (potenza) (media) (push) (rubrica) (chiusura)
+CM0 ──► CM1 ──► CM2 ──► CM3 ──► CM4 ──► CM5 ──► CM6 ──► CM6.5 ──► CM7 ──► CM8
+(live)  (fix)   (UX)   (vita)  (potenza) (media) (push) (dialoghi) (rubrica) (chiusura)
 ```
 
 - **CM0 sblocca tutto**: senza push delle migrazioni il realtime non esiste e ogni
@@ -705,6 +746,9 @@ CM0 ──► CM1 ──► CM2 ──► CM3 ──► CM4 ──► CM5 ──
 - Frontend: pattern hook `useChat.ts` (query key factory + throw + invalidate);
   errori mappati IT in `lib/errors.ts`; UI riusa il kit esistente; commenti in
   italiano; un commit per blocco logico.
+- **Mai `Alert.alert`** (da CM6.5): ogni popup passa da `mostraMenu`/`conferma`/
+  `avvisa` di `@/lib/dialoghi` (regola eslint dedicata). Eccezioni: `Share.share`
+  e i dialoghi permessi OS.
 - Ogni milestone termina con: `tsc --noEmit` pulito, `eslint` pulito, pgTAP verdi
   (se ha toccato il backend), aggiornamento di `roadmap.md`.
 

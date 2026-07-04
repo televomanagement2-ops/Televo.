@@ -3,12 +3,13 @@
 // che apriranno (presto) le sezioni dell'app, e infine il Logout reale.
 // =============================================================================
 
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { useAuth } from '@/hooks/useAuth';
+import { conferma } from '@/lib/dialoghi';
 import { ROUTES } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 
@@ -24,10 +25,13 @@ export default function Menu() {
   const { profile, signOut } = useAuth();
 
   const confermaLogout = () => {
-    Alert.alert('Esci', 'Vuoi uscire dal tuo account?', [
-      { text: 'Annulla', style: 'cancel' },
-      { text: 'Esci', style: 'destructive', onPress: () => signOut() },
-    ]);
+    conferma({
+      titolo: 'Esci',
+      messaggio: 'Vuoi uscire dal tuo account?',
+      confermaLabel: 'Esci',
+      distruttiva: true,
+      onConferma: () => signOut(),
+    });
   };
 
   // Il Profilo si apre SOLO dal cerchio avatar nell'header della Home: qui il

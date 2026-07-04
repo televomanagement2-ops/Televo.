@@ -9,7 +9,6 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -24,6 +23,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { useAmici } from '@/hooks/useAmici';
 import { useCreateGroup } from '@/hooks/useChat';
+import { avvisa } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
@@ -51,7 +51,7 @@ export default function NuovoGruppo() {
       { type: 'group', name: nome.trim() || null, members: [...selected] },
       {
         onSuccess: (convId) => router.replace(dynamicRoutes.chat(convId)),
-        onError: (e) => Alert.alert('Ops', chatErrorMessage(e)),
+        onError: (e) => avvisa('Ops', chatErrorMessage(e)),
       },
     );
   };

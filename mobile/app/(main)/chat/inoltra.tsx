@@ -11,7 +11,6 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -24,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { useConversations, useForwardMessages } from '@/hooks/useChat';
 import { useChatStore } from '@/store/chatStore';
+import { avvisa } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
@@ -58,7 +58,7 @@ export default function Inoltra() {
         },
         onError: (e) => {
           setDestinazione(null);
-          Alert.alert('Ops', chatErrorMessage(e));
+          avvisa('Ops', chatErrorMessage(e));
         },
       },
     );

@@ -8,7 +8,7 @@
 // Toggle ottimistici: flip immediato, rollback con avviso se il server rifiuta.
 
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useMyProfile, useUpdateProfile } from '@/hooks/useProfilo';
 import { presenzaPrefix } from '@/hooks/usePresenza';
+import { avvisa } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 
@@ -53,7 +54,7 @@ export default function ImpostazioniChat() {
         },
         onError: (e) => {
           pulisci(); // rollback: torna al valore del server
-          Alert.alert('Ops', chatErrorMessage(e));
+          avvisa('Ops', chatErrorMessage(e));
         },
       },
     );

@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +20,7 @@ import {
 } from '@/hooks/useChat';
 import { previewText } from '@/lib/chat';
 import { hubTimestamp } from '@/lib/datetime';
+import { avvisa, mostraMenu } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
@@ -93,17 +94,20 @@ function SalvatiList() {
         <Card
           onPress={() => router.push(dynamicRoutes.chat(item.conversationId))}
           onLongPress={() =>
-            Alert.alert('Salvato', undefined, [
-              {
-                text: 'Rimuovi dai salvati',
-                style: 'destructive',
-                onPress: () =>
-                  unsave.mutate(item.message.id, {
-                    onError: (e) => Alert.alert('Ops', chatErrorMessage(e)),
-                  }),
-              },
-              { text: 'Annulla', style: 'cancel' },
-            ])
+            mostraMenu({
+              titolo: 'Salvato',
+              voci: [
+                {
+                  label: 'Rimuovi dai salvati',
+                  icon: 'bookmark-outline',
+                  danger: true,
+                  onPress: () =>
+                    unsave.mutate(item.message.id, {
+                      onError: (e) => avvisa('Ops', chatErrorMessage(e)),
+                    }),
+                },
+              ],
+            })
           }
           style={styles.savedCard}
         >
@@ -167,13 +171,13 @@ function ArchivedRow({
   onOpen: () => void;
 }) {
   const org = useConversationOrg(conv.id);
-  const onErr = (e: unknown) => Alert.alert('Ops', chatErrorMessage(e));
+  const onErr = (e: unknown) => avvisa('Ops', chatErrorMessage(e));
   const openMenu = () => {
     const action =
       view === 'archived'
-        ? { text: 'Ripristina', onPress: () => org.flag.mutate({ flag: 'archived', on: false }, { onError: onErr }) }
-        : { text: 'Riattiva notifiche', onPress: () => org.mute.mutate(null, { onError: onErr }) };
-    Alert.alert(conv.title ?? 'Chat', undefined, [action, { text: 'Annulla', style: 'cancel' }]);
+        ? { label: 'Ripristina', icon: 'arrow-up-circle-outline' as const, onPress: () => org.flag.mutate({ flag: 'archived', on: false }, { onError: onErr }) }
+        : { label: 'Riattiva notifiche', icon: 'notifications-outline' as const, onPress: () => org.mute.mutate(null, { onError: onErr }) };
+    mostraMenu({ titolo: conv.title ?? 'Chat', voci: [action] });
   };
   return <ConversazioneRow conv={conv} onPress={onOpen} onLongPress={openMenu} />;
 }

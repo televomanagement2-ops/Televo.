@@ -3,7 +3,8 @@
 // aiuto (non ancora costruita): mostra un placeholder gentile, niente crash.
 // =============================================================================
 
-import { Alert, Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
+import { avvisa } from '@/lib/dialoghi';
 import { colors, fontFamily, fontSize, spacing } from '@/constants/theme';
 
 interface Props {
@@ -14,7 +15,7 @@ interface Props {
 export function HelpButton({ label = 'Aiuto' }: Props) {
   const onPress = () => {
     // TODO: navigare alla pagina di aiuto quando esisterà.
-    Alert.alert('Aiuto', 'La sezione di aiuto arriverà a breve.');
+    avvisa('Aiuto', 'La sezione di aiuto arriverà a breve.');
   };
 
   return (

@@ -291,6 +291,15 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
   nell'hub S1), `useUnreadTotale` condiviso tra badge tab e badge icona,
   plugin expo-notifications in app.json. Da fare: smoke su device reale
   (Expo Go iOS o dev build; Expo Go Android non supporta le push remote).
+- ✅ **CM6.5 fatto** (2026-07-04, fuori piano originale — decisione utente):
+  sistema DIALOGHI DARK. Primitive imperative `mostraMenu`/`conferma`/`avvisa`
+  (`lib/dialoghi.ts`, store Zustand slot singolo) + `BottomSheet` (stub riempito,
+  stili di MenuMessaggio) + `DialogHost` unico nel root: bottom sheet per
+  menu/picker, card centrata per conferme/avvisi, "Annulla" sempre, tap
+  fuori/back Android chiudono sempre, menu a 2 livelli senza modali impilati.
+  TUTTI gli `Alert.alert` convertiti (hub, chat, info, importante, impostazioni,
+  profilo, amici, nuovo-gruppo, inoltra, menu, welcome, HelpButton) + regola
+  eslint anti-regressione. Restano nativi solo Share e permessi OS.
 - **Prossimo**: CM7 (contatti email-only) → CM8. Dettagli, rischi e
   checklist nel piano dedicato.
 - **Verifica:** DM solo tra amici, vocale che scade a 24h, streak con freeze +

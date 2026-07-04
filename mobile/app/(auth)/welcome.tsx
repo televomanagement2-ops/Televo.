@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,7 @@ import { GoogleGlyph } from '@/components/brand/GoogleGlyph';
 import { LoginBackground } from '@/components/auth/LoginBackground';
 import { AuthButton } from '@/components/auth/AuthButton';
 import { signInWithProvider, authErrorMessage, type OAuthProvider } from '@/lib/auth';
+import { avvisa } from '@/lib/dialoghi';
 import { useOnboardingStore } from '@/store/onboardingStore';
 import { colors, fontFamily, fontSize, spacing } from '@/constants/theme';
 
@@ -32,7 +33,7 @@ export default function Welcome() {
       router.replace('/');
     } catch (e) {
       const msg = authErrorMessage(e);
-      if (msg) Alert.alert('Accesso', msg);
+      if (msg) avvisa('Accesso', msg);
     } finally {
       setBusy(null);
     }

@@ -52,6 +52,12 @@
           "cameraPermission": "Televo usa la fotocamera per scattare foto da inviare in chat."
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "color": "#3b82f6"
+        }
+      ],
       "expo-web-browser"
     ],
     "experiments": {

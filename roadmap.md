@@ -4,7 +4,7 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-03
+> **Ultimo aggiornamento:** 2026-07-04
 
 ---
 
@@ -282,7 +282,16 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
   (4:3, cacheKey=path), `ViewerMedia` (pinch/pan/doppio tap, RootView nel
   Modal), inoltro foto in menu/selezione, permessi camera in app.json.
   Da fare: smoke manuale su 2 device (incl. RLS cross-utente sul bucket).
-- **Prossimo**: CM6 (push + deep link) → CM7 → CM8. Dettagli, rischi e
+- ✅ **CM6 fatto** (2026-07-04, SOLO frontend — il backend push era già live):
+  `lib/expo-push.ts` riempito (permesso, token → RPC `register_device`, canale
+  Android id `default`/"Messaggi" perché la Edge non manda `channelId`,
+  soppressione banner se la chat è aperta, badge icona, `unregister_device`
+  al logout prima del signOut), hook `useNotifiche.ts` (runtime push +
+  tap→deep link con cold start e dedup SecureStore + banner contestuale
+  nell'hub S1), `useUnreadTotale` condiviso tra badge tab e badge icona,
+  plugin expo-notifications in app.json. Da fare: smoke su device reale
+  (Expo Go iOS o dev build; Expo Go Android non supporta le push remote).
+- **Prossimo**: CM7 (contatti email-only) → CM8. Dettagli, rischi e
   checklist nel piano dedicato.
 - **Verifica:** DM solo tra amici, vocale che scade a 24h, streak con freeze +
   criteri di completamento per milestone in `docs/chat/IMPLEMENTATION-PLAN.md`.
@@ -297,9 +306,11 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
   `AuraPin`; `src/hooks/useMappa.ts` (view `vibe_map`); opt-in `share_location`.
 - **Verifica:** solo amici visibili; posizione coarse, opt-in revocabile.
 
-### 🔔 M8 — Notifiche push
-- `src/lib/expo-push.ts` (RPC `register_device`), `(tabs)/notifiche.tsx`,
-  `NotificaRow`, `src/hooks/useNotifiche.ts`; richiesta permessi.
+### 🔔 M8 — Notifiche push (in-app)
+- ✅ `src/lib/expo-push.ts` + `src/hooks/useNotifiche.ts` + richiesta permessi:
+  FATTI in CM6 (chat). Restano: `(tabs)/notifiche.tsx` (tab in-app su
+  `notifications` + `read_at`), `NotificaRow`, deep link per prop/achievement,
+  pruning token `DeviceNotRegistered` lato Edge.
 - **Verifica:** push ricevuta (Edge `send-push` già deployata).
 
 ### 💎 M9 — Economia Vibes (simbolica)

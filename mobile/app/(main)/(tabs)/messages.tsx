@@ -19,6 +19,7 @@ import {
   useLeaveConversation,
   useMarkRead,
 } from '@/hooks/useChat';
+import { usePushBanner } from '@/hooks/useNotifiche';
 import { dynamicRoutes, ROUTES } from '@/constants/routes';
 import { chatErrorMessage } from '@/lib/errors';
 import { useOnline } from '@/lib/rete';
@@ -38,6 +39,9 @@ export default function Messages() {
   const conversazioni = useConversations();
   const { refetch } = conversazioni;
   const online = useOnline();
+  // Permesso push contestuale (CM6, RC-13): il banner compare al primo ingresso
+  // nell'hub finché il permesso di sistema non è mai stato chiesto.
+  const pushBanner = usePushBanner();
 
   // Realtime dell'hub arriva più avanti: per ora rinfreschiamo al focus.
   useFocusEffect(
@@ -75,6 +79,26 @@ export default function Messages() {
         <View style={styles.offlineBar}>
           <Ionicons name="cloud-offline-outline" size={14} color={colors.muted} />
           <Text style={styles.offlineText}>Sei offline</Text>
+        </View>
+      ) : null}
+
+      {/* Banner permesso notifiche (CM6, RC-13): spiegazione + richiesta contestuale. */}
+      {pushBanner.visibile ? (
+        <View style={styles.pushBanner}>
+          <Ionicons name="notifications-outline" size={20} color={colors.accent} />
+          <View style={styles.pushBannerTesto}>
+            <Text style={styles.pushBannerTitolo}>Attiva le notifiche</Text>
+            <Text style={styles.pushBannerSotto}>Ti avvisiamo quando arriva un messaggio.</Text>
+          </View>
+          <Pressable
+            style={({ pressed }) => [styles.pushBannerCta, pressed && { opacity: 0.85 }]}
+            onPress={() => void pushBanner.attiva()}
+          >
+            <Text style={styles.pushBannerCtaText}>Attiva</Text>
+          </Pressable>
+          <Pressable hitSlop={10} onPress={pushBanner.chiudi}>
+            <Ionicons name="close" size={18} color={colors.muted} />
+          </Pressable>
         </View>
       ) : null}
 
@@ -219,6 +243,30 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   offlineText: { color: colors.muted, fontSize: fontSize.xs, fontFamily: fontFamily.sans },
+  // Banner permesso push (CM6): card in linea col kit (surface + bordo tenue).
+  pushBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+  },
+  pushBannerTesto: { flex: 1, gap: 1 },
+  pushBannerTitolo: { color: colors.ink, fontSize: fontSize.sm, fontFamily: fontFamily.semibold },
+  pushBannerSotto: { color: colors.muted, fontSize: fontSize.xs, fontFamily: fontFamily.sans },
+  pushBannerCta: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
+    backgroundColor: colors.accent,
+  },
+  pushBannerCtaText: { color: '#ffffff', fontSize: fontSize.xs, fontFamily: fontFamily.semibold },
   listContent: { padding: spacing.lg, gap: spacing.sm, paddingBottom: 100 },
   nuovoGruppo: {
     flexDirection: 'row',

@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { useConversations } from '@/hooks/useChat';
+import { useUnreadTotale } from '@/hooks/useChat';
 import { colors, fontFamily, radius, spacing } from '@/constants/theme';
 
 // Mappa nome-rotta → icone Ionicons (attiva/inattiva).
@@ -28,13 +28,10 @@ const ICONS: Record<
 export function BottomBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
 
-  // Badge tab Messaggi (CM2, §8.5): somma degli unread delle conversazioni NON
-  // silenziate e NON archiviate. La query è la stessa dell'hub (cache condivisa,
-  // aggiornata live dal canale realtime globale in ChatRuntime).
-  const conversazioni = useConversations();
-  const unread = (conversazioni.data ?? [])
-    .filter((c) => !c.muted && !c.archivedAt)
-    .reduce((n, c) => n + c.unreadCount, 0);
+  // Badge tab Messaggi (CM2, §8.5): definizione condivisa con il badge icona
+  // app (CM6) — stessa query dell'hub (cache condivisa, aggiornata live dal
+  // canale realtime globale in ChatRuntime).
+  const unread = useUnreadTotale() ?? 0;
 
   const go = (routeKey: string, name: string, focused: boolean) => {
     Haptics.selectionAsync().catch(() => {});

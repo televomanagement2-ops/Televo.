@@ -25,7 +25,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Audio } from 'expo-av';
 import * as Clipboard from 'expo-clipboard';
@@ -69,6 +69,7 @@ import {
   richiediPermessoMic,
 } from '@/lib/audio';
 import { scegliFotoDaGalleria, scattaFoto, type FotoScelta } from '@/lib/media';
+import { setConversazioneAperta } from '@/lib/expo-push';
 import { dayLabel, isSameDay } from '@/lib/datetime';
 import { chatErrorMessage, propErrorMessage } from '@/lib/errors';
 import { dynamicRoutes, ROUTES } from '@/constants/routes';
@@ -140,6 +141,15 @@ export default function Chat() {
   useEffect(() => {
     if (convId) markReadMutate();
   }, [convId, markReadMutate]);
+
+  // CM6: finché questa chat è a schermo, le SUE push non mostrano banner
+  // (handler foreground in lib/expo-push). Al blur/unmount si azzera.
+  useFocusEffect(
+    useCallback(() => {
+      setConversazioneAperta(convId || null);
+      return () => setConversazioneAperta(null);
+    }, [convId]),
+  );
 
   // Pill "nuovi messaggi ↓" (RC-10): se arriva un messaggio mentre si è scrollati
   // in alto, niente scroll forzato — compare la pill. Lista invertita: offset 0 = fondo.

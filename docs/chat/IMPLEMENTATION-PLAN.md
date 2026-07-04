@@ -8,7 +8,7 @@
 > dichiarato dall'utente: **Telegram** (per maturità funzionale, NON per design —
 > il design verrà rifatto in seguito).
 >
-> **Stato**: approvato. **Ultimo aggiornamento**: 2026-07-03.
+> **Stato**: approvato. **Ultimo aggiornamento**: 2026-07-04.
 
 ---
 
@@ -547,12 +547,41 @@ completo solo su Development Build o iOS; documentare e non bloccare la mileston
 sul device Android in Go. Token invalidati → `unregister_device` al logout.
 
 **Checklist**:
-- [ ] Token registrato in `devices` al consenso
-- [ ] Push ricevuta con app in background (dove il runtime lo consente)
-- [ ] Tap → apre la conversazione corretta (anche da app chiusa)
-- [ ] Nessuna notifica di sistema se la chat è già aperta in foreground
-- [ ] Notifiche soppresse per conversazioni silenziate (verifica end-to-end)
-- [ ] `tsc` + `eslint` puliti
+- [x] Token registrato in `devices` al consenso — banner contestuale nell'hub S1
+      (`usePushBanner`, stato `undetermined`, chiusura solo in-sessione) →
+      `richiediPermessoERegistra` → RPC `register_device` (upsert). Se il
+      permesso è GIÀ concesso, ri-registrazione a ogni avvio della shell
+      (`usePushRuntime`): rotazione token, `last_seen` fresco, riassegnazione
+      dopo cambio account. `unregister_device` al logout PRIMA del signOut.
+- [ ] Push ricevuta con app in background — solo smoke su device reale (Expo Go
+      iOS o dev build; Expo Go Android non supporta le push remote da SDK 53).
+      Lato codice non manca nulla: il backend invia già (`pushed_at` sul DB).
+- [x] Tap → apre la conversazione corretta (anche da app chiusa) —
+      `useNotificaTap` in ChatRuntime (monta solo ad auth+navigazione pronte):
+      listener risposta + `getLastNotificationResponseAsync` per il cold start,
+      con dedup dell'ultima risposta in SecureStore (l'intent Android è sticky).
+      `message` → chat, `friend_request/accepted` → amici, resto → solo apertura.
+- [x] Nessuna notifica di sistema se la chat è già aperta in foreground —
+      `setNotificationHandler` + registro "conversazione aperta" settato da
+      `chat/[id]` su focus/blur (`setConversazioneAperta`).
+- [x] Notifiche soppresse per conversazioni silenziate — garantito SERVER-SIDE
+      (trigger notify mute-aware: la riga non viene proprio creata); resta la
+      conferma end-to-end nello smoke su device.
+- [x] `tsc` + `eslint` puliti (0 errori, 0 warning) + export bundle iOS OK
+      (1973 moduli, expo-notifications risolto).
+
+> Decisioni CM6 (2026-07-04):
+> - **Canale Android con id `default`, nome "Messaggi"** (importanza MAX): la
+>   Edge `send-push` non manda `channelId` e oggi non è rideployabile (serve
+>   l'account owner) → si configura il canale su cui le push atterrano davvero.
+> - **Badge icona app** = somma unread non silenziate/non archiviate, unica
+>   definizione condivisa col badge tab (`useUnreadTotale`). Limite noto: ad
+>   app chiusa il badge resta l'ultimo calcolato (la Edge non manda `badge`
+>   nel payload; eventuale miglioria backend → CM8/M8).
+> - Plugin `expo-notifications` aggiunto in app.json (efficace solo su dev
+>   build; in Expo Go è ininfluente). Icona small Android dedicata → pre-lancio.
+> - La Edge non fa pruning dei token `DeviceNotRegistered` (non legge le
+>   ricevute Expo): tech-debt annotato per CM8/M8.
 
 **Criteri di completamento**: ciclo completo messaggio→push→tap→chat su almeno una
 piattaforma reale.

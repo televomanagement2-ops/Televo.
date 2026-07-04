@@ -13,6 +13,7 @@ import { useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { fetchMyProfile, signOut as doSignOut } from '@/lib/auth';
+import { rimuoviTokenPush } from '@/lib/expo-push';
 
 export function useAuthListener(): void {
   const setSession = useAuthStore((s) => s.setSession);
@@ -79,6 +80,10 @@ export function useAuth() {
   }, [session, setProfile]);
 
   const signOut = useCallback(async () => {
+    // CM6: il token push va staccato PRIMA del signOut (la RPC richiede la
+    // sessione). Best-effort e mai bloccante: se fallisce, register_device al
+    // prossimo login riassegna comunque il token a chi accede.
+    await rimuoviTokenPush();
     await doSignOut();
     reset();
   }, [reset]);

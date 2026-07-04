@@ -78,6 +78,20 @@ export function useConversations(view: ConversationView = 'active') {
 }
 
 
+/**
+ * Somma degli unread delle conversazioni NON silenziate e NON archiviate
+ * (§8.5): unica definizione condivisa da badge tab Messaggi (BottomBar) e
+ * badge icona app (CM6). null = lista non ancora caricata (i chiamanti non
+ * devono azzerare un badge esistente in quel caso).
+ */
+export function useUnreadTotale(): number | null {
+  const conversazioni = useConversations();
+  if (!conversazioni.data) return null;
+  return conversazioni.data
+    .filter((c) => !c.muted && !c.archivedAt)
+    .reduce((n, c) => n + c.unreadCount, 0);
+}
+
 // --- Messaggi salvati (S7) ---------------------------------------------------
 
 export function useSavedMessages() {

@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(193);
+select plan(209);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -527,6 +527,47 @@ select ok((select prosrc like '%conversation_members%' and prosrc like '%delete 
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'expire_content'),
   'expire_content v4 cancella i gruppi orfani (0 membri)');
+
+-- =============================================================================
+-- CM8 — audit grant vs default privileges (20260705140000)
+-- =============================================================================
+-- Le tabelle ledger/sistema: authenticated NON scrive (solo service_role/RPC).
+select ok((select not has_table_privilege('authenticated', 'public.aura_events', 'INSERT')),
+  'authenticated non inserisce aura_events');
+select ok((select not has_table_privilege('authenticated', 'public.aura_events', 'UPDATE')),
+  'authenticated non aggiorna aura_events');
+select ok((select not has_table_privilege('authenticated', 'public.wallets', 'INSERT')),
+  'authenticated non inserisce wallets');
+select ok((select not has_table_privilege('authenticated', 'public.wallets', 'UPDATE')),
+  'authenticated non aggiorna wallets');
+select ok((select not has_table_privilege('authenticated', 'public.vibe_transactions', 'INSERT')),
+  'authenticated non inserisce vibe_transactions');
+select ok((select not has_table_privilege('authenticated', 'public.moderation_queue', 'INSERT')),
+  'authenticated non inserisce moderation_queue');
+select ok((select not has_table_privilege('authenticated', 'public.moderation_actions', 'UPDATE')),
+  'authenticated non aggiorna moderation_actions');
+-- audit_log: nessun accesso dal client.
+select ok((select not has_table_privilege('authenticated', 'public.audit_log', 'SELECT')),
+  'authenticated non legge audit_log');
+-- Mutazioni sociali/conversazioni: solo via RPC (niente scrittura diretta).
+select ok((select not has_table_privilege('authenticated', 'public.friendships', 'INSERT')),
+  'authenticated non inserisce friendships (via RPC)');
+select ok((select not has_table_privilege('authenticated', 'public.conversations', 'INSERT')),
+  'authenticated non inserisce conversations (via RPC)');
+select ok((select not has_table_privilege('authenticated', 'public.messages', 'DELETE')),
+  'authenticated non DELETE messages (soft-delete via update)');
+select ok((select not has_table_privilege('authenticated', 'public.contact_hashes', 'SELECT')),
+  'authenticated non legge contact_hashes (solo via RPC)');
+-- Notifiche: contratto positivo — solo read_at aggiornabile.
+select ok((select has_column_privilege('authenticated', 'public.notifications', 'read_at', 'UPDATE')),
+  'authenticated aggiorna notifications.read_at');
+select ok((select not has_column_privilege('authenticated', 'public.notifications', 'created_at', 'UPDATE')),
+  'authenticated non aggiorna altre colonne di notifications');
+-- anon: nessuna lettura di dati sensibili (app invite-only, tutto post-auth).
+select ok((select not has_table_privilege('anon', 'public.profiles', 'SELECT')),
+  'anon non legge profiles');
+select ok((select not has_table_privilege('anon', 'public.wallets', 'SELECT')),
+  'anon non legge wallets');
 
 select * from finish();
 rollback;

@@ -134,8 +134,6 @@ export interface ConversationMemberCard {
   userId: string;
   role: ConversationRole;
   profile: ProfileCard | null;
-  /** last_read_at del membro: base di "letto da N" nei gruppi (RC-09). */
-  lastReadAt: string;
 }
 
 export interface ConversationHeader {
@@ -144,10 +142,6 @@ export interface ConversationHeader {
   title: string;
   avatarUrl: string | null;
   peer: ProfileCard | null;
-  /** last_read_at del peer (DM): base della doppia spunta. */
-  peerLastReadAt: string | null;
-  /** Toggle spunte del peer (DM, §6.4): se off — o se off il MIO — solo ✓ singola. */
-  peerShowsReadReceipts: boolean;
   /** cleared_at della MIA membership: base del filtro "cancella cronologia". */
   myClearedAt: string | null;
   streak: number | null;
@@ -174,39 +168,26 @@ export async function fetchConversationHeader(
   } | null;
   if (!c) return null;
 
+  // CM8: niente last_read_at qui — le ricevute di lettura passano SOLO dalla
+  // RPC get_read_receipts (enforcement server §6.4; il grant per-colonna
+  // renderebbe comunque illeggibile la colonna).
   const { data: memData } = await supabase
     .from('conversation_members')
-    .select('user_id, role, last_read_at, cleared_at')
+    .select('user_id, role, cleared_at')
     .eq('conversation_id', convId);
   const members = (memData ?? []) as unknown as {
     user_id: string;
     role: ConversationRole;
-    last_read_at: string;
     cleared_at: string | null;
   }[];
 
   let peer: ProfileCard | null = null;
-  let peerLastReadAt: string | null = null;
-  let peerShowsReadReceipts = true;
   let memberCards: ConversationMemberCard[] = [];
   if (c.type === 'dm') {
     const peerRow = members.find((m) => m.user_id !== uid);
     if (peerRow) {
-      // Toggle spunte del peer (CM3, §6.4): lettura diretta della colonna
-      // (compromesso CM1 documentato — l'enforcement server è rimandato a CM8).
-      const [cards, prefRes] = await Promise.all([
-        fetchProfileCards([peerRow.user_id]),
-        supabase
-          .from('profiles')
-          .select('show_read_receipts')
-          .eq('id', peerRow.user_id)
-          .maybeSingle(),
-      ]);
+      const cards = await fetchProfileCards([peerRow.user_id]);
       peer = cards.get(peerRow.user_id) ?? null;
-      peerLastReadAt = peerRow.last_read_at;
-      peerShowsReadReceipts =
-        (prefRes.data as unknown as { show_read_receipts: boolean } | null)
-          ?.show_read_receipts ?? true;
     }
   } else {
     // Group/house: risolvi il profilo di ogni membro per la schermata Info.
@@ -215,7 +196,6 @@ export async function fetchConversationHeader(
       userId: m.user_id,
       role: m.role,
       profile: cards.get(m.user_id) ?? null,
-      lastReadAt: m.last_read_at,
     }));
   }
 
@@ -233,13 +213,31 @@ export async function fetchConversationHeader(
     title,
     avatarUrl: c.type === 'dm' ? peer?.avatarUrl ?? null : c.avatar_url,
     peer,
-    peerLastReadAt,
-    peerShowsReadReceipts,
     myClearedAt: members.find((m) => m.user_id === uid)?.cleared_at ?? null,
     streak,
     memberCount: members.length,
     members: memberCards,
   };
+}
+
+// --- Ricevute di lettura (CM8, §6.4) ------------------------------------------
+
+/** Ricevuta di lettura di un membro (esclude sempre il chiamante). */
+export interface ReadReceipt {
+  userId: string;
+  lastReadAt: string;
+}
+
+/**
+ * Ricevute di lettura via RPC get_read_receipts: il SERVER applica membership
+ * e reciprocità (se nascondo le mie spunte → lista vuota; chi le nasconde non
+ * compare). Base della doppia spunta in DM e del "letto da N" nei gruppi.
+ */
+export async function fetchReadReceipts(convId: string): Promise<ReadReceipt[]> {
+  const rows = await callRpc<{ user_id: string; last_read_at: string }[]>('get_read_receipts', {
+    p_conv: convId,
+  });
+  return (rows ?? []).map((r) => ({ userId: r.user_id, lastReadAt: r.last_read_at }));
 }
 
 /**
@@ -509,7 +507,26 @@ export async function editMessage(id: string, body: string): Promise<MessageRow>
     .select('*')
     .single();
   if (error) throw error;
-  return data as unknown as MessageRow;
+  const row = data as unknown as MessageRow;
+  moderaMessaggio(row.id, body); // il testo modificato rientra in moderazione (CM8)
+  return row;
+}
+
+/**
+ * Modera un messaggio di testo in background (CM8): fire-and-forget verso la
+ * Edge `moderate-text` (Perspective, degrada senza chiave). NON blocca né
+ * rallenta l'invio — parte DOPO il successo e inghiotte ogni errore. La Edge
+ * richiede il JWT: `functions.invoke` lo aggiunge dalla sessione corrente.
+ * Solo per il testo: media senza caption e vocali non passano di qui.
+ */
+export function moderaMessaggio(messageId: string, text: string | null | undefined): void {
+  const t = text?.trim();
+  if (!t) return;
+  void supabase.functions
+    .invoke('moderate-text', {
+      body: { text: t, target_type: 'message', target_id: messageId },
+    })
+    .catch(() => {});
 }
 
 /**

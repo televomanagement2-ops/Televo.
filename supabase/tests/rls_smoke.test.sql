@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(184);
+select plan(191);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -494,6 +494,26 @@ select ok((select prosrc like '%cleared_at%' and prosrc like '%deleted_at is nul
   join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'chat_overview'),
   'chat_overview filtra cleared/deleted/expired');
+
+-- =============================================================================
+-- CM8 — spunte: enforcement server (20260705120000)
+-- =============================================================================
+select has_function('public', 'get_read_receipts', array['uuid'],
+  'get_read_receipts(uuid) esiste');
+select ok((select has_function_privilege('authenticated', 'public.get_read_receipts(uuid)', 'execute')),
+  'get_read_receipts eseguibile da authenticated');
+-- Il dato raw non è più leggibile: last_read_at altrui SOLO via RPC.
+select ok((select not has_column_privilege('authenticated', 'public.conversation_members', 'last_read_at', 'SELECT')),
+  'conversation_members.last_read_at NON leggibile raw');
+select ok((select not has_column_privilege('authenticated', 'public.profiles', 'last_active_at', 'SELECT')),
+  'profiles.last_active_at NON leggibile raw (chiuso compromesso CM1)');
+select ok((select not has_column_privilege('authenticated', 'public.profiles', 'expo_push_token', 'SELECT')),
+  'profiles.expo_push_token NON leggibile (anti spam push)');
+-- Contratto positivo: le colonne che il client usa restano concesse.
+select ok((select has_column_privilege('authenticated', 'public.conversation_members', 'cleared_at', 'SELECT')),
+  'conversation_members.cleared_at resta leggibile');
+select ok((select has_column_privilege('authenticated', 'public.profiles', 'username', 'SELECT')),
+  'profiles.username resta leggibile');
 
 select * from finish();
 rollback;

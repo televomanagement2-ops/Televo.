@@ -53,12 +53,12 @@ import {
   useMessages,
   useOutbox,
   useReactions,
+  useReadReceipts,
   useSaveMessage,
   useSearchMessages,
   useToggleReaction,
 } from '@/hooks/useChat';
 import { usePeerPresence, presenceLabel } from '@/hooks/usePresenza';
-import { useMyProfile } from '@/hooks/useProfilo';
 import { useChatStore } from '@/store/chatStore';
 import { giveMessageProp, previewText, reportMessage } from '@/lib/chat';
 import { avvisa, conferma, mostraMenu, type VoceMenu } from '@/lib/dialoghi';
@@ -173,7 +173,13 @@ export default function Chat() {
   const msgById = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   const isGroup = (header.data?.type ?? 'dm') !== 'dm';
   const peerName = header.data?.peer?.username ?? null;
-  const peerLastRead = header.data?.peerLastReadAt ?? null;
+
+  // CM8 (§6.4): ricevute di lettura SOLO dalla RPC — membership e reciprocità
+  // le applica il server (se nascondo le mie spunte la lista arriva vuota).
+  const receipts = useReadReceipts(convId);
+  const peerLastRead = !isGroup
+    ? receipts.data?.find((r) => r.userId === header.data?.peer?.id)?.lastReadAt ?? null
+    : null;
 
   // CM1 §11.4: composer disabilitato con motivo (ban/mute globali; blocco in DM).
   const composerBlock = useComposerDisabledReason(
@@ -182,13 +188,6 @@ export default function Chat() {
 
   // CM3 (RC-04): presenza del peer, solo DM — privacy e reciprocità lato server.
   const presence = usePeerPresence(!isGroup ? header.data?.peer?.id ?? null : null);
-
-  // CM3 (§6.4, R-03): spunte visibili solo se ENTRAMBI i toggle sono attivi;
-  // altrimenti resta la ✓ singola (mark_conversation_read continua per l'unread).
-  const myProfile = useMyProfile();
-  const receiptsOn =
-    (myProfile.data?.show_read_receipts ?? true) &&
-    (header.data?.peerShowsReadReceipts ?? true);
 
   // Nei gruppi il nome sopra le bolle viene dal mittente reale (non dal peer).
   const sendersQ = useConversationSenders(convId, isGroup);
@@ -526,15 +525,19 @@ export default function Chat() {
     [outbox, outboxApi],
   );
 
-  // "Letto da N" (RC-09): membri (escluso io) con last_read_at ≥ created_at del
-  // messaggio. Solo gruppi (nelle DM bastano le spunte). Confronto tra ISO
-  // string dello stesso formato: ordinabile lessicograficamente.
+  // "Letto da N" (RC-09): ricevute dalla RPC (escludono già me e chi nasconde
+  // le spunte — CM8) con last_read_at ≥ created_at del messaggio. Solo gruppi
+  // (nelle DM bastano le spunte). ISO string dello stesso formato: confronto
+  // lessicografico ordinabile.
   const menuReadBy = useMemo<ReadByEntry[]>(() => {
-    if (!menuFor || !isGroup || !header.data) return [];
-    return header.data.members
-      .filter((mb) => mb.userId !== uid && mb.lastReadAt >= menuFor.created_at)
-      .map((mb) => ({ name: mb.profile?.username ?? 'Utente', readAt: mb.lastReadAt }));
-  }, [menuFor, isGroup, header.data, uid]);
+    if (!menuFor || !isGroup || !header.data || !receipts.data) return [];
+    const nomi = new Map(
+      header.data.members.map((mb) => [mb.userId, mb.profile?.username ?? 'Utente']),
+    );
+    return receipts.data
+      .filter((r) => r.lastReadAt >= menuFor.created_at)
+      .map((r) => ({ name: nomi.get(r.userId) ?? 'Utente', readAt: r.lastReadAt }));
+  }, [menuFor, isGroup, header.data, receipts.data]);
   const menuRecipients = header.data ? Math.max(header.data.members.length - 1, 0) : 0;
 
   const onMenuEdit = (m: MessageRow) => {
@@ -798,9 +801,9 @@ export default function Chat() {
     if (item.kind === 'sep') return <DataSeparatore label={item.label} />;
     const m = item.message;
     const isMine = m.sender_id === uid;
-    // Doppia spunta solo se i toggle privacy lo consentono (CM3, §6.4).
+    // Doppia spunta: se i toggle privacy la negano, il SERVER non manda la
+    // ricevuta (peerLastRead resta null) — niente più gating client (CM8).
     const readByPeer =
-      receiptsOn &&
       !!peerLastRead &&
       new Date(m.created_at).getTime() <= new Date(peerLastRead).getTime();
     return (

@@ -26,6 +26,7 @@ import {
   fetchConversations,
   fetchGroupSenders,
   fetchMessagesPage,
+  fetchReadReceipts,
   fetchSavedMessages,
   forwardMessage,
   leaveConversation,
@@ -127,6 +128,18 @@ export function useConversationSenders(convId: string, enabled: boolean) {
     queryKey: chatKeys.senders(convId),
     enabled: enabled && !!convId,
     queryFn: () => fetchGroupSenders(convId),
+  });
+}
+
+/**
+ * Ricevute di lettura (CM8, §6.4): il server applica membership e reciprocità.
+ * Aggiornate live dall'UPDATE realtime su conversation_members (segnale).
+ */
+export function useReadReceipts(convId: string) {
+  return useQuery({
+    queryKey: chatKeys.receipts(convId),
+    enabled: !!convId,
+    queryFn: () => fetchReadReceipts(convId),
   });
 }
 
@@ -503,8 +516,12 @@ export function useConversationRealtime(convId: string, onIncoming?: (m: Message
         if (m.sender_id !== uid) onIncoming?.(m);
       },
       onUpdate: (m) => upsertMessage(queryClient, convId, m),
-      onMemberUpdate: () =>
-        void queryClient.invalidateQueries({ queryKey: chatKeys.header(convId) }),
+      // L'UPDATE membro arriva SENZA last_read_at (grant per-colonna, CM8):
+      // è solo il segnale per rileggere header e ricevute via RPC.
+      onMemberUpdate: () => {
+        void queryClient.invalidateQueries({ queryKey: chatKeys.header(convId) });
+        void queryClient.invalidateQueries({ queryKey: chatKeys.receipts(convId) });
+      },
       // Reazioni (CM4): patch diretta della cache della conversazione. Il DELETE
       // arriva senza filtro (solo PK): se la PK non è in questa cache è un no-op.
       onReactionInsert: (r) => setReactionInCache(queryClient, convId, r),

@@ -20,6 +20,8 @@ export const chatKeys = {
   saved: (uid: string) => ['chat', uid, 'saved'] as const,
   /** Reazioni emoji della conversazione (CM4): lista piatta, raggruppata in UI. */
   reactions: (convId: string) => ['chat', 'reactions', convId] as const,
+  /** Ricevute di lettura (CM8): via RPC get_read_receipts, mai raw. */
+  receipts: (convId: string) => ['chat', 'receipts', convId] as const,
 };
 
 /** Prefisso per invalidare TUTTE le viste della lista conversazioni. */

@@ -499,6 +499,12 @@ export interface Database {
         Args: { p_peer_user: string };
         Returns: { online: boolean | null; last_active_at: string | null };
       };
+      // Ricevute di lettura privacy-safe (CM8, §6.4): membership + reciprocità
+      // applicate dal server; esclude sempre il chiamante e chi nasconde le spunte.
+      get_read_receipts: {
+        Args: { p_conv: string };
+        Returns: { user_id: string; last_read_at: string }[];
+      };
       // Rubrica (D1) — register: jsonb { ok }; match: righe { user_id, username, avatar_url }.
       register_contact_hash: { Args: { p_kind: 'phone' | 'email'; p_hash: string }; Returns: Json };
       match_contacts: {

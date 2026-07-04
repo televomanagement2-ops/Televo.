@@ -3,9 +3,9 @@
 // =============================================================================
 // Letture via RLS (vedo solo le conversazioni di cui sono membro). L'invio è un
 // INSERT diretto su `messages` (il trigger forza sender/membership/expiry). Le
-// azioni di stato (letto) passano da RPC. Niente vista backend per la lista: la
-// assembliamo lato client con poche query (scala MVP; una vista/RPC dedicata è
-// un'ottimizzazione futura per storici molto lunghi).
+// azioni di stato (letto) passano da RPC. La lista dell'hub arriva dalla RPC
+// `chat_overview()` (CM8): una query server-side con unread ESATTO — ha
+// sostituito lo scan client di 400 messaggi (unread approssimato, SRS §8.5).
 
 import { decode as decodeBase64 } from 'base64-arraybuffer';
 import { supabase } from '@/lib/supabase';
@@ -25,126 +25,78 @@ import type { ConversationRole, ConversationType } from '@/types/supabase';
 import type { ReactionEmoji } from '@/constants/chat';
 import type { AuraTrait } from '@/constants/aura';
 
-// Finestra di messaggi recenti scandagliata per costruire anteprime + unread.
-// Oltre questa, l'unread potrebbe essere approssimato (vedi nota SRS §8.5).
-const LISTA_MSG_WINDOW = 400;
 export const MESSAGES_PAGE = 40;
 
 // --- Lista conversazioni (hub) ----------------------------------------------
 
-/** Organizzazione per-utente della conversazione (D4), letta dalla mia membership. */
-interface MemberOrg {
-  last_read_at: string;
+/** Riga di chat_overview(): peer/last_message arrivano come jsonb dal server. */
+interface OverviewRow {
+  conversation_id: string;
+  type: ConversationType;
+  name: string | null;
+  avatar_url: string | null;
+  updated_at: string;
   muted_until: string | null;
   archived_at: string | null;
   pinned_at: string | null;
   cleared_at: string | null;
   hidden_at: string | null;
+  my_last_read_at: string;
+  peer: {
+    id: string;
+    username: string;
+    display_name: string | null;
+    avatar_url: string | null;
+    aura_score: number;
+    aura_color: string | null;
+    status_text: string | null;
+  } | null;
+  last_message: MessageRow | null;
+  unread_count: number;
+  streak: number | null;
 }
 
+/**
+ * Lista dell'hub via RPC chat_overview() (CM8): una query server-side, unread
+ * ESATTO. Filtro vista e ordinamento restano client (una cache, tre viste).
+ */
 export async function fetchConversations(
-  uid: string,
+  _uid: string,
   filter: ConversationView = 'active',
 ): Promise<ConversationPreview[]> {
-  // 1. Le mie membership (conversation_id + last_read_at + campi organizzazione D4).
-  const { data: memData, error: memErr } = await supabase
-    .from('conversation_members')
-    .select('conversation_id, last_read_at, muted_until, archived_at, pinned_at, cleared_at, hidden_at')
-    .eq('user_id', uid);
-  if (memErr) throw memErr;
-  const mems = (memData ?? []) as unknown as ({ conversation_id: string } & MemberOrg)[];
-  if (mems.length === 0) return [];
-  const convIds = mems.map((m) => m.conversation_id);
-  const orgByConv = new Map<string, MemberOrg>(mems.map((m) => [m.conversation_id, m]));
-  const lastReadByConv = new Map(mems.map((m) => [m.conversation_id, m.last_read_at]));
+  const rows = await callRpc<OverviewRow[]>('chat_overview', {});
 
-  // 2. Le conversazioni.
-  const { data: convData, error: convErr } = await supabase
-    .from('conversations')
-    .select('id, type, name, avatar_url, updated_at')
-    .in('id', convIds);
-  if (convErr) throw convErr;
-  const convs = (convData ?? []) as unknown as {
-    id: string;
-    type: ConversationType;
-    name: string | null;
-    avatar_url: string | null;
-    updated_at: string;
-  }[];
-
-  // 3. Peer delle DM (l'altro membro).
-  const dmIds = convs.filter((c) => c.type === 'dm').map((c) => c.id);
-  const peerByConv = new Map<string, string>();
-  if (dmIds.length > 0) {
-    const { data: others, error } = await supabase
-      .from('conversation_members')
-      .select('conversation_id, user_id')
-      .in('conversation_id', dmIds)
-      .neq('user_id', uid);
-    if (error) throw error;
-    for (const r of (others ?? []) as unknown as { conversation_id: string; user_id: string }[]) {
-      peerByConv.set(r.conversation_id, r.user_id);
-    }
-  }
-  const peerCards = await fetchProfileCards([...peerByConv.values()]);
-
-  // 4. Ultimi messaggi + conteggio non letti (finestra recente).
-  const { data: msgData, error: msgErr } = await supabase
-    .from('messages')
-    .select('*')
-    .in('conversation_id', convIds)
-    .order('created_at', { ascending: false })
-    .limit(LISTA_MSG_WINDOW);
-  if (msgErr) throw msgErr;
-  const msgs = (msgData ?? []) as unknown as MessageRow[];
-  const lastByConv = new Map<string, MessageRow>();
-  const unreadByConv = new Map<string, number>();
-  for (const m of msgs) {
-    // "Cancella cronologia": nascondo i messaggi <= cleared_at (solo per me).
-    const cleared = orgByConv.get(m.conversation_id)?.cleared_at;
-    if (cleared && m.created_at <= cleared) continue;
-    if (m.deleted_at == null && !lastByConv.has(m.conversation_id)) {
-      lastByConv.set(m.conversation_id, m);
-    }
-    const lr = lastReadByConv.get(m.conversation_id);
-    if (m.deleted_at == null && m.sender_id !== uid && lr && m.created_at > lr) {
-      unreadByConv.set(m.conversation_id, (unreadByConv.get(m.conversation_id) ?? 0) + 1);
-    }
-  }
-
-  // 5. Streak per conversazione.
-  const { data: stData } = await supabase
-    .from('streaks')
-    .select('conversation_id, current_streak')
-    .in('conversation_id', convIds);
-  const streakByConv = new Map(
-    ((stData ?? []) as unknown as { conversation_id: string; current_streak: number }[]).map(
-      (s) => [s.conversation_id, s.current_streak],
-    ),
-  );
-
-  // 6. Assembla, filtra per vista, ordina (fissate prima, poi attività recente).
-  const previews: ConversationPreview[] = convs.map((c) => {
-    const org = orgByConv.get(c.id);
-    const peerId = peerByConv.get(c.id);
-    const peer: ProfileCard | null = peerId ? peerCards.get(peerId) ?? null : null;
-    const title = c.type === 'dm' ? peer?.displayName || peer?.username || 'Chat' : c.name || 'Gruppo';
+  const previews: ConversationPreview[] = (rows ?? []).map((r) => {
+    const peer: ProfileCard | null = r.peer
+      ? {
+          id: r.peer.id,
+          username: r.peer.username,
+          displayName: r.peer.display_name,
+          avatarUrl: r.peer.avatar_url,
+          auraScore: r.peer.aura_score,
+          auraColor: r.peer.aura_color,
+          statusText: r.peer.status_text,
+        }
+      : null;
+    const title =
+      r.type === 'dm' ? peer?.displayName || peer?.username || 'Chat' : r.name || 'Gruppo';
     return {
-      id: c.id,
-      type: c.type,
+      id: r.conversation_id,
+      type: r.type,
       title,
-      avatarUrl: c.type === 'dm' ? peer?.avatarUrl ?? null : c.avatar_url,
-      lastMessage: lastByConv.get(c.id) ?? null,
-      unreadCount: unreadByConv.get(c.id) ?? 0,
-      updatedAt: c.updated_at,
-      streak: streakByConv.get(c.id) ?? null,
+      avatarUrl: r.type === 'dm' ? peer?.avatarUrl ?? null : r.avatar_url,
+      lastMessage: r.last_message,
+      unreadCount: r.unread_count,
+      updatedAt: r.updated_at,
+      streak: r.streak,
       peer,
-      muted: !!org?.muted_until && org.muted_until > new Date().toISOString(),
-      archivedAt: org?.archived_at ?? null,
-      pinnedAt: org?.pinned_at ?? null,
-      hiddenAt: org?.hidden_at ?? null,
+      muted: !!r.muted_until && r.muted_until > new Date().toISOString(),
+      archivedAt: r.archived_at,
+      pinnedAt: r.pinned_at,
+      hiddenAt: r.hidden_at,
     };
   });
+
   const filtered = previews.filter((p) => convMatchesView(p, filter));
   // Fissate in cima; a parità, per attività recente (updated_at desc).
   filtered.sort((a, b) => {

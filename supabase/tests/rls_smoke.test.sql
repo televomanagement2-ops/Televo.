@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(181);
+select plan(184);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -480,6 +480,20 @@ select ok((select prosrc like '%is_adult%' and prosrc like '%are_friends%'
   join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'match_contacts'),
   'match_contacts conserva le regole minori-solo-amici e niente-bloccati');
+
+-- =============================================================================
+-- CM8 — chat_overview (20260705110000): hub server-side in una query
+-- =============================================================================
+select has_function('public', 'chat_overview', array[]::text[],
+  'chat_overview() esiste');
+select ok((select has_function_privilege('authenticated', 'public.chat_overview()', 'execute')),
+  'chat_overview eseguibile da authenticated');
+-- Semantica CM1 conservata: cleared_at, deleted_at ed expires_at filtrati.
+select ok((select prosrc like '%cleared_at%' and prosrc like '%deleted_at is null%'
+             and prosrc like '%expires_at%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'chat_overview'),
+  'chat_overview filtra cleared/deleted/expired');
 
 select * from finish();
 rollback;

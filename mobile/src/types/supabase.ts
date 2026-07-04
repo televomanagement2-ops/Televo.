@@ -507,6 +507,28 @@ export interface Database {
       };
       // Revoca ATOMICA del consenso rubrica (CM7): delete hash propri + revoca.
       revoke_contacts_sync: { Args: Record<string, never>; Returns: Json };
+      // Hub in una query (CM8): una riga per membership del chiamante, con org
+      // D4, ultimo messaggio valido (jsonb), unread ESATTO, peer DM e streak.
+      chat_overview: {
+        Args: Record<string, never>;
+        Returns: {
+          conversation_id: string;
+          type: ConversationType;
+          name: string | null;
+          avatar_url: string | null;
+          updated_at: string;
+          muted_until: string | null;
+          archived_at: string | null;
+          pinned_at: string | null;
+          cleared_at: string | null;
+          hidden_at: string | null;
+          my_last_read_at: string;
+          peer: Json | null;
+          last_message: Json | null;
+          unread_count: number;
+          streak: number | null;
+        }[];
+      };
       // Streak / presenza sana
       record_session: { Args: { p_seconds: number }; Returns: Json };
       // Notifiche / device

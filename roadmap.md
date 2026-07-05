@@ -228,8 +228,7 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
 - Componenti: `StanzaCard`, `BollaViva`, `Partecipante`, `VibeChain`.
 - `src/hooks/useStanze.ts`, `src/store/stanzeStore.ts`.
 - **Verifica:** join stanza, audio bidirezionale, sali sul palco.
-
-### 💬 M5 — Social + Chat — ✅ COSTRUITA (CM0–CM8 completi; resta lo smoke finale su 2 device)
+### 💬 M5 — Social + Chat — ✅ COSTRUITA (CM0–CM8 completi; fatto lo smoke test(ufficiale))
 *Obiettivo: sistema chat completo, maturità funzionale livello Telegram.*
 > **Aggiornamento 2026-07-02**: la chat ha ora una **roadmap ufficiale dedicata**:
 > `docs/chat/IMPLEMENTATION-PLAN.md` (milestone CM0–CM8), basata sulla specifica
@@ -333,7 +332,21 @@ priorità di prodotto: **Aura** e **Stanze Live** sono i due pilastri, vengono p
   criteri di completamento per milestone in `docs/chat/IMPLEMENTATION-PLAN.md`.
 
 ### ☁️ M6 — Drops
-- `DropCard`, `DropFeed`; integrazione in home/tab; `src/hooks/useDrops.ts`.
+Spec+piano ufficiale: `docs/media/drop.md` (Rev. 1, DM0–DM7). Drop = sistema di
+post a 3 formati (foto/audio/testo), solo-amici, effimeri 24h + Ricordi privati,
+contatori privati (anti-vanity a livello dati).
+- ✅ **DM0 fatto** (2026-07-05, SOLO backend, invisibile al client): 4 migrazioni
+  live via pooler (`drops_notify_enum`, `drops_v2`, `drops_interactions`,
+  `drops_lifecycle`) → drop v2 (audio_seconds/stats_finali, audience solo-amici,
+  path storage validati, bucket `drop-media`/`drop-audio`), `drop_comments`/
+  `drop_likes`/`drop_saves`, RPC `drops_feed`/`drop_detail`/`save_drop`/
+  `unsave_drop`, effimerità logica (`expire_content` v5 congela stats e non
+  cancella più), coda `storage_cleanup_queue`, notifica `drop_comment`, GDPR
+  esteso. pgTAP **262/262 sul remoto** + smoke funzionale (36/36). Tipi TS
+  allineati (`tsc` pulito). Deploy Edge `storage-cleanup` → DM6.
+- ⬜ **Restano:** DM1 (menu + + composer + outbox) · DM2 (feed+card) · DM3
+  (dettaglio+commenti+realtime) · DM4 (like/salvati/Ricordi/menu ⋯) · DM5
+  (notifiche+inoltro chat) · DM6 (Edge storage-cleanup+GDPR) · DM7 (rifiniture).
 - **Verifica:** drop effimero 24h; reaction → prop all'autore.
 
 ### 🗺️ M7 — Mappa Vibe

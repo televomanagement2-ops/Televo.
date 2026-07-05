@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(209);
+select plan(262);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -568,6 +568,191 @@ select ok((select not has_table_privilege('anon', 'public.profiles', 'SELECT')),
   'anon non legge profiles');
 select ok((select not has_table_privilege('anon', 'public.wallets', 'SELECT')),
   'anon non legge wallets');
+
+-- =============================================================================
+-- M6 DM0 — Drops v2: fondamenta (drop.md §20). Modello, interazioni, lettura,
+-- ciclo di vita, storage, notifiche, guardie anti-regressione (school, expire).
+-- =============================================================================
+
+-- Esistenza tabelle nuove.
+select has_table('public', 'drop_comments',          'drop_comments esiste');
+select has_table('public', 'drop_likes',             'drop_likes esiste');
+select has_table('public', 'drop_saves',             'drop_saves esiste');
+select has_table('public', 'storage_cleanup_queue',  'storage_cleanup_queue esiste');
+
+-- RLS abilitata su tutte e quattro.
+select ok((select relrowsecurity from pg_class where oid = 'public.drop_comments'::regclass),
+  'RLS attiva su drop_comments');
+select ok((select relrowsecurity from pg_class where oid = 'public.drop_likes'::regclass),
+  'RLS attiva su drop_likes');
+select ok((select relrowsecurity from pg_class where oid = 'public.drop_saves'::regclass),
+  'RLS attiva su drop_saves');
+select ok((select relrowsecurity from pg_class where oid = 'public.storage_cleanup_queue'::regclass),
+  'RLS attiva su storage_cleanup_queue');
+
+-- storage_cleanup_queue: nessuna policy (pattern audit_log: solo definer/service_role).
+select is((select count(*)::int from pg_policies where schemaname='public' and tablename='storage_cleanup_queue'),
+  0, 'storage_cleanup_queue non ha policy (solo service_role/definer)');
+
+-- Colonne nuove di drops.
+select has_column('public', 'drops', 'audio_seconds', 'drops.audio_seconds esiste');
+select has_column('public', 'drops', 'stats_finali',  'drops.stats_finali esiste (Ricordi)');
+
+-- R-02/D-3: audience solo 'friends', il ramo school è sparito dal constraint.
+select ok((select count(*)::int from pg_constraint
+           where conrelid = 'public.drops'::regclass and conname = 'drops_audience_check'
+             and pg_get_constraintdef(oid) like '%friends%'
+             and pg_get_constraintdef(oid) not like '%school%') = 1,
+  'drops.audience CHECK è solo-amici (niente school)');
+
+-- RC-09: can_see_drop v2 non contiene più il ramo school.
+select ok((select prosrc not like '%school%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'can_see_drop'),
+  'can_see_drop non referenzia più school (R-02)');
+
+-- RC-09: expire_content v5 NON cancella più i drop e congela stats_finali (R-01).
+select ok((select prosrc not like '%delete from public.drops where%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content NON cancella più i drop (effimerità logica)');
+select ok((select prosrc like '%stats_finali%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content congela le statistiche finali alla scadenza');
+
+-- Guardie prosrc sui codici errore del trigger drops_before_insert v3.
+select ok((select prosrc like '%invalid_audio_path%' and prosrc like '%invalid_media_path%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'drops_before_insert'),
+  'drops_before_insert esige il path <id>/<author>/ per audio e media');
+select ok((select prosrc like '%invalid_audio_duration%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'drops_before_insert'),
+  'drops_before_insert valida la durata audio (1–300s)');
+select ok((select prosrc like '%rate_limited%' and prosrc like '%caption_too_long%'
+             and prosrc like '%drop_too_long%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'drops_before_insert'),
+  'drops_before_insert applica rate-limit + cap testo/caption');
+select ok((select prosrc like '%invalid_drop_fields%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'drops_before_insert'),
+  'drops_before_insert vieta i campi incrociati tra formati');
+
+-- Guardie prosrc sul trigger drop_comments_before_insert (R-07).
+select ok((select prosrc like '%reply_depth_exceeded%' and prosrc like '%invalid_parent%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'drop_comments_before_insert'),
+  'drop_comments_before_insert impone reply a profondità 1 sullo stesso drop');
+select ok((select prosrc like '%drop_expired%' and prosrc like '%rate_limited%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'drop_comments_before_insert'),
+  'drop_comments_before_insert esige drop vivo + rate-limit');
+
+-- RPC di lettura/salvataggio: esistenza.
+select has_function('public', 'drops_feed', array['timestamptz','uuid','integer'],
+  'drops_feed(timestamptz,uuid,integer) esiste');
+select has_function('public', 'drop_detail', array['uuid'], 'drop_detail(uuid) esiste');
+select has_function('public', 'save_drop',   array['uuid'], 'save_drop(uuid) esiste');
+select has_function('public', 'unsave_drop', array['uuid'], 'unsave_drop(uuid) esiste');
+
+-- Le 4 RPC sono security definer con search_path svuotato (regola d'oro).
+select ok((select bool_and(prosecdef) from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname in ('drops_feed','drop_detail','save_drop','unsave_drop')),
+  'drops_feed/drop_detail/save_drop/unsave_drop sono security definer');
+select ok((select bool_and(proconfig::text like '%search_path=%') from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname in ('drops_feed','drop_detail','save_drop','unsave_drop')),
+  'le 4 RPC drops hanno search_path impostato');
+select ok(has_function_privilege('authenticated', 'public.drops_feed(timestamptz,uuid,integer)', 'execute')
+      and has_function_privilege('authenticated', 'public.drop_detail(uuid)', 'execute')
+      and has_function_privilege('authenticated', 'public.save_drop(uuid)', 'execute')
+      and has_function_privilege('authenticated', 'public.unsave_drop(uuid)', 'execute'),
+  'le 4 RPC drops sono eseguibili da authenticated');
+
+-- RC-02: drops_feed replica il predicato di visibilità della RLS (are_friends +
+-- expires_at, niente school) e valorizza i contatori SOLO per l'autore.
+select ok((select prosrc like '%are_friends%' and prosrc like '%expires_at%'
+             and prosrc not like '%school%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'drops_feed'),
+  'drops_feed replica la visibilità della RLS (amici + drop vivo, no school)');
+select ok((select prosrc like '%author_id = me.uid%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'drops_feed'),
+  'drops_feed valorizza i contatori SOLO per l''autore (R-04)');
+
+-- Grant minimi (revoke all + re-grant): niente scritture proibite dal client.
+select ok((select not has_table_privilege('authenticated', 'public.drop_comments', 'UPDATE')),
+  'authenticated non aggiorna drop_comments (niente edit, R-12)');
+select ok((select not has_table_privilege('authenticated', 'public.drop_saves', 'INSERT')),
+  'authenticated non inserisce drop_saves (solo via RPC save_drop)');
+select ok((select not has_table_privilege('authenticated', 'public.drop_saves', 'DELETE')),
+  'authenticated non cancella drop_saves (solo via RPC unsave_drop)');
+select ok((select not has_table_privilege('authenticated', 'public.storage_cleanup_queue', 'SELECT')),
+  'authenticated non legge storage_cleanup_queue');
+select ok((select not has_table_privilege('anon', 'public.drop_comments', 'SELECT')),
+  'anon non legge drop_comments (app invite-only)');
+-- Contratto positivo dei grant.
+select ok((select has_column_privilege('authenticated', 'public.drop_likes', 'drop_id', 'INSERT')),
+  'authenticated inserisce drop_likes.drop_id (toggle like)');
+select ok((select has_column_privilege('authenticated', 'public.drops', 'id', 'INSERT')
+             and has_column_privilege('authenticated', 'public.drops', 'audio_seconds', 'INSERT')),
+  'authenticated inserisce drops.id (R-03) e audio_seconds');
+
+-- R-06: bucket privati dedicati + policy storage path-based.
+select ok((select not public from storage.buckets where id = 'drop-media'),
+  'bucket drop-media è privato');
+select ok((select file_size_limit = 15728640 from storage.buckets where id = 'drop-media'),
+  'bucket drop-media ha limite 15 MB');
+select ok((select (not public) and file_size_limit = 26214400 from storage.buckets where id = 'drop-audio'),
+  'bucket drop-audio è privato con limite 25 MB');
+select ok((select count(*)::int from pg_policies
+           where schemaname='storage' and tablename='objects' and policyname like 'drop_media_%') = 3,
+  'drop-media ha 3 policy storage (read/write/delete)');
+select ok((select count(*)::int from pg_policies
+           where schemaname='storage' and tablename='objects' and policyname like 'drop_audio_%') = 3,
+  'drop-audio ha 3 policy storage (read/write/delete)');
+select ok((select qual like '%can_see_drop%' from pg_policies
+           where schemaname='storage' and tablename='objects' and policyname='drop_media_read_visible'),
+  'la lettura di drop-media passa da can_see_drop');
+
+-- Enum estesi (migrazione drops_notify_enum).
+select ok((select 'drop_comment' = any(enum_range(null::public.notification_type)::text[])),
+  'notification_type include drop_comment');
+select ok((select 'drop_comment' = any(enum_range(null::public.moderation_target)::text[])),
+  'moderation_target include drop_comment');
+
+-- Verbatim+add: moderation_target_user mappa anche il commento al suo autore.
+select ok((select prosrc like '%drop_comments%' from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'moderation_target_user'),
+  'moderation_target_user gestisce il ramo drop_comment');
+
+-- RC-08: la cancellazione account copre le interazioni drops su contenuti altrui.
+select ok((select prosrc like '%drop_comments%' and prosrc like '%drop_likes%'
+             and prosrc like '%drop_saves%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'process_account_deletion'),
+  'process_account_deletion pulisce drop_comments/likes/saves');
+
+-- RC-04: i commenti sono l'unico punto realtime (publication estesa).
+select ok((select count(*)::int from pg_publication_tables
+           where pubname='supabase_realtime' and schemaname='public' and tablename='drop_comments') = 1,
+  'drop_comments è in supabase_realtime');
+
+-- Trigger e funzioni di servizio presenti.
+select has_trigger('public', 'drop_comments', 'drop_comments_before_insert_trg',
+  'trigger before-insert commenti presente');
+select has_trigger('public', 'drop_comments', 'drop_comments_after_insert_notify_trg',
+  'trigger notifica commenti presente');
+select has_trigger('public', 'drop_likes', 'drop_likes_before_insert_trg',
+  'trigger before-insert like presente');
+select has_trigger('public', 'drops', 'drops_after_delete_cleanup',
+  'trigger after-delete cleanup su drops presente');
+select has_function('public', 'enqueue_storage_cleanup', 'enqueue_storage_cleanup() esiste');
 
 select * from finish();
 rollback;

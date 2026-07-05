@@ -38,11 +38,51 @@ export type NotificationType =
   | 'friend_accepted'
   | 'message'
   | 'prop'
-  | 'achievement';
-export type ModerationTarget = 'user' | 'room' | 'message' | 'drop';
+  | 'achievement'
+  | 'drop_comment'; // M6: commento/reply su un mio drop
+export type ModerationTarget = 'user' | 'room' | 'message' | 'drop' | 'drop_comment';
 export type DropType = 'text' | 'audio' | 'media';
-export type DropAudience = 'friends' | 'school';
+// M6 (R-02, D-3): la "scuola" esce dal progetto → i drop sono SOLO friends.
+// La colonna resta a DB come punto di estensione (futuro 'circle').
+export type DropAudience = 'friends';
+// Le reaction-tratto (gesto forte → prop → Aura): sottoinsieme di AuraEventType.
+export type DropReactionTrait = 'kindness' | 'humor' | 'welcoming' | 'contribution';
 export type FriendshipStatus = 'pending' | 'accepted' | 'blocked';
+
+// Autore embeddato nelle RPC di lettura dei drop (drops_feed/drop_detail).
+export interface DropAuthor {
+  id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  aura_score: number;
+  aura_color: string | null;
+}
+
+// Riga restituita da drops_feed/drop_detail (stessa shape). I CONTATORI privati
+// (like/comment/save/reaction_counts) sono valorizzati SOLO se sei l'autore
+// (R-04, anti-vanity enforced a livello dati); altrimenti arrivano null.
+export interface DropFeedRow {
+  id: string;
+  author_id: string;
+  type: DropType;
+  body: string | null;
+  audio_url: string | null;
+  media_url: string | null;
+  audio_seconds: number | null;
+  audience: DropAudience;
+  expires_at: string;
+  created_at: string;
+  author: DropAuthor;
+  mio_like: boolean;
+  mio_salvataggio: boolean;
+  mie_reactions: DropReactionTrait[];
+  ha_commenti: boolean; // booleano, MAI una cifra (anche per i non-autori)
+  like_count: number | null;
+  comment_count: number | null;
+  save_count: number | null;
+  reaction_counts: Partial<Record<DropReactionTrait, number>> | null;
+}
 
 export interface Database {
   public: {
@@ -62,8 +102,11 @@ export interface Database {
           aura_score: number;
           aura_color: string | null;
           share_location: boolean;
+          // ⚠️ Le 2 colonne sotto NON hanno grant SELECT per authenticated
+          // (grants_audit CM8): mai selezionarle (niente `*`, vedi PROFILE_COLS
+          // in lib/auth.ts). Nelle letture client arrivano sempre undefined.
           expo_push_token: string | null;
-          last_active_at: string | null; // "ultimo accesso" (heartbeat via touch_presence)
+          last_active_at: string | null; // "ultimo accesso" (heartbeat via touch_presence, letto via RPC get_peer_presence)
           show_last_seen: boolean; // toggle privacy: mostra l'ultimo accesso
           show_read_receipts: boolean; // toggle privacy: spunte di lettura
           muted_until: string | null; // sanzione moderazione (mute GLOBALE, non per-conversazione)
@@ -266,25 +309,96 @@ export interface Database {
         Update: never;
       };
       drops: {
-        // Momenti effimeri (24h): niente soft-delete, scadono via expires_at.
+        // Momenti effimeri (24h): alla scadenza NON si cancellano più (R-01),
+        // diventano "Ricordi" del solo autore con stats_finali congelate.
         Row: {
           id: string;
           author_id: string;
           type: DropType;
-          body: string | null;
-          audio_url: string | null;
-          media_url: string | null;
+          body: string | null; // testo (≤2000) o caption di foto/audio (≤280)
+          audio_url: string | null; // path bucket drop-audio (drop vocali)
+          media_url: string | null; // path bucket drop-media (foto)
+          audio_seconds: number | null; // durata del vocale (1–300)
           audience: DropAudience;
           expires_at: string;
+          stats_finali: Json | null; // snapshot scritto SOLO dal sistema alla scadenza
           created_at: string;
         };
+        // Grant insert: (id, type, body, audio_url, media_url, audio_seconds, audience).
+        // id generato dal client (R-03): i file si caricano PRIMA dell'insert su
+        // path <id>/<author_id>/…. stats_finali NON è insertabile (solo sistema).
         Insert: {
+          id?: string;
           type?: DropType;
           body?: string | null;
           audio_url?: string | null;
           media_url?: string | null;
+          audio_seconds?: number | null;
           audience?: DropAudience;
         };
+        Update: never; // niente edit (R-12); solo delete (eliminazione anticipata)
+      };
+      drop_reactions: {
+        // Reaction-tratto (gesto forte): il trigger la trasforma in prop→Aura.
+        // PK (drop_id, user_id, trait). Modellata ora (M6, RC-10).
+        Row: {
+          drop_id: string;
+          user_id: string;
+          trait: DropReactionTrait;
+          created_at: string;
+        };
+        Insert: {
+          drop_id: string;
+          trait: DropReactionTrait;
+        };
+        Update: never;
+      };
+      drop_comments: {
+        // Commenti testo/vocale, 1 solo livello di reply (R-07). Contenuto, non
+        // contatore: leggibili da chi vede il drop; niente edit (R-12).
+        Row: {
+          id: string;
+          drop_id: string;
+          author_id: string;
+          parent_id: string | null; // reply a un top-level dello stesso drop
+          type: 'text' | 'audio';
+          body: string | null; // testo ≤1000
+          audio_url: string | null; // path bucket drop-audio, prefisso commento_
+          audio_seconds: number | null; // 1–120
+          created_at: string;
+        };
+        // Grant insert: (drop_id, parent_id, type, body, audio_url, audio_seconds).
+        Insert: {
+          drop_id: string;
+          parent_id?: string | null;
+          type?: 'text' | 'audio';
+          body?: string | null;
+          audio_url?: string | null;
+          audio_seconds?: number | null;
+        };
+        Update: never;
+      };
+      drop_likes: {
+        // Gesto leggero (R-05): zero Aura/notifiche/realtime. La riga è visibile
+        // a se stessi ∨ all'autore del drop; il NUMERO solo all'autore (via RPC).
+        Row: {
+          drop_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: { drop_id: string }; // toggle diretto (delete per togliere)
+        Update: never;
+      };
+      drop_saves: {
+        // Segnalibro effimero (D-1): vive quanto il drop. Mutazioni SOLO via RPC
+        // (save_drop/unsave_drop). Owner-only in lettura; l'autore vede solo il
+        // numero, mai CHI salva (R-14).
+        Row: {
+          user_id: string;
+          drop_id: string;
+          created_at: string;
+        };
+        Insert: never; // via RPC save_drop
         Update: never;
       };
       props: {
@@ -550,6 +664,19 @@ export interface Database {
         };
         Returns: undefined;
       };
+      // Drops M6 (DM0) — lettura feed/dettaglio + salvataggi.
+      // drops_feed: pagina keyset (created_at desc, id desc); contatori privati
+      // valorizzati SOLO per i propri drop. drop_detail: stessa shape, singolo.
+      drops_feed: {
+        Args: { p_before?: string | null; p_before_id?: string | null; p_limit?: number };
+        Returns: DropFeedRow[];
+      };
+      drop_detail: {
+        Args: { p_drop: string };
+        Returns: DropFeedRow[]; // 0 righe se scaduto/non visibile (identico al client)
+      };
+      save_drop: { Args: { p_drop: string }; Returns: Json };
+      unsave_drop: { Args: { p_drop: string }; Returns: Json };
       // Moderazione / GDPR
       file_report: {
         Args: {

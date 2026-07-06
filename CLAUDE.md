@@ -140,6 +140,20 @@ seguono quest'ordine.
   Postare un drop dà Aura `participation` a **rendimenti decrescenti**
   (`1/n` nel giorno) → premia la qualità, non il volume. `expire_content()`
   esteso a drop + messaggi effimeri.
+  > **M6 — Drops come sistema di post** (spec+piano `docs/media/drop.md`, DM0–DM7,
+  > chiuso 2026-07-06): il drop diventa post a 3 formati (foto/audio/testo)
+  > **solo-amici** (school deprecata, R-02), effimerità **logica** (alla scadenza
+  > `expire_content` v5 **non cancella** più: congela `stats_finali`, elimina le
+  > interazioni, lascia la riga come **Ricordo** privato). Nuove tabelle
+  > `drop_comments` (testo+vocali, reply 1 livello) · `drop_likes`/`drop_saves`
+  > (**contatori privati** enforced a livello dati, R-04) · bucket
+  > `drop-media`/`drop-audio` (lettura via `can_see_drop`). RPC `drops_feed`/
+  > `drop_detail` (contatori solo per l'autore) · `save_drop`/`unsave_drop`.
+  > Notifica `drop_comment` (mai like/salvataggi). Coda `storage_cleanup_queue`
+  > + Edge `storage-cleanup`. **Drop del giorno** (DM7, §16.2): tema curato
+  > giornaliero (`drop_prompts`/`drop_prompt_of_day`, pick LRU Europe/Rome) + UNA
+  > notifica broadcast `drop_prompt` dosata (semi-random pomeridiana, una-volta-
+  > al-giorno ai soli utenti attivi); banner nel composer via `drop_prompt_today()`.
 
 > **Aura — il modello (perché funzioni tra i giovani)**: reputazione **viva**
 > (decadimento, non cumulo), **multi-tratto** (i caratteri alimentano le
@@ -221,11 +235,14 @@ seguono quest'ordine.
 | process-tip | true | tip simbolico attivo |
 | create-vibe-purchase | true | inerte senza STRIPE_SECRET_KEY |
 | stripe-webhook | false | firma Stripe; inerte senza STRIPE_WEBHOOK_SECRET |
-| gdpr-export, gdpr-delete | true | art. 15 / 17 |
+| gdpr-export, gdpr-delete | true | art. 15 / 17 (export v3: incl. interazioni drops) |
+| storage-cleanup | false | x-cron-secret; via dispatch_storage_cleanup (pg_cron+pg_net); svuota storage_cleanup_queue via Storage API (M6/DM6) |
 
 **Cron (pg_cron)**: `aura-recompute-weekly`, `spotlight-daily`, `expire-content`
 (5 min), `streak-rollover-daily`, `dispatch-push-minutely`,
-`vibes-weekly-allowance`, `gdpr-retention-daily`.
+`vibes-weekly-allowance`, `gdpr-retention-daily`, `storage-cleanup-15min`,
+`drop-prompt-pick-daily` (00:05 UTC: sceglie il tema del giorno),
+`drop-prompt-notify` (`*/15 13-18 * * *`: broadcast dosato dopo `send_after`).
 
 ---
 

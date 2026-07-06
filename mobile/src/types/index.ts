@@ -19,6 +19,7 @@ export type ReactionRow = Tables['message_reactions']['Row'];
 export type StreakRow = Tables['streaks']['Row'];
 export type FriendshipRow = Tables['friendships']['Row'];
 export type DropRow = Tables['drops']['Row'];
+export type DropCommentRow = Tables['drop_comments']['Row'];
 export type PropRow = Tables['props']['Row'];
 export type NotificationRow = Tables['notifications']['Row'];
 export type DeviceRow = Tables['devices']['Row'];

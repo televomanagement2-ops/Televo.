@@ -1,15 +1,15 @@
 // =============================================================================
-// Create types — i tipi di contenuto CREABILI dall'app (il menu del "+").
+// Create types — le voci del menu di creazione (il "+" centrale, S0).
 // =============================================================================
-// Il "+" centrale è il punto d'accesso alla creazione. Qui c'è la STRUTTURA di
-// tutto ciò che si potrà creare, derivata dai domini reali del backend
-// (CLAUDE.md §4: drops, rooms/stanze live, messages text/audio/voice_thread,
-// props, conversations dm/group/house). Per ora è solo il frame: ogni tipo è
-// `enabled: false` → stato "presto". Quando un flusso sarà pronto basta metterlo
-// `enabled: true` e dargli una rotta, senza toccare la schermata. NB: niente
-// "Reel" — il concept dell'app non lo contempla.
+// Il "+" della BottomBar apre un bottom sheet (MenuCrea) invece di una schermata
+// (R-16, decisione product owner). In testa la sezione DROP — Foto · Audio ·
+// Testo, ATTIVE (M6): scegliere una voce apre il composer (S2) col formato
+// preselezionato via `?tipo=`. Sotto, le altre creazioni dei domini reali
+// (CLAUDE.md §4: stanze live, props, gruppi), ancora `enabled: false` → "presto":
+// quando un flusso sarà pronto basta attivarlo qui. NB: niente "Reel".
 
 import type { Ionicons } from '@expo/vector-icons';
+import type { DropComposerTipo } from '@/store/dropStore';
 
 export interface CreateType {
   key: string;
@@ -18,36 +18,45 @@ export interface CreateType {
   subtitle: string;
   /** false = non ancora attivabile (mostra "presto"). */
   enabled: boolean;
+  /** Presente solo sulle voci Drop: il formato passato al composer (?tipo=). */
+  dropTipo?: DropComposerTipo;
 }
 
-/** Ordine canonico mostrato nella schermata Crea. */
-export const CREATE_TYPES: readonly CreateType[] = [
+/** Sezione DROP: i tre formati del post effimero, attivi in M6. */
+export const CREATE_DROPS: readonly CreateType[] = [
   {
-    key: 'drop',
-    icon: 'flash-outline',
-    title: 'Drop',
-    subtitle: 'Un momento effimero, sparisce in 24 ore',
-    enabled: false,
+    key: 'drop-foto',
+    icon: 'camera-outline',
+    title: 'Foto',
+    subtitle: 'Un momento vero, sparisce in 24h',
+    enabled: true,
+    dropTipo: 'foto',
   },
+  {
+    key: 'drop-audio',
+    icon: 'mic-outline',
+    title: 'Audio',
+    subtitle: "Di' la tua con la voce",
+    enabled: true,
+    dropTipo: 'audio',
+  },
+  {
+    key: 'drop-testo',
+    icon: 'create-outline',
+    title: 'Testo',
+    subtitle: 'Un pensiero al volo',
+    enabled: true,
+    dropTipo: 'testo',
+  },
+];
+
+/** Sezione ALTRO: le creazioni non ancora costruite (badge "presto"). */
+export const CREATE_ALTRO: readonly CreateType[] = [
   {
     key: 'live',
     icon: 'radio-outline',
     title: 'Stanza Live',
     subtitle: 'Apri una stanza audio dal vivo',
-    enabled: false,
-  },
-  {
-    key: 'media',
-    icon: 'image-outline',
-    title: 'Media',
-    subtitle: 'Condividi una foto o un media',
-    enabled: false,
-  },
-  {
-    key: 'voice',
-    icon: 'mic-outline',
-    title: 'Nota vocale',
-    subtitle: 'Un messaggio audio o un thread vocale',
     enabled: false,
   },
   {
@@ -61,7 +70,7 @@ export const CREATE_TYPES: readonly CreateType[] = [
     key: 'group',
     icon: 'people-outline',
     title: 'Gruppo',
-    subtitle: 'Crea una conversazione di gruppo o una stanza-casa',
+    subtitle: 'Crea una conversazione di gruppo',
     enabled: false,
   },
 ];

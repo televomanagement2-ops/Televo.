@@ -29,6 +29,7 @@ import {
   fetchReadReceipts,
   fetchSavedMessages,
   forwardMessage,
+  forwardDropReference,
   leaveConversation,
   markConversationRead,
   MESSAGES_PAGE,
@@ -256,6 +257,29 @@ export function useForwardMessages() {
         const row = await forwardMessage(input.destConvId, m, uid);
         upsertMessage(queryClient, input.destConvId, row);
       }
+      return input.destConvId;
+    },
+    onSuccess: () => {
+      if (uid) void queryClient.invalidateQueries({ queryKey: conversationsPrefix(uid) });
+    },
+  });
+}
+
+/**
+ * Inoltra un DROP come RIFERIMENTO (DM5, R-08) verso una conversazione: scrive
+ * un solo messaggio con `drop_ref` (mai una copia). Niente outbox: si inoltra da
+ * un picker e si naviga alla destinazione (come useForwardMessages). Il trigger
+ * verifica `can_see_drop` del mittente → un drop non più visibile fallisce con
+ * `drop_not_visible` (mappato con gentilezza dal chiamante).
+ */
+export function useForwardDropRef() {
+  const queryClient = useQueryClient();
+  const { session } = useAuth();
+  const uid = session?.user.id;
+  return useMutation({
+    mutationFn: async (input: { destConvId: string; dropId: string }) => {
+      const row = await forwardDropReference(input.destConvId, input.dropId);
+      upsertMessage(queryClient, input.destConvId, row);
       return input.destConvId;
     },
     onSuccess: () => {
@@ -587,9 +611,9 @@ export function useOutbox(convId: string) {
   );
 
   const sendText = useCallback(
-    (body: string, replyTo: string | null) => {
+    (body: string, replyTo: string | null, dropRef: string | null = null) => {
       if (!uid) return;
-      enqueueText(queryClient, uid, convId, body, replyTo);
+      enqueueText(queryClient, uid, convId, body, replyTo, dropRef);
     },
     [queryClient, uid, convId],
   );

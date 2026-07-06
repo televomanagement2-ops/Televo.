@@ -52,7 +52,7 @@ export async function attemptSend(
     // file: l'eventuale orfano nel bucket è in carico alla pulizia CM8.
     const row =
       item.type === 'text'
-        ? await sendTextMessage(item.conversationId, item.body ?? '', item.replyTo)
+        ? await sendTextMessage(item.conversationId, item.body ?? '', item.replyTo, item.dropRef)
         : item.type === 'media'
           ? await sendMediaMessage(
               item.conversationId,
@@ -88,13 +88,15 @@ export async function attemptSend(
   }
 }
 
-/** Accoda un messaggio di testo e (se online) lo invia subito. */
+/** Accoda un messaggio di testo e (se online) lo invia subito. `dropRef` (DM5):
+ *  riferimento a un drop ("Rispondi in privato") che viaggia col messaggio. */
 export function enqueueText(
   queryClient: QueryClient,
   uid: string,
   convId: string,
   body: string,
   replyTo: string | null,
+  dropRef: string | null = null,
 ): void {
   const item: OutboxItem = {
     tempId: nuovoTempId(),
@@ -106,6 +108,7 @@ export function enqueueText(
     mediaLocalUri: null,
     mediaMimeType: null,
     replyTo,
+    dropRef,
     createdAt: new Date().toISOString(),
     status: 'pending',
     errorMessage: null,
@@ -133,6 +136,7 @@ export function enqueueAudio(
     mediaLocalUri: null,
     mediaMimeType: null,
     replyTo,
+    dropRef: null,
     createdAt: new Date().toISOString(),
     status: 'pending',
     errorMessage: null,
@@ -162,6 +166,7 @@ export function enqueueMedia(
     mediaLocalUri,
     mediaMimeType,
     replyTo,
+    dropRef: null,
     createdAt: new Date().toISOString(),
     status: 'pending',
     errorMessage: null,

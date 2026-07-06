@@ -53,3 +53,35 @@ export function hubTimestamp(iso: string): string {
   if (diff < 7) return (GIORNI[d.getDay()] ?? '').slice(0, 3);
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
 }
+
+/**
+ * Tempo relativo COMPATTO per i drop (vivono ≤ 24h): "adesso" / "5 min fa" /
+ * "2h fa". Il tempo lo detta il server (created_at), il client lo rende soltanto:
+ * niente calcoli locali di scadenza (caso limite orologio sballato, §11.14).
+ * Oltre le 24h (Ricordi) degrada a giorni, mai numeri fuorvianti.
+ */
+export function tempoRelativo(iso: string): string {
+  const sec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (sec < 45) return 'adesso';
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} min fa`;
+  const ore = Math.floor(sec / 3600);
+  if (ore < 24) return `${ore}h fa`;
+  const giorni = Math.floor(ore / 24);
+  return giorni === 1 ? 'ieri' : `${giorni}g fa`;
+}
+
+/**
+ * Tempo che MANCA alla scadenza di un drop (S4 Salvati: "scade tra 3h"). Promemoria
+ * esplicito dell'effimerità (D-1: il segnalibro vive quanto il drop). `expires_at`
+ * è sempre il dato del server; qui lo rendiamo soltanto. Già scaduto → "in scadenza"
+ * (la riga sparirà al prossimo refetch: non fingiamo un tempo negativo).
+ */
+export function tempoRimanente(expiresAtIso: string): string {
+  const sec = Math.round((new Date(expiresAtIso).getTime() - Date.now()) / 1000);
+  if (sec <= 60) return 'in scadenza';
+  const min = Math.round(sec / 60);
+  if (min < 60) return `scade tra ${min} min`;
+  const ore = Math.floor(sec / 3600);
+  return `scade tra ${ore}h`;
+}

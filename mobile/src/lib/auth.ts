@@ -170,15 +170,31 @@ export async function checkInvite(code: string): Promise<InviteCheck> {
 
 // --- Profilo / onboarding ----------------------------------------------------
 
+/**
+ * Colonne di `profiles` leggibili dal client. Il grant SELECT è PER-COLONNA
+ * (grants_audit CM8): `expo_push_token` e `last_active_at` sono escluse per
+ * privacy, quindi `select('*')` fallirebbe con "permission denied" (Postgres
+ * blocca prima della RLS). Ogni lettura di `profiles` deve usare questa lista
+ * (o un sottoinsieme, come CARD_COLS in lib/social.ts) — MAI `*`.
+ */
+export const PROFILE_COLS =
+  'id, username, display_name, age_verified, avatar_url, audio_bio_url, ' +
+  'status_text, customization, interests, school_id, aura_score, aura_color, ' +
+  'share_location, show_last_seen, show_read_receipts, muted_until, banned_at, ' +
+  'created_at, updated_at, deleted_at';
+
 /** Carica il profilo dell'utente corrente (null se non esiste ancora). */
 export async function fetchMyProfile(userId: string): Promise<ProfileRow | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select(PROFILE_COLS)
     .eq('id', userId)
     .maybeSingle();
   if (error) throw error;
-  return data;
+  // Cast isolato: la riga selezionata è ProfileRow SENZA le 2 colonne non
+  // grantate (mai lette dall'app: push token via register_device, presenza via
+  // RPC get_peer_presence). Il tipo resta ProfileRow per non propagare un Omit.
+  return data as unknown as ProfileRow | null;
 }
 
 /** True se lo username è libero (lowercase, case-insensitive lato DB). */

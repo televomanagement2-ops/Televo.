@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(262);
+select plan(298);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -753,6 +753,141 @@ select has_trigger('public', 'drop_likes', 'drop_likes_before_insert_trg',
 select has_trigger('public', 'drops', 'drops_after_delete_cleanup',
   'trigger after-delete cleanup su drops presente');
 select has_function('public', 'enqueue_storage_cleanup', 'enqueue_storage_cleanup() esiste');
+
+-- =============================================================================
+-- DM5 — inoltro drop come riferimento (20260706120000_drops_forward)
+-- =============================================================================
+-- R-08: messages.drop_ref è un PUNTATORE (mai una copia). FK on delete set null
+-- → il riferimento degrada a "non disponibile" se il drop viene eliminato.
+select has_column('public', 'messages', 'drop_ref',
+  'messages.drop_ref esiste (inoltro drop, DM5)');
+select ok((select confdeltype = 'n' from pg_constraint
+           where conname = 'messages_drop_ref_fkey'),
+  'drop_ref è on delete set null (degrada a "non disponibile")');
+-- Il client può valorizzare drop_ref in insert (grant per-colonna additivo).
+select ok((select has_column_privilege('authenticated', 'public.messages', 'drop_ref', 'INSERT')),
+  'authenticated inserisce messages.drop_ref');
+-- Verbatim+add: il trigger valida il riferimento (solo testo, visibilità del
+-- mittente via can_see_drop) E conserva i blocchi CM4/CM5 (inoltro foto, media).
+select ok((select prosrc like '%drop_ref%' and prosrc like '%invalid_drop_ref%'
+             and prosrc like '%can_see_drop%' and prosrc like '%invalid_media_path%'
+             and prosrc like '%cannot_forward_type%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'messages_before_insert'),
+  'before_insert valida drop_ref (R-08) senza perdere i blocchi CM4/CM5');
+
+-- =============================================================================
+-- DM6 — scheduling pulizia storage (20260706130000_storage_cleanup_cron)
+-- =============================================================================
+-- R-09: la coda storage_cleanup_queue (DM0) ha finalmente un consumatore. La Edge
+-- storage-cleanup la svuota via Storage API (l'hosted vieta DELETE su
+-- storage.objects); qui verifichiamo lo scheduler lato DB (specchio dispatch_push).
+select has_function('public', 'dispatch_storage_cleanup',
+  'dispatch_storage_cleanup() esiste (scheduler pulizia storage)');
+-- Regola d'oro: security definer + search_path svuotato.
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'dispatch_storage_cleanup'),
+  'dispatch_storage_cleanup è security definer');
+select ok((select proconfig::text like '%search_path=%' from pg_proc p
+           join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'dispatch_storage_cleanup'),
+  'dispatch_storage_cleanup ha search_path svuotato');
+-- No-op sicuro: guardia coda vuota + lettura Vault + endpoint corretto.
+select ok((select prosrc like '%storage_cleanup_queue%' and prosrc like '%decrypted_secrets%'
+             and prosrc like '%/functions/v1/storage-cleanup%'
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname = 'dispatch_storage_cleanup'),
+  'dispatch_storage_cleanup: guardia coda + Vault + endpoint storage-cleanup');
+-- Cron ogni 15 minuti, schedulato una sola volta.
+select ok((select count(*)::int from cron.job where jobname = 'storage-cleanup-15min') = 1,
+  'cron storage-cleanup-15min schedulato');
+
+-- =============================================================================
+-- DM7 — "Drop del giorno" (20260706140000_drop_prompt_enum + 20260706140100)
+-- =============================================================================
+-- §16.2: tema curato giornaliero + UNA notifica broadcast dosata. Tabelle di
+-- SISTEMA (nessuna scrittura client, lettura del tema solo via RPC definer),
+-- broadcast solo agli utenti attivi, invio semi-random ma una-volta-al-giorno.
+
+-- Struttura + RLS (tabelle di sistema, come audit_log/storage_cleanup_queue).
+select has_table('public', 'drop_prompts',       'drop_prompts esiste');
+select has_table('public', 'drop_prompt_of_day',  'drop_prompt_of_day esiste');
+select ok((select relrowsecurity from pg_class where oid = 'public.drop_prompts'::regclass),
+  'RLS attiva su drop_prompts');
+select ok((select relrowsecurity from pg_class where oid = 'public.drop_prompt_of_day'::regclass),
+  'RLS attiva su drop_prompt_of_day');
+select is((select count(*)::int from pg_policies where schemaname='public' and tablename='drop_prompts'),
+  0, 'drop_prompts non ha policy (solo sistema/definer)');
+select is((select count(*)::int from pg_policies where schemaname='public' and tablename='drop_prompt_of_day'),
+  0, 'drop_prompt_of_day non ha policy (solo sistema/definer)');
+select ok((select not has_table_privilege('authenticated', 'public.drop_prompts', 'SELECT')),
+  'authenticated non legge drop_prompts (tema via RPC definer)');
+select ok((select not has_table_privilege('authenticated', 'public.drop_prompt_of_day', 'SELECT')),
+  'authenticated non legge drop_prompt_of_day');
+select ok((select not has_table_privilege('anon', 'public.drop_prompts', 'SELECT')),
+  'anon non legge drop_prompts (app invite-only)');
+select has_column('public', 'drop_prompt_of_day', 'send_after',
+  'drop_prompt_of_day ha send_after (orario invio semi-random)');
+
+-- Enum notification_type esteso col tema del giorno.
+select ok((select exists (
+    select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'notification_type' and e.enumlabel = 'drop_prompt')),
+  'notification_type ha il valore drop_prompt');
+
+-- RPC di lettura del tema (drop_prompt_today): definer + search_path + execute client.
+select has_function('public', 'drop_prompt_today', 'drop_prompt_today() esiste');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname='public' and p.proname='drop_prompt_today'),
+  'drop_prompt_today è security definer');
+select ok((select proconfig::text like '%search_path=%' from pg_proc p
+           join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname='public' and p.proname='drop_prompt_today'),
+  'drop_prompt_today ha search_path svuotato');
+select ok((select has_function_privilege('authenticated', 'public.drop_prompt_today()', 'EXECUTE')),
+  'authenticated può leggere il tema di oggi (drop_prompt_today)');
+
+-- pick/notify: definer + search_path, e NON eseguibili dal client (solo cron).
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname='public' and p.proname='pick_drop_prompt_of_day'),
+  'pick_drop_prompt_of_day è security definer');
+select ok((select proconfig::text like '%search_path=%' from pg_proc p
+           join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname='public' and p.proname='pick_drop_prompt_of_day'),
+  'pick_drop_prompt_of_day ha search_path svuotato');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname='public' and p.proname='notify_drop_prompt'),
+  'notify_drop_prompt è security definer');
+select ok((select proconfig::text like '%search_path=%' from pg_proc p
+           join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname='public' and p.proname='notify_drop_prompt'),
+  'notify_drop_prompt ha search_path svuotato');
+select ok((select not has_function_privilege('authenticated', 'public.pick_drop_prompt_of_day()', 'EXECUTE')),
+  'authenticated non esegue pick_drop_prompt_of_day (solo cron)');
+select ok((select not has_function_privilege('authenticated', 'public.notify_drop_prompt()', 'EXECUTE')),
+  'authenticated non esegue notify_drop_prompt (solo cron)');
+
+-- Guardie prosrc (semantica che protegge i pilastri).
+select ok((select prosrc like '%is_active_user%' and prosrc like '%drop_prompt%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='notify_drop_prompt'),
+  'notify_drop_prompt: broadcast SOLO agli utenti attivi');
+select ok((select prosrc like '%send_after%' and prosrc like '%notified_at%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='notify_drop_prompt'),
+  'notify_drop_prompt: guard send_after + una-volta-al-giorno (notified_at)');
+select ok((select prosrc like '%Europe/Rome%' and prosrc like '%last_used_on%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='pick_drop_prompt_of_day'),
+  'pick_drop_prompt_of_day: giorno Europe/Rome + rotazione LRU (last_used_on)');
+
+-- Cron schedulati una sola volta + seed presente.
+select ok((select count(*)::int from cron.job where jobname = 'drop-prompt-pick-daily') = 1,
+  'cron drop-prompt-pick-daily schedulato');
+select ok((select count(*)::int from cron.job where jobname = 'drop-prompt-notify') = 1,
+  'cron drop-prompt-notify schedulato');
+select ok((select exists (select 1 from public.drop_prompts where is_active)),
+  'seed: almeno un tema curato attivo esiste');
 
 select * from finish();
 rollback;

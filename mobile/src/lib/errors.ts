@@ -42,6 +42,9 @@ const MESSAGES: Record<string, string> = {
   // Inoltro (CM4 + CM5: testo e foto; i vocali restano vietati — effimeri)
   invalid_forward: 'Il messaggio da inoltrare non è più disponibile.',
   cannot_forward_type: 'I vocali non si possono inoltrare.',
+  // Riferimento a un drop in chat (DM5: inoltro / "Rispondi in privato")
+  drop_not_visible: 'Questo drop non è più disponibile.',
+  invalid_drop_ref: 'Questo drop non si può condividere qui.',
   // Media (CM5)
   media_url_required: 'Foto mancante, riprova a inviarla.',
   invalid_media_type: 'Formato immagine non supportato (usa JPEG, PNG o WebP).',
@@ -79,6 +82,49 @@ const MESSAGES: Record<string, string> = {
 export function chatErrorMessage(error: unknown): string {
   const code = authErrorCode(error);
   return MESSAGES[code] ?? 'Qualcosa è andato storto. Riprova.';
+}
+
+// =============================================================================
+// Drops (M6) — codici sollevati dai trigger di `drops`/interazioni e dallo
+// Storage. Mappa DEDICATA (copy "post" ≠ copy chat): `rate_limited` qui parla di
+// drop, non di messaggi. Fallback allo stesso testo generico.
+// =============================================================================
+const DROP_MESSAGES: Record<string, string> = {
+  // Creazione drop (trigger drops_before_insert)
+  user_not_active: 'Il tuo account non può pubblicare in questo momento.',
+  empty_drop: 'Scrivi qualcosa prima di pubblicare.',
+  drop_too_long: 'Il testo è troppo lungo (max 2000 caratteri).',
+  caption_too_long: 'La didascalia è troppo lunga (max 280 caratteri).',
+  missing_audio: 'Registra un vocale prima di pubblicare.',
+  missing_media: 'Scegli una foto prima di pubblicare.',
+  invalid_audio_duration: 'Il vocale deve durare tra 1 e 300 secondi.',
+  invalid_audio_path: 'Vocale non valido, riprova a registrarlo.',
+  invalid_media_path: 'Foto non valida, riprova a sceglierla.',
+  invalid_drop_fields: 'Drop non valido.',
+  rate_limited: 'Hai già condiviso molto oggi: torna domani ✨',
+  // Storage (upload foto/audio del drop, normalizzati in media.ts/drops.ts)
+  media_too_large: 'La foto è troppo grande (max 15 MB).',
+  invalid_media_type: 'Formato immagine non supportato (usa JPEG, PNG o WebP).',
+  audio_too_large: 'Il vocale è troppo grande (max 25 MB).',
+  // Interazioni (commenti/like/salvataggi — usati da DM3/DM4)
+  drop_expired: 'Questo drop è scaduto.',
+  drop_not_visible: 'Questo drop non è più disponibile.',
+  // Commenti (trigger drop_comments_before_insert — DM3)
+  empty_comment: 'Scrivi qualcosa prima di commentare.',
+  comment_too_long: 'Il commento è troppo lungo (max 1000 caratteri).',
+  invalid_comment_fields: 'Commento non valido.',
+  invalid_parent: 'Il commento a cui rispondi non è più disponibile.',
+  reply_depth_exceeded: 'Puoi rispondere solo a un commento, non a una risposta.',
+  // Permessi OS (sollevati da media.ts/audio.ts)
+  permesso_galleria_negato: 'Per condividere una foto consenti l’accesso alla galleria nelle impostazioni.',
+  permesso_fotocamera_negato: 'Per scattare una foto consenti l’accesso alla fotocamera nelle impostazioni.',
+  permesso_microfono_negato: 'Per registrare un vocale consenti l’accesso al microfono nelle impostazioni.',
+};
+
+/** Messaggio utente in italiano per un errore del dominio Drops (fallback generico). */
+export function dropErrorMessage(error: unknown): string {
+  const code = authErrorCode(error);
+  return DROP_MESSAGES[code] ?? 'Qualcosa è andato storto. Riprova.';
 }
 
 /**

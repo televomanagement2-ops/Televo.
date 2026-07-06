@@ -11,6 +11,7 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BollaMedia } from '@/components/chat/BollaMedia';
 import { PlayerVocale } from '@/components/chat/PlayerVocale';
+import { BollaDropRef } from '@/components/drops/BollaDropRef';
 import { timeHHmm } from '@/lib/datetime';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 import type { MessageRow } from '@/types';
@@ -128,12 +129,20 @@ export function BollaParlante({
         </Pressable>
       ) : null}
 
+      {/* DM5 (S7): drop inoltrato/richiamato → mini-card risolta lato lettore. */}
+      {message.drop_ref && !deleted ? (
+        <BollaDropRef dropId={message.drop_ref} isMine={isMine} />
+      ) : null}
+
       {deleted ? (
         <Text style={[styles.body, styles.deleted, isMine && styles.bodyMine]}>
           Messaggio eliminato
         </Text>
       ) : message.type === 'text' ? (
-        <TestoConLink body={message.body ?? ''} isMine={isMine} />
+        // Con un drop_ref il body è la nota opzionale: niente riga vuota se assente.
+        message.body || !message.drop_ref ? (
+          <TestoConLink body={message.body ?? ''} isMine={isMine} />
+        ) : null
       ) : message.type === 'media' ? (
         // Foto (CM5): thumbnail (+ caption opzionale). In coda d'invio mostra
         // il file locale; il viewer si apre solo sui messaggi confermati.

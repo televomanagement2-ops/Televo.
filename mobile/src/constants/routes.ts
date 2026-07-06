@@ -36,6 +36,11 @@ export const ROUTES = {
   messaggiImportante: '/messaggi/importante',
   messaggiImpostazioni: '/messaggi/impostazioni',
   messaggiContatti: '/messaggi/contatti',
+
+  // --- Drops (M6) ---
+  dropNuovo: '/drop/nuovo', // S2 composer (attiva in DM1; ?tipo=foto|audio|testo)
+  dropSalvati: '/drop/salvati', // S4 segnalibri (DM4)
+  ricordi: '/profilo/ricordi', // S5 archivio privato (DM4)
 } as const;
 
 /** Route dinamiche: costruttori tipizzati per gli id (in arrivo nei prossimi M). */
@@ -44,6 +49,7 @@ export const dynamicRoutes = {
   chat: (id: string) => `/chat/${id}` as const,
   chatInfo: (id: string) => `/chat/${id}/info` as const,
   profiloUtente: (id: string) => `/profilo/${id}` as const,
+  drop: (id: string) => `/drop/${id}` as const, // S3 dettaglio (DM3)
 };
 
 export type AppRoute = (typeof ROUTES)[keyof typeof ROUTES];

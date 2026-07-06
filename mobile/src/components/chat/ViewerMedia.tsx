@@ -37,14 +37,20 @@ const DOUBLE_TAP_SCALE = 2.5;
 
 interface Props {
   visible: boolean;
-  /** messages.media_url (PATH storage), null se il file non c'è più. */
+  /** PATH storage della foto (chat `media_url` o `drops.media_url`), null se sparita. */
   path: string | null;
-  /** Caption della foto (body del messaggio). */
+  /** Caption della foto (body del messaggio/drop). */
   caption?: string | null;
+  /**
+   * Firmatario dell'URL: di default il bucket foto della CHAT (`signedUrlFoto`).
+   * I drop passano `signedUrlDropFoto` (bucket privato `drop-media`) — così il
+   * viewer resta uno solo per entrambi i domini, senza sapere quale bucket sia.
+   */
+  signer?: (path: string) => Promise<string>;
   onClose: () => void;
 }
 
-export function ViewerMedia({ visible, path, caption, onClose }: Props) {
+export function ViewerMedia({ visible, path, caption, signer = signedUrlFoto, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
   const [url, setUrl] = useState<string | null>(null);
@@ -75,7 +81,7 @@ export function ViewerMedia({ visible, path, caption, onClose }: Props) {
       return;
     }
     let attivo = true;
-    signedUrlFoto(path)
+    signer(path)
       .then((u) => {
         if (attivo) setUrl(u);
       })

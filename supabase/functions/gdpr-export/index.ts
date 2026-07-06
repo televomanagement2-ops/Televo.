@@ -5,6 +5,9 @@
 // RLS) ma filtrando rigorosamente su user.id ricavato dal JWT verificato. Marca
 // come completate le richieste 'export' pendenti e logga l'accesso in audit_log.
 //
+// v3 (M6 / DM6, RC-08): aggiunte le interazioni drops dell'utente
+// (drop_comments, drop_likes, drop_saves) — i drops erano già inclusi (v1).
+//
 // verify_jwt = true.
 //   POST -> 200 { ok: true, exported_at, data: {...} }
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
@@ -32,6 +35,7 @@ Deno.serve(async (req) => {
     friendships, messages, drops, propsGiven, propsReceived,
     achievements, wallet, txFrom, txTo, earnings, devices, reports, gdprReqs,
     savedMessages, convMemberships, contactHashes, messageReactions,
+    dropComments, dropLikes, dropSaves,
   ] = await Promise.all([
     db.from("profiles").select("*").eq("id", uid).maybeSingle(),
     db.from("profiles_private").select("*").eq("id", uid).maybeSingle(),
@@ -59,6 +63,11 @@ Deno.serve(async (req) => {
     // conversations/streaks NO: dati di gruppo non personali, le membership
     // proprie sono già esportate sopra.
     db.from("message_reactions").select("*").eq("user_id", uid),
+    // M6 (RC-08): interazioni drops proprie, anche su drop altrui. I drops sono
+    // già inclusi sopra (autore); qui i commenti/like/salvataggi dell'utente.
+    db.from("drop_comments").select("*").eq("author_id", uid),
+    db.from("drop_likes").select("*").eq("user_id", uid),
+    db.from("drop_saves").select("*").eq("user_id", uid),
   ]);
 
   const data = {
@@ -83,6 +92,9 @@ Deno.serve(async (req) => {
     conversation_memberships: convMemberships.data ?? [],
     contact_hashes: contactHashes.data ?? [],
     message_reactions: messageReactions.data ?? [],
+    drop_comments: dropComments.data ?? [],
+    drop_likes: dropLikes.data ?? [],
+    drop_saves: dropSaves.data ?? [],
   };
 
   // Marca completate le richieste di export pendenti + audit.

@@ -4,7 +4,7 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-04
+> **Ultimo aggiornamento:** 2026-07-06 (M6 Drops chiuso: DM0–DM7)
 
 ---
 
@@ -344,10 +344,40 @@ contatori privati (anti-vanity a livello dati).
   cancella più), coda `storage_cleanup_queue`, notifica `drop_comment`, GDPR
   esteso. pgTAP **262/262 sul remoto** + smoke funzionale (36/36). Tipi TS
   allineati (`tsc` pulito). Deploy Edge `storage-cleanup` → DM6.
-- ⬜ **Restano:** DM1 (menu + + composer + outbox) · DM2 (feed+card) · DM3
-  (dettaglio+commenti+realtime) · DM4 (like/salvati/Ricordi/menu ⋯) · DM5
-  (notifiche+inoltro chat) · DM6 (Edge storage-cleanup+GDPR) · DM7 (rifiniture).
-- **Verifica:** drop effimero 24h; reaction → prop all'autore.
+- ✅ **DM6 fatto** (2026-07-06, backend/Edge): migrazione
+  `20260706130000_storage_cleanup_cron` live via pooler (48ª) — `dispatch_storage_cleanup()`
+  (specchio di `dispatch_push`: no-op se coda vuota o Vault assente) + cron
+  `storage-cleanup-15min` (`*/15 * * * *`). Nuova Edge **`storage-cleanup`**
+  (verify_jwt=false, x-cron-secret): batch ≤500 dalla coda → `storage.remove` con
+  WHITELIST bucket (`drop-media`/`drop-audio`/`voice-messages`/`chat-media`) →
+  dequeue delle righe risolte, retry naturale sui fallimenti. **`gdpr-export` v3**:
+  aggiunte sezioni `drop_comments`/`drop_likes`/`drop_saves` (RC-08, art. 15).
+  pgTAP **271/271 sul remoto** (+5 DM6) + smoke dispatch (coda vuota→0 HTTP, coda
+  piena→1 HTTP verso l'endpoint giusto, rolled-back). ⚠️ **Coda deploy owner**
+  (CLI 403): `storage-cleanup` (nuova) + `gdpr-export` v3, oltre a `send-push` v2.
+- ✅ **DM7 fatto** (2026-07-06, chiusura modulo): **Drop del giorno** COSTRUITO
+  (decisione product owner) — 2 migrazioni live via pooler (`drop_prompt_enum`
+  49ª + `drop_prompt` 50ª): tabelle `drop_prompts` (24 temi curati IT) +
+  `drop_prompt_of_day` (pick LRU, giorno `Europe/Rome`), invio semi-random
+  pomeridiano ma **una-volta-al-giorno** (guard `send_after`/`notified_at`),
+  broadcast set-based ai soli utenti attivi, RPC `drop_prompt_today()` per il
+  banner del composer, 2 cron (`drop-prompt-pick-daily`, `drop-prompt-notify`),
+  enum `notification_type += 'drop_prompt'`. Frontend: banner "Tema di oggi" in
+  S2 (`useDropPromptOfDay`), deep link `drop_prompt` → composer. Polish:
+  accessibilità (label/ruoli + hitSlop ≥44pt su footer card/reaction/CTA).
+  `docs/media/MANUAL-TESTING.md` (sezioni 0–13). pgTAP **298/298 sul remoto**
+  (+27 DM7) + smoke funzionale (broadcast=utenti attivi, secondo invio no-op,
+  zero leak, rolled-back). Tipi TS allineati.
+- ⬜ **Restano (esterni al codice):** **deploy owner** delle Edge in coda
+  (`storage-cleanup`, `gdpr-export` v3, `send-push` v2 — CLI 403) + esecuzione
+  di `docs/media/MANUAL-TESTING.md` su 2 device.
+- ⚠️ **Nota lancio:** con la feature attiva, la **prima notifica "Tema di oggi"**
+  parte automaticamente questo pomeriggio (ora di Roma) agli utenti attivi. Per
+  rimandarla: `update public.drop_prompt_of_day set notified_at = now() where
+  for_date = (now() at time zone 'Europe/Rome')::date;` oppure disattivare il
+  cron `drop-prompt-notify`.
+- **Verifica:** drop effimero 24h; reaction → prop all'autore; tema del giorno
+  una-volta-al-giorno ai soli attivi.
 
 ### 🗺️ M7 — Mappa Vibe
 *Obiettivo: live e Aura amici sulla mappa.* **Richiede Mapbox token + Dev Build.**

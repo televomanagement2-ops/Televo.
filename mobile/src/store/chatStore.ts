@@ -27,6 +27,9 @@ export interface OutboxItem {
   mediaLocalUri: string | null;
   mediaMimeType: string | null;
   replyTo: string | null;
+  /** Riferimento a un drop inoltrato/risposto in privato (DM5, R-08): la bolla
+   *  mostra la mini-card del drop. Solo per i messaggi di testo; null altrimenti. */
+  dropRef: string | null;
   /** Istante di composizione (ordina la bolla in lista). */
   createdAt: string;
   status: 'pending' | 'failed';
@@ -45,6 +48,12 @@ interface ChatState {
   /** Messaggi selezionati per l'inoltro (CM4, RC-06): il picker
    *  (chat/inoltra) li legge da qui — niente id in URL. */
   forwardDraft: MessageRow[] | null;
+  /** Drop selezionato per l'inoltro in chat (DM5): il picker (chat/inoltra) lo
+   *  legge da qui e invia un messaggio-riferimento (drop_ref), mai una copia. */
+  forwardDropRef: string | null;
+  /** Riferimento a un drop "precompilato" nel composer di UNA conversazione
+   *  (DM5, "Rispondi in privato"): il prossimo messaggio di testo lo porta con sé. */
+  pendingDropRef: Record<string, string | null>;
   /** Coda d'invio ottimistica (tutte le conversazioni, ordine di enqueue). */
   outbox: OutboxItem[];
   setDraft: (convId: string, text: string) => void;
@@ -52,6 +61,8 @@ interface ChatState {
   setReplyTo: (convId: string, message: MessageRow | null) => void;
   setEditing: (convId: string, message: MessageRow | null) => void;
   setForwardDraft: (messages: MessageRow[] | null) => void;
+  setForwardDropRef: (dropId: string | null) => void;
+  setPendingDropRef: (convId: string, dropId: string | null) => void;
   outboxAdd: (item: OutboxItem) => void;
   outboxMarkFailed: (tempId: string, errorMessage: string) => void;
   outboxMarkPending: (tempId: string) => void;
@@ -64,6 +75,8 @@ export const useChatStore = create<ChatState>((set) => ({
   replyTo: {},
   editing: {},
   forwardDraft: null,
+  forwardDropRef: null,
+  pendingDropRef: {},
   outbox: [],
   setDraft: (convId, text) => set((s) => ({ drafts: { ...s.drafts, [convId]: text } })),
   clearDraft: (convId) =>
@@ -83,6 +96,9 @@ export const useChatStore = create<ChatState>((set) => ({
       replyTo: message ? { ...s.replyTo, [convId]: null } : s.replyTo,
     })),
   setForwardDraft: (messages) => set({ forwardDraft: messages }),
+  setForwardDropRef: (dropId) => set({ forwardDropRef: dropId }),
+  setPendingDropRef: (convId, dropId) =>
+    set((s) => ({ pendingDropRef: { ...s.pendingDropRef, [convId]: dropId } })),
   outboxAdd: (item) => set((s) => ({ outbox: [...s.outbox, item] })),
   outboxMarkFailed: (tempId, errorMessage) =>
     set((s) => ({
@@ -93,5 +109,14 @@ export const useChatStore = create<ChatState>((set) => ({
       outbox: s.outbox.map((o) => (o.tempId === tempId ? { ...o, status: 'pending' as const, errorMessage: null } : o)),
     })),
   outboxRemove: (tempId) => set((s) => ({ outbox: s.outbox.filter((o) => o.tempId !== tempId) })),
-  reset: () => set({ drafts: {}, replyTo: {}, editing: {}, forwardDraft: null, outbox: [] }),
+  reset: () =>
+    set({
+      drafts: {},
+      replyTo: {},
+      editing: {},
+      forwardDraft: null,
+      forwardDropRef: null,
+      pendingDropRef: {},
+      outbox: [],
+    }),
 }));

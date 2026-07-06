@@ -416,15 +416,44 @@ export async function fetchMessagesPage(
   return (data ?? []) as unknown as MessageRow[];
 }
 
-/** Invia un messaggio di testo (il trigger forza sender/membership/created_at). */
+/** Invia un messaggio di testo (il trigger forza sender/membership/created_at).
+ *  `dropRef` (DM5, R-08): riferimento a un drop ("Rispondi in privato") — il
+ *  trigger esige testo puro + can_see_drop del mittente; la bolla mostra la
+ *  mini-card. Il body può essere vuoto (solo riferimento) → lo mandiamo null. */
 export async function sendTextMessage(
   convId: string,
   body: string,
   replyTo?: string | null,
+  dropRef?: string | null,
 ): Promise<MessageRow> {
   const { data, error } = await supabase
     .from('messages')
-    .insert({ conversation_id: convId, type: 'text', body, reply_to: replyTo ?? null } as never)
+    .insert({
+      conversation_id: convId,
+      type: 'text',
+      body: dropRef ? body.trim() || null : body,
+      reply_to: replyTo ?? null,
+      drop_ref: dropRef ?? null,
+    } as never)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as unknown as MessageRow;
+}
+
+/**
+ * Inoltra un DROP in una conversazione come RIFERIMENTO (DM5, R-08): scrive un
+ * messaggio di testo con `drop_ref` valorizzato, MAI una copia. Il trigger
+ * verifica che il mittente veda il drop (`can_see_drop`); il lettore lo risolve
+ * con la SUA di RLS (o vede "Drop non disponibile"). Niente file da copiare.
+ */
+export async function forwardDropReference(
+  destConvId: string,
+  dropId: string,
+): Promise<MessageRow> {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({ conversation_id: destConvId, type: 'text', drop_ref: dropId } as never)
     .select('*')
     .single();
   if (error) throw error;

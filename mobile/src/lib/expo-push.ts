@@ -21,6 +21,7 @@ export type PermessoPush = 'granted' | 'denied' | 'undetermined';
 // logout) e la conversazione attualmente a schermo (per la soppressione).
 let tokenRegistrato: string | null = null;
 let conversazioneAperta: string | null = null;
+let dropAperto: string | null = null;
 let handlerInstallato = false;
 
 /**
@@ -30,6 +31,15 @@ let handlerInstallato = false;
  */
 export function setConversazioneAperta(convId: string | null): void {
   conversazioneAperta = convId;
+}
+
+/**
+ * Il drop attualmente a schermo (dettaglio S3): le push `drop_comment` di QUEL
+ * drop non mostrano banner né suono (l'utente sta già leggendo i commenti, e il
+ * realtime li aggiorna live). null = nessun drop aperto. Settata da drop/[id].
+ */
+export function setDropAperto(dropId: string | null): void {
+  dropAperto = dropId;
 }
 
 /**
@@ -48,10 +58,16 @@ export function installNotificationHandler(): void {
         data.type === 'message' &&
         typeof data.conversation_id === 'string' &&
         data.conversation_id === conversazioneAperta;
+      // DM5: commento sul drop già aperto → niente banner (lo vedo in realtime).
+      const stessoDrop =
+        data.type === 'drop_comment' &&
+        typeof data.drop_id === 'string' &&
+        data.drop_id === dropAperto;
+      const sopprimi = stessaChat || stessoDrop;
       return {
-        shouldShowBanner: !stessaChat,
-        shouldShowList: !stessaChat,
-        shouldPlaySound: !stessaChat,
+        shouldShowBanner: !sopprimi,
+        shouldShowList: !sopprimi,
+        shouldPlaySound: !sopprimi,
         shouldSetBadge: false,
       };
     },

@@ -418,6 +418,12 @@ verify_jwt = false
 [functions.send-push]
 verify_jwt = false
 
+# storage-cleanup: svuota storage_cleanup_queue rimuovendo i file orfani via
+# Storage API (l'hosted vieta DELETE su storage.objects). Invocata da pg_cron ->
+# pg_net (dispatch_storage_cleanup) ogni 15 min. Niente JWT -> x-cron-secret.
+[functions.storage-cleanup]
+verify_jwt = false
+
 # moderate-text: analisi tossicità (Perspective API) -> richiede JWT utente.
 # Degrada con grazia se PERSPECTIVE_API_KEY è assente (revisione umana).
 [functions.moderate-text]

@@ -185,6 +185,23 @@ export default function Profilo() {
           </Pressable>
         </View>
 
+        {/* Archivio personale (M6): Ricordi (drop scaduti) + Salvati (segnalibri) */}
+        <View style={styles.linkList}>
+          <LinkRow
+            icon="images-outline"
+            label="Ricordi"
+            hint="I tuoi drop scaduti, solo per te"
+            onPress={() => router.push(ROUTES.ricordi)}
+          />
+          <View style={styles.linkDivider} />
+          <LinkRow
+            icon="bookmark-outline"
+            label="Salvati"
+            hint="I drop che hai salvato (max 24h)"
+            onPress={() => router.push(ROUTES.dropSalvati)}
+          />
+        </View>
+
         <View style={{ height: spacing['3xl'] }} />
       </ScrollView>
 
@@ -235,6 +252,30 @@ function Stat({
     );
   }
   return <View style={styles.stat}>{inner}</View>;
+}
+
+/** Riga-link dell'archivio personale (Ricordi/Salvati): icona + label + hint + chevron. */
+function LinkRow({
+  icon,
+  label,
+  hint,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  hint: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={({ pressed }) => [styles.linkRow, pressed && styles.pressed]} onPress={onPress}>
+      <Ionicons name={icon} size={20} color={colors.ink} />
+      <View style={styles.linkText}>
+        <Text style={styles.linkLabel}>{label}</Text>
+        <Text style={styles.linkHint}>{hint}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={colors.faint} />
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -323,6 +364,25 @@ const styles = StyleSheet.create({
   },
   actionLabel: { color: colors.ink, fontSize: fontSize.sm, fontFamily: fontFamily.semibold },
   pressed: { opacity: 0.85 },
+
+  linkList: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+  },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  linkText: { flex: 1, gap: 1 },
+  linkLabel: { color: colors.ink, fontSize: fontSize.base, fontFamily: fontFamily.semibold },
+  linkHint: { color: colors.muted, fontSize: fontSize.xs, fontFamily: fontFamily.medium },
+  linkDivider: { height: 1, backgroundColor: colors.border, marginLeft: spacing.lg },
 
   zoomBackdrop: {
     flex: 1,

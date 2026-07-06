@@ -10,7 +10,7 @@
 import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { fetchMyProfile } from '@/lib/auth';
+import { fetchMyProfile, PROFILE_COLS } from '@/lib/auth';
 import { useAuth } from '@/hooks/useAuth';
 import type { ProfileRow } from '@/types';
 
@@ -63,10 +63,12 @@ export function useUpdateProfile() {
         // Update ai tipi `Database` scritti a mano (come in lib/auth.ts).
         .update(patch as never)
         .eq('id', uid)
-        .select('*')
+        // RETURNING con colonne esplicite: il grant SELECT su profiles è
+        // per-colonna (grants_audit CM8) → `select('*')` = permission denied.
+        .select(PROFILE_COLS)
         .single();
       if (error) throw error;
-      return data as ProfileRow;
+      return data as unknown as ProfileRow;
     },
     onSuccess: async () => {
       if (uid) await queryClient.invalidateQueries({ queryKey: profiloKeys.me(uid) });

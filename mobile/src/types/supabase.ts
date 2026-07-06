@@ -39,7 +39,8 @@ export type NotificationType =
   | 'message'
   | 'prop'
   | 'achievement'
-  | 'drop_comment'; // M6: commento/reply su un mio drop
+  | 'drop_comment' // M6: commento/reply su un mio drop
+  | 'drop_prompt'; // DM7: "tema del giorno" (§16.2, notifica broadcast dosata)
 export type ModerationTarget = 'user' | 'room' | 'message' | 'drop' | 'drop_comment';
 export type DropType = 'text' | 'audio' | 'media';
 // M6 (R-02, D-3): la "scuola" esce dal progetto → i drop sono SOLO friends.
@@ -82,6 +83,98 @@ export interface DropFeedRow {
   comment_count: number | null;
   save_count: number | null;
   reaction_counts: Partial<Record<DropReactionTrait, number>> | null;
+}
+
+// Autore di un commento (DM3): profilo minimo embeddato via FK PostgREST
+// (author:profiles!drop_comments_author_id_fkey). Niente Aura: nei commenti
+// non serve l'anello, basta identificare chi parla.
+export interface DropCommentAuthor {
+  id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+// Riga di `drop_comments` con l'autore embeddato (lista commenti di S3). I
+// commenti sono CONTENUTO (leggibile da chi vede il drop): nessuna cifra
+// aggregata, solo il testo/vocale e chi lo ha scritto.
+export interface DropCommentWithAuthor {
+  id: string;
+  drop_id: string;
+  author_id: string;
+  parent_id: string | null;
+  type: 'text' | 'audio';
+  body: string | null;
+  audio_url: string | null;
+  audio_seconds: number | null;
+  created_at: string;
+  author: DropCommentAuthor;
+}
+
+// Chi ha messo like a un mio drop (StatistichePrivate, R-04): visibile SOLO
+// all'autore (RLS drop_likes: se stessi ∨ autore del drop). I salvataggi NON
+// hanno l'equivalente (R-14: l'autore vede il numero, mai chi).
+export interface DropLiker {
+  user_id: string;
+  created_at: string;
+  user: DropCommentAuthor;
+}
+
+// Snapshot dei numeri congelato dal sistema alla scadenza (R-01, §2.8). È il
+// contenuto di `drops.stats_finali`: permette di cancellare le righe di
+// interazione senza perdere la gratificazione privata dell'autore nei Ricordi.
+// Le chiavi rispecchiano ESATTAMENTE `jsonb_build_object` di expire_content.
+export interface DropStatsFinali {
+  likes: number;
+  comments: number;
+  saves: number;
+  reactions: Partial<Record<DropReactionTrait, number>>;
+}
+
+// DM7 — "Drop del giorno" (§16.2): il tema curato di oggi, letto via la RPC
+// SECURITY DEFINER drop_prompt_today() (le tabelle drop_prompts/drop_prompt_of_day
+// sono di SISTEMA: nessuna lettura client diretta). È solo uno SPUNTO informativo
+// nel composer, mai contenuto. La RPC ritorna null se oggi non c'è tema.
+export interface DropPromptOfDay {
+  id: string;
+  body: string;
+  for_date: string; // YYYY-MM-DD (giorno Europe/Rome)
+}
+
+// Il drop di un mio Ricordo (S5): la riga di `drops` scaduta, visibile solo
+// all'autore (RLS). Niente contatori live (cancellati alla scadenza): resta lo
+// snapshot `stats_finali`. L'autore sono sempre io → nessun profilo embeddato.
+export interface MemoryRow {
+  id: string;
+  type: DropType;
+  body: string | null;
+  audio_url: string | null;
+  media_url: string | null;
+  audio_seconds: number | null;
+  expires_at: string;
+  created_at: string;
+  stats_finali: DropStatsFinali | null;
+}
+
+// Un mio segnalibro (S4): riga di `drop_saves` con il drop embeddato (RLS). Il
+// drop può essere `null` se nel frattempo è scaduto/non più visibile (ex-amico):
+// la UI mostra "non disponibile". I salvataggi di drop scaduti sono già stati
+// cancellati dal sistema, quindi qui arrivano quasi sempre drop vivi.
+export interface SavedDropRow {
+  drop_id: string;
+  created_at: string; // quando l'ho salvato
+  drop: {
+    id: string;
+    author_id: string;
+    type: DropType;
+    body: string | null;
+    audio_url: string | null;
+    media_url: string | null;
+    audio_seconds: number | null;
+    expires_at: string;
+    created_at: string;
+    author: DropCommentAuthor;
+  } | null;
 }
 
 export interface Database {
@@ -212,10 +305,11 @@ export interface Database {
           expires_at: string | null;
           edited_at: string | null; // timestamp ultima modifica (max 48h dall'invio)
           forwarded_from: string | null; // origine di un inoltro (CM4, RC-06); null se non inoltrato
+          drop_ref: string | null; // M6/DM5: riferimento a un drop (inoltro/risposta privata, R-08); on delete set null
           created_at: string;
           deleted_at: string | null;
         };
-        // Grant insert: (conversation_id, type, body, audio_url, media_url, media_type, reply_to, expires_at, forwarded_from).
+        // Grant insert: (conversation_id, type, body, audio_url, media_url, media_type, reply_to, expires_at, forwarded_from, drop_ref).
         Insert: {
           conversation_id: string;
           type?: MessageType;
@@ -226,6 +320,7 @@ export interface Database {
           reply_to?: string | null;
           expires_at?: string | null;
           forwarded_from?: string | null;
+          drop_ref?: string | null; // DM5: puntatore a un drop (mai una copia)
         };
         // Grant update (body, deleted_at): edit del proprio testo + soft-delete.
         Update: { body?: string | null; deleted_at?: string | null };
@@ -677,6 +772,9 @@ export interface Database {
       };
       save_drop: { Args: { p_drop: string }; Returns: Json };
       unsave_drop: { Args: { p_drop: string }; Returns: Json };
+      // DM7 — "Drop del giorno" (§16.2): tema di oggi per il banner del composer
+      // (S2). null se oggi non c'è tema. Tabelle di sistema → lettura solo via RPC.
+      drop_prompt_today: { Args: Record<string, never>; Returns: DropPromptOfDay | null };
       // Moderazione / GDPR
       file_report: {
         Args: {

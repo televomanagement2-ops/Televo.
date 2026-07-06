@@ -66,6 +66,14 @@ function rottaPerNotifica(data: Record<string, unknown>): string | null {
   if (data.type === 'message' && typeof data.conversation_id === 'string') {
     return dynamicRoutes.chat(data.conversation_id);
   }
+  // M6/DM5: commento/reply su un mio drop → dettaglio S3 (payload {drop_id, comment_id}).
+  if (data.type === 'drop_comment' && typeof data.drop_id === 'string') {
+    return dynamicRoutes.drop(data.drop_id);
+  }
+  // DM7 (§16.2): "tema del giorno" → composer (S2), che mostra il tema in banner.
+  if (data.type === 'drop_prompt') {
+    return ROUTES.dropNuovo;
+  }
   if (data.type === 'friend_request' || data.type === 'friend_accepted') {
     return ROUTES.amici;
   }

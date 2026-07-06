@@ -16,6 +16,7 @@ import { CategoryBar } from '@/components/feed/CategoryBar';
 import { FeedCard } from '@/components/feed/FeedCard';
 import { FeedLiveCard } from '@/components/feed/FeedLiveCard';
 import { ComingSoon } from '@/components/feed/ComingSoon';
+import { DropFeed } from '@/components/drops/DropFeed';
 import { FEED_ITEMS } from '@/constants/feedItems';
 import { DEFAULT_FEED_CATEGORY, type FeedCategoryKey } from '@/constants/feed';
 import { colors, spacing } from '@/constants/theme';
@@ -27,13 +28,19 @@ export default function Home() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <HomeHeader />
       <CategoryBar selected={category} onSelect={setCategory} />
-      <ScrollView
-        style={styles.flex}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <FeedBody category={category} />
-      </ScrollView>
+      {/* Drops (S1): FlatList paginata a tutta altezza — NON dentro la ScrollView
+          (una lista virtualizzata non si annida in uno scroll con lo stesso asse). */}
+      {category === 'drops' ? (
+        <DropFeed />
+      ) : (
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <FeedBody category={category} />
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -53,13 +60,8 @@ function FeedBody({ category }: { category: FeedCategoryKey }) {
         </View>
       );
     case 'drops':
-      return (
-        <ComingSoon
-          icon="flash-outline"
-          title="I Drop arrivano presto"
-          subtitle="Momenti effimeri che durano 24h. Niente vetrine, solo l'istante: quello che c'è ora e poi svanisce."
-        />
-      );
+      // Reso a tutta altezza fuori dalla ScrollView (vedi sopra): qui è un no-op.
+      return null;
     case 'live':
       return (
         <ComingSoon

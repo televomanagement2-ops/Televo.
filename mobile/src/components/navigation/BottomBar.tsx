@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useUnreadTotale } from '@/hooks/useChat';
+import { useCreaMenuStore } from '@/store/creaMenuStore';
 import { colors, fontFamily, radius, spacing } from '@/constants/theme';
 
 // Mappa nome-rotta → icone Ionicons (attiva/inattiva).
@@ -47,13 +48,17 @@ export function BottomBar({ state, navigation }: BottomTabBarProps) {
         {state.routes.map((route, index) => {
           const focused = state.index === index;
 
-          // Il "crea" è il bottone centrale: quadrato glass grigio chiaro.
+          // Il "crea" è il bottone centrale: quadrato glass grigio chiaro. NON
+          // naviga più (R-16): apre il menu di creazione (S0, MenuCrea).
           if (route.name === 'crea') {
             return (
               <View key={route.key} style={styles.slot}>
                 <Pressable
                   style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
-                  onPress={() => go(route.key, route.name, focused)}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    useCreaMenuStore.getState().open();
+                  }}
                   hitSlop={6}
                 >
                   <Ionicons name="add" size={28} color="#ffffff" />

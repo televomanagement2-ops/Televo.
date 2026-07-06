@@ -57,6 +57,10 @@ interface Props {
   onAttach?: () => void;
   /** Foto selezionata (CM5): barra-anteprima sopra l'input, invio col bottone. */
   mediaPreview?: MediaPreview | null;
+  /** Riferimento a un drop precompilato (DM5, "Rispondi in privato"): chip sopra
+   *  l'input; il prossimo messaggio lo porta con sé (anche senza testo). */
+  dropRefPreview?: { text: string } | null;
+  onCancelDropRef?: () => void;
   // --- Vocali (M2) ---
   /** Avvia la registrazione (tap sul microfono). */
   onStartRecording?: () => void;
@@ -88,6 +92,8 @@ export function Composer({
   onCancelEdit,
   onAttach,
   mediaPreview,
+  dropRefPreview,
+  onCancelDropRef,
   onStartRecording,
   onStopRecording,
   isRecording,
@@ -104,8 +110,9 @@ export function Composer({
   }
 
   const hasText = value.trim().length > 0;
-  // Con una foto in anteprima l'invio è sempre possibile (caption opzionale).
-  const canSendText = (hasText || !!mediaPreview) && !sending;
+  // Con una foto in anteprima O un drop da inoltrare l'invio è sempre possibile
+  // (caption/nota opzionale).
+  const canSendText = (hasText || !!mediaPreview || !!dropRefPreview) && !sending;
 
   return (
     <View style={styles.wrap}>
@@ -154,6 +161,22 @@ export function Composer({
         </View>
       ) : null}
 
+      {dropRefPreview && !editing && !mediaPreview && !audioPreview && !isRecording ? (
+        // --- Drop precompilato (DM5, "Rispondi in privato") ---
+        <View style={styles.replyBar}>
+          <Ionicons name="sparkles-outline" size={16} color={colors.accent} />
+          <View style={styles.replyBody}>
+            <Text style={styles.replyAuthor}>Rispondi al drop</Text>
+            <Text style={styles.replyText} numberOfLines={1}>
+              {dropRefPreview.text}
+            </Text>
+          </View>
+          <Pressable onPress={onCancelDropRef} hitSlop={8}>
+            <Ionicons name="close" size={18} color={colors.muted} />
+          </Pressable>
+        </View>
+      ) : null}
+
       {audioPreview ? (
         // --- Anteprima vocale registrato ---
         <View style={styles.row}>
@@ -192,7 +215,10 @@ export function Composer({
         // --- Idle: graffetta allegati + input testo + microfono / invio ---
         // In MODIFICA niente allegati né mic: si edita solo il testo (RC-05).
         <View style={styles.row}>
-          {!editing ? (
+          {/* La graffetta compare solo se il chiamante gestisce gli allegati
+              (chat). I commenti drop (DM3) riusano il Composer senza foto: non
+              passano onAttach → niente pulsante, testo + vocale soltanto. */}
+          {!editing && onAttach ? (
             <Pressable
               onPress={onAttach}
               style={({ pressed }) => [styles.attachBtn, pressed && styles.pressed]}
@@ -205,13 +231,19 @@ export function Composer({
           <TextInput
             value={value}
             onChangeText={onChangeText}
-            placeholder={mediaPreview ? 'Didascalia…' : 'Scrivi un messaggio…'}
+            placeholder={
+              mediaPreview
+                ? 'Didascalia…'
+                : dropRefPreview
+                  ? 'Scrivi qualcosa, se vuoi…'
+                  : 'Scrivi un messaggio…'
+            }
             placeholderTextColor={colors.faint}
             selectionColor={colors.accent}
             style={styles.input}
             multiline
           />
-          {hasText || editing || mediaPreview ? (
+          {hasText || editing || mediaPreview || dropRefPreview ? (
             <Pressable
               onPress={onSend}
               disabled={!canSendText}

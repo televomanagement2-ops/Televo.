@@ -22,7 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { StatoErrore } from '@/components/ui/StatoErrore';
-import { useConversations, useForwardMessages } from '@/hooks/useChat';
+import { useConversations, useForwardDropRef, useForwardMessages } from '@/hooks/useChat';
 import { useChatStore } from '@/store/chatStore';
 import { avvisa } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
@@ -34,35 +34,52 @@ export default function Inoltra() {
   const router = useRouter();
   const forwardDraft = useChatStore((s) => s.forwardDraft);
   const setForwardDraft = useChatStore((s) => s.setForwardDraft);
+  // DM5: inoltro di un DROP come riferimento (drop_ref), alternativo ai messaggi.
+  const forwardDropRef = useChatStore((s) => s.forwardDropRef);
+  const setForwardDropRef = useChatStore((s) => s.setForwardDropRef);
   const conversazioni = useConversations('active');
   const forward = useForwardMessages();
+  const forwardDrop = useForwardDropRef();
+  const isPending = forward.isPending || forwardDrop.isPending;
   // Destinazione in corso (spinner sulla riga giusta).
   const [destinazione, setDestinazione] = useState<string | null>(null);
 
   // Rotta aperta senza selezione (deep link a mano, stato perso): si torna via.
   useEffect(() => {
-    if (!forwardDraft || forwardDraft.length === 0) router.back();
+    const vuoto = (!forwardDraft || forwardDraft.length === 0) && !forwardDropRef;
+    if (vuoto) router.back();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al mount
   }, []);
 
+  const isDrop = !!forwardDropRef;
   const count = forwardDraft?.length ?? 0;
+  const titolo = isDrop
+    ? 'Inoltra un drop'
+    : `Inoltra ${count === 1 ? '1 messaggio' : `${count} messaggi`}`;
+
+  const annulla = () => {
+    setForwardDraft(null);
+    setForwardDropRef(null);
+  };
 
   const inoltraVerso = (conv: ConversationPreview) => {
-    if (!forwardDraft || forward.isPending) return;
+    if (isPending) return;
     setDestinazione(conv.id);
-    forward.mutate(
-      { destConvId: conv.id, messages: forwardDraft },
-      {
-        onSuccess: (destId) => {
-          setForwardDraft(null);
-          router.replace(dynamicRoutes.chat(destId));
-        },
-        onError: (e) => {
-          setDestinazione(null);
-          avvisa('Ops', chatErrorMessage(e));
-        },
-      },
-    );
+    const onSuccess = (destId: string) => {
+      annulla();
+      router.replace(dynamicRoutes.chat(destId));
+    };
+    const onError = (e: unknown) => {
+      setDestinazione(null);
+      avvisa('Ops', chatErrorMessage(e));
+    };
+
+    if (forwardDropRef) {
+      forwardDrop.mutate({ destConvId: conv.id, dropId: forwardDropRef }, { onSuccess, onError });
+      return;
+    }
+    if (!forwardDraft) return;
+    forward.mutate({ destConvId: conv.id, messages: forwardDraft }, { onSuccess, onError });
   };
 
   return (
@@ -70,16 +87,14 @@ export default function Inoltra() {
       <View style={styles.header}>
         <Pressable
           onPress={() => {
-            setForwardDraft(null);
+            annulla();
             router.back();
           }}
           hitSlop={10}
         >
           <Ionicons name="chevron-back" size={26} color={colors.ink} />
         </Pressable>
-        <Text style={styles.title}>
-          Inoltra {count === 1 ? '1 messaggio' : `${count} messaggi`}
-        </Text>
+        <Text style={styles.title}>{titolo}</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -105,7 +120,7 @@ export default function Inoltra() {
                 key={c.id}
                 style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
                 onPress={() => inoltraVerso(c)}
-                disabled={forward.isPending}
+                disabled={isPending}
               >
                 <Avatar uri={c.avatarUrl} name={c.title ?? 'Chat'} size={44} />
                 <View style={styles.rowText}>
@@ -116,7 +131,7 @@ export default function Inoltra() {
                     {c.type === 'dm' ? 'Chat diretta' : 'Gruppo'}
                   </Text>
                 </View>
-                {forward.isPending && destinazione === c.id ? (
+                {isPending && destinazione === c.id ? (
                   <ActivityIndicator color={colors.accent} />
                 ) : (
                   <Ionicons name="arrow-redo-outline" size={20} color={colors.faint} />

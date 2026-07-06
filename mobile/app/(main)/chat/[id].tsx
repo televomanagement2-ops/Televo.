@@ -26,6 +26,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 import { Audio } from 'expo-av';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -62,6 +63,7 @@ import {
 import { usePeerPresence, presenceLabel } from '@/hooks/usePresenza';
 import { useChatStore } from '@/store/chatStore';
 import { giveMessageProp, previewText, reportMessage } from '@/lib/chat';
+import { dropKeys, fetchDropDetail } from '@/lib/drops';
 import { avvisa, conferma, mostraMenu, type VoceMenu } from '@/lib/dialoghi';
 import { useOnline } from '@/lib/rete';
 import {
@@ -136,6 +138,22 @@ export default function Chat() {
   const editing = useChatStore((s) => s.editing[convId] ?? null);
   const setEditing = useChatStore((s) => s.setEditing);
   const setForwardDraft = useChatStore((s) => s.setForwardDraft);
+  // DM5 ("Rispondi in privato"): drop precompilato nel composer di questa DM.
+  const pendingDropRef = useChatStore((s) => s.pendingDropRef[convId] ?? null);
+  const setPendingDropRef = useChatStore((s) => s.setPendingDropRef);
+  // Anteprima del drop per la chip del composer (cache condivisa col dettaglio S3).
+  const pendingDropQ = useQuery({
+    queryKey: dropKeys.detail(pendingDropRef ?? ''),
+    queryFn: () => fetchDropDetail(pendingDropRef as string),
+    enabled: !!pendingDropRef,
+    staleTime: 5 * 60_000,
+  });
+  const dropRefPreview = useMemo(() => {
+    if (!pendingDropRef) return null;
+    const d = pendingDropQ.data;
+    const nome = d ? d.author.display_name?.trim() || d.author.username : null;
+    return { text: nome ? `Drop di ${nome}` : 'Drop' };
+  }, [pendingDropRef, pendingDropQ.data]);
 
   // Segna letto all'apertura. `mutate` di react-query è stabile.
   const markReadMutate = markRead.mutate;
@@ -271,6 +289,7 @@ export default function Chat() {
           expires_at: null,
           edited_at: null,
           forwarded_from: null,
+          drop_ref: o.dropRef,
           created_at: o.createdAt,
           deleted_at: null,
         } as MessageRow,
@@ -601,12 +620,16 @@ export default function Chat() {
       return;
     }
 
-    if (!body) return;
+    // DM5: con un drop precompilato ("Rispondi in privato") si può inviare anche
+    // senza testo (solo il riferimento). drop_ref e reply si escludono (il trigger
+    // li rifiuta insieme): mando reply null quando c'è un drop.
+    if (!body && !pendingDropRef) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     // Ottimistico: bolla immediata, input libero subito (anche offline → pending).
-    outboxApi.sendText(body, reply?.id ?? null);
+    outboxApi.sendText(body, pendingDropRef ? null : reply?.id ?? null, pendingDropRef);
     clearDraft(convId);
     setReplyTo(convId, null);
+    if (pendingDropRef) setPendingDropRef(convId, null);
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
@@ -1047,6 +1070,8 @@ export default function Chat() {
               ? { uri: fotoPreview.uri, onDiscard: () => setFotoPreview(null) }
               : null
           }
+          dropRefPreview={dropRefPreview}
+          onCancelDropRef={() => setPendingDropRef(convId, null)}
           onStartRecording={handleStartRec}
           onStopRecording={handleStopRec}
           isRecording={isRecording}

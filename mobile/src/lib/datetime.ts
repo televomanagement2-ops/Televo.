@@ -85,3 +85,39 @@ export function tempoRimanente(expiresAtIso: string): string {
   const ore = Math.floor(sec / 3600);
   return `scade tra ${ore}h`;
 }
+
+/**
+ * Tempo relativo CALIBRATO per la Mappa (M7 / MM8): "ora" / "5 min fa" / "2h fa"
+ * / "ieri" / "3g fa". A differenza di `tempoRelativo` (che lavora su ISO + ora
+ * locale del device) prende DUE epoch-ms UTC — l'istante `tsMs` e il "now" GIÀ
+ * calibrato su `server_now` (map.md §8): un orologio sballato non falsa il
+ * risultato. Seguiamo la convenzione del repo (formattazione IT a mano, niente
+ * Intl: Hermes su Android ha ICU parziale — vedi testata di questo file), non il
+ * meccanismo Intl suggerito nella spec: stesso risultato utente, zero rischio.
+ */
+export function tempoRelativoCalibrato(tsMs: number, nowMs: number): string {
+  const sec = Math.max(0, Math.round((nowMs - tsMs) / 1000));
+  if (sec < 45) return 'ora';
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} min fa`;
+  const ore = Math.floor(sec / 3600);
+  if (ore < 24) return `${ore}h fa`;
+  const giorni = Math.floor(ore / 24);
+  return giorni === 1 ? 'ieri' : `${giorni}g fa`;
+}
+
+/**
+ * Residuo COMPATTO per il countdown della Mappa (M7): "3h 42m" / "42m" / "<1m".
+ * Prende un epoch ms UTC (map_presence.sharing_until convertito): niente ora
+ * locale nei calcoli, solo differenza di istanti. ≤0 → "scaduta".
+ */
+export function residuoCompatto(untilMs: number): string {
+  const sec = Math.round((untilMs - Date.now()) / 1000);
+  if (sec <= 0) return 'scaduta';
+  const totMin = Math.floor(sec / 60);
+  const ore = Math.floor(totMin / 60);
+  const min = totMin % 60;
+  if (ore > 0) return `${ore}h ${min}m`;
+  if (totMin > 0) return `${totMin}m`;
+  return '<1m';
+}

@@ -4,7 +4,35 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-06 (M6 Drops chiuso: DM0–DM7)
+> **Ultimo aggiornamento:** 2026-07-09 notte (**M12 Live: LM0 FATTO** — enum +
+> fondamenta dominio LIVE sul remoto: **56 migrazioni** (55–56 via pooler:
+> `live_enums` + `live_foundation`), tabelle `lives`/`live_hosts`/`live_viewers`/
+> `live_comments` con RLS + grant per-colonna (contatori PRIVATI a livello dati),
+> `can_see_live` (L-3 unione host attivi; top_friends = solo cerchia host
+> principale; kickati/rimossi/bloccati fuori), macchina a stati nel trigger
+> (`ended` immutabile), tetto 4 host, rate-limit commenti 5/30s, 8 RPC base,
+> `moderation_target_user` v3, realtime `live_comments`. pgTAP **468/468** SUL
+> REMOTO + smoke funzionale **62/62** rolled-back (8 utenti sintetici). Tipi TS
+> aggiornati, `tsc` pulito. Nessuna Edge nuova → coda deploy-owner invariata.
+> Prossimo: **LM1** (mappa backend, badge LIVE) su comando PO. In giornata anche:
+> M12 spec+piano ufficiale SCRITTO (`docs/live/live.md` Rev. 1, LM0–LM8,
+> decisioni PO L-1..L-4) e M7 Mappa **MM9 implementato lato codice —
+> MODULO MAPPA CHIUSO lato sviluppo (MM0–MM9)**. MM9 = Safe Zone UI + polish +
+> chiusura. Editor Safe Zone dal **long-press** sulla mappa (centro dal punto,
+> cerchio di anteprima live, nome a chip/testo, raggio a preset 100/200/350/500m —
+> **QA-3 risolta verso i preset** per robustezza in-Modal e accessibilità); **lista
+> Zone sicure** con elimina in `impostazioni/posizione.tsx` (legge dallo snapshot →
+> funziona anche in Expo Go); **stati vuoto/errore** sulla mappa (copy della lente
+> + banner "mappa non aggiornata"); **accessibilità** (ruoli/label su aure, bolle,
+> cluster, "tu", chip, cestino zona; hitSlop). Nuovi file: `lib/geo.ts`
+> (`cerchioGeoJSON`), `hooks/useSafeZones.ts`, `components/mappa/{ZonesLayer,
+> SafeZoneEditor}.tsx`; +wrapper RPC `creaSafeZone`/`eliminaSafeZone` in `lib/map.ts`.
+> Nessuna migrazione (RPC `map_set_safe_zone`/`map_delete_safe_zone` e `me.zones`
+> nello snapshot erano già live da MM0/MM2). `docs/map/MANUAL-TESTING.md` scritto;
+> `CLAUDE.md` §5/§6 aggiornati (**regola d'oro posizione QA-7**: friends-only,
+> opt-in, auto-expiry, esatta di default + coarse su scelta Safe Zone). tsc/eslint
+> verdi. ⏳ Resta la 1ª Dev Build EAS + verifica on-device 2 device del flusso Safe
+> Zone/masking = azione owner)
 
 ---
 
@@ -72,7 +100,9 @@ moderazione + safety · economia Vibes (simbolica attiva, Stripe inerte) · GDPR
 
 App in `mobile/`. Stack: Expo SDK 55 · React Native 0.84 (New Architecture) ·
 TypeScript strict · Expo Router · NativeWind v4 · Zustand · TanStack Query ·
-Reanimated v4 · LiveKit · react-native-maps. Navigazione **file-based**.
+Reanimated v4 · LiveKit · **MapLibre** (`@maplibre/maplibre-react-native`, mappa M7 —
+richiede Dev Build EAS) · **Skia** (`@shopify/react-native-skia`, aure mappa MM8) ·
+**supercluster** (clustering mappa). Navigazione **file-based**.
 
 **✅ Fatto — 14 file riempiti:**
 
@@ -379,11 +409,235 @@ contatori privati (anti-vanity a livello dati).
 - **Verifica:** drop effimero 24h; reaction → prop all'autore; tema del giorno
   una-volta-al-giorno ai soli attivi.
 
-### 🗺️ M7 — Mappa Vibe
-*Obiettivo: live e Aura amici sulla mappa.* **Richiede Mapbox token + Dev Build.**
-- `(tabs)/mappa.tsx` + `mappa/index.tsx` (react-native-maps, dark), `BollaLive`,
-  `AuraPin`; `src/hooks/useMappa.ts` (view `vibe_map`); opt-in `share_location`.
-- **Verifica:** solo amici visibili; posizione coarse, opt-in revocabile.
+### 🗺️ M7 — La Mappa della Città
+Spec+piano ufficiale: `docs/map/map.md` (Rev. 1, milestone MM0–MM9). Mappa
+solo-amici a tre stati (Live / Echo 12h / Last Seen 24h), posizione esatta di
+default + Safe Zone opzionale, PostGIS + realtime inbox, MapLibre + OpenFreeMap
+(niente Mapbox: nessun token) + Skia. **Richiede Dev Build EAS.** Sostituisce e
+depreca la Mappa Vibe di Fase 5 (`vibe_map`/`live_presence`/geohash → drop in
+MM1).
+- ✅ **MM0 fatto** (2026-07-07): fondamenta backend. **51ª migrazione** live
+  (`20260707120000_map_v2_foundation`, via pooler): **PostGIS 3.3.7** attivo
+  (prima estensione "pesante"), tabelle `map_presence`/`map_events`/
+  `map_safe_zones` (`extensions.geography(point,4326)`, GIST + unique parziale
+  "una bolla live per stanza"), RLS senza policy sulle tabelle di posizione
+  (lettura solo via RPC, arriva in MM2), helper `can_see_on_map`, trigger cap-2
+  zone, **kill-switch atomico** (trigger su `profiles.share_location`) e 5 RPC di
+  scrittura (`map_start_sharing`/`map_stop_sharing`/`map_publish_location` con
+  masking+rate-limit 20s/`map_set_safe_zone`/`map_delete_safe_zone`). Masking Safe
+  Zone PRIMA della persistenza (il punto esatto in-zona non tocca il disco). pgTAP
+  **347/347** sul remoto (+49 MM0) + smoke funzionale 27/27 (rolled-back). Tipi TS
+  aggiornati a mano; `tsc` pulito. Nessuna Edge nuova → coda deploy-owner invariata.
+- ✅ **MM1 fatto** (2026-07-07): legacy Fase 5 deprecato in blocco. **52ª
+  migrazione** live (`20260707130000_map_legacy_out`, via pooler, **ATOMICA**):
+  `expire_content` **v6** (auto-expiry TTL di `map_presence`/`map_events` + cintura
+  difensiva che chiude gli eventi `room_live` di stanze non più live → Echo 12h) e
+  `process_account_deletion` **v6** (cancella `map_presence`/`map_events`/
+  `map_safe_zones` dell'utente) ridefinite nella STESSA transazione del DROP di
+  `vibe_map`/`live_presence`/`room_locations` e delle RPC geohash (`update_presence`/
+  `clear_presence`/`set_room_location`) — la transazionalità è l'unica protezione
+  del cron `expire-content` a 5 min (§13.4). `profiles.share_location` RESTA
+  (kill-switch). Verificato: cron `expire-content` verde dopo il drop, pgTAP
+  **353/353** sul remoto (+6 netto MM1), tipo `vibe_map` rimosso dai tipi TS
+  (`tsc` pulito). Nessuna Edge nuova → coda deploy-owner invariata.
+- ✅ **MM2 fatto** (2026-07-07): stanze sulla mappa + porta di lettura. **53ª
+  migrazione** live (`20260707140000_map_rooms_snapshot`, via pooler): trigger
+  `rooms_map_close_events_trg` (AFTER UPDATE OF status: una stanza che LASCIA
+  `live` chiude i suoi `map_events` → `ended_at=now()`, Echo `+12h` — **via
+  primaria**, la cintura difensiva in `expire_content` v6 resta la rete a 5 min);
+  RPC `map_attach_room` (solo host di stanza live + sessione attiva con fix,
+  bolla = posizione host masked-aware, title denormalizzato, idempotente
+  sull'unique parziale) / `map_detach_room` (DELETE = revoca, niente Echo);
+  **`map_snapshot()`** = LA porta di lettura, ritorna `{server_now, me, friends[],
+  events[]}` con timestamp UTC GREZZI (stati Live/Echo/LastSeen derivati dal
+  client) filtrata server-side da `can_see_on_map` → un estraneo non vede NULLA;
+  lat/lng estratti da geography via cast `::extensions.geometry` + `st_x`/`st_y`.
+  pgTAP **371/371** sul remoto (+18 MM2) + smoke funzionale **28/28** (rolled-back:
+  attach visibile all'amico e non all'estraneo, detach→sparizione, fine stanza→
+  Echo a +12h, masking nel snapshot, coppia bloccata invisibile, guardrail
+  not_room_host/room_not_live/no_active_session). `expire_content()` verificato
+  ancora verde col nuovo trigger. Tipi TS aggiornati a mano (`tsc` pulito).
+  Nessuna Edge nuova → coda deploy-owner invariata.
+- ✅ **MM3 fatto** (2026-07-08): realtime inbox privata + fan-out server-side.
+  **54ª migrazione** live (`20260707150000_map_realtime`, via pooler). Verificato
+  PRIMA sull'hosted (rischio §18.3): `realtime.send(payload,event,topic,private)`
+  e `realtime.topic()` esistono; `realtime.messages` ha RLS attiva senza policy;
+  `postgres` (owner delle funzioni definer) è **BYPASSRLS** e membro di
+  `supabase_realtime_admin` → può scrivere in `realtime.messages` (fan-out) e
+  creare policy; `authenticated` ha già SELECT sulla tabella. Contenuti: (1) policy
+  **`map_inbox_select_own`** su `realtime.messages` (SELECT, authenticated) che lega
+  `realtime.topic()` a `map:u:{auth.uid()}` → nessuno legge l'inbox altrui, nessuna
+  policy INSERT ⇒ il client non può inviare broadcast; (2) helper interno
+  **`map_fanout(owner,event,payload)`** che invia via `realtime.send()` alle inbox
+  `map:u:{amico}` dei soli amici `accepted` (grafo letto al momento dell'invio →
+  revoca/blocco = stop broadcast per costruzione); (3) fan-out cablato in
+  `map_publish_location` (**presence** solo se primo fix / spostamento >~30m via
+  `st_distance` / cambio masked), `map_stop_sharing` (**presence_removed** +
+  **event_ended** removed), `map_attach_room` (**event_started** solo su insert
+  reale), `map_detach_room` (**event_ended** removed), trigger
+  `rooms_map_close_events` (**event_ended** removed=false = Echo +12h) e
+  `profiles_map_kill_switch` (**presence_removed**). `realtime.send` auto-cattura gli
+  errori come WARNING → un fan-out fallito non rompe mai l'azione utente (snapshot =
+  verità). pgTAP **388/388** sul remoto (+17 MM3) + smoke funzionale **19/19**
+  (rolled-back: presence/started/ended/Echo/removed vanno SOLO all'amico, mai a
+  estraneo/bloccato; ricezione: l'owner legge la propria inbox, l'estraneo no).
+  Nessun cron né Edge nuovi → coda deploy-owner invariata; nessuna nuova superficie
+  client → tipi TS invariati.
+- ✅ **MM4 fatto** (2026-07-08): GDPR + chiusura backend mappa. **Nessuna
+  migrazione nuova** (lo schema/lifecycle/GDPR-deletion erano già completi:
+  `process_account_deletion` v6 in MM1 cancella già le 3 tabelle mappa; l'enum
+  `consent_type` ha già `'location'`). Contenuti: (1) **`gdpr-export` v4** —
+  aggiunte le sezioni `map_presence`/`map_events`/`map_safe_zones` all'export art.
+  15 (dati personali di posizione dell'utente; la geography passa dalla
+  serializzazione nativa PostgREST → GeoJSON; il consenso posizione è già in
+  `consents`); (2) **suite pgTAP consolidata** — blocco MM4 con l'invariante del
+  consenso dedicato (`consent_type='location'`) e le 3 guardie di **hard-delete**
+  (FK `map_*`→`profiles` ON DELETE CASCADE: la retention 30gg non lascia posizioni
+  orfane). pgTAP **392/392** sul remoto (+4 MM4) + **smoke MM4 12/12** via pooler
+  (rolled-back): consenso `location` registrato ed esportabile; le 3 SELECT
+  dell'export restituiscono le righe dell'utente col masking Safe Zone; estraneo
+  isolato; `process_account_deletion` svuota OGNI tabella mappa e anonimizza il
+  profilo (consensi conservati come prova); `delete profiles` → cascade → zero
+  righe orfane. Verificato che `service_role` (l'`adminClient` dell'export) legge le
+  3 tabelle mappa (SELECT + REST 200). Nessun oggetto DB nuovo → tipi TS invariati.
+  ⚠️ **Coda deploy owner** (CLI 403): `gdpr-export` passa a **v4** (supera la v3
+  accodata in DM6), insieme a `storage-cleanup` e `send-push` v2.
+- ✅ **MM5 fatto (codice)** (2026-07-08): mobile — mappa base dark. **Primo modulo
+  nativo del progetto**: `@maplibre/maplibre-react-native@11.3.6` (peer OK: Expo 54 /
+  React 19.1 / RN 0.81, New-Arch/Fabric) installato; `app.json` con plugin
+  `@maplibre/maplibre-react-native` + `newArchEnabled: true`. Stile dark **custom** in
+  `src/constants/mapStyle.ts` (`StyleSpecification` tipizzato = fork compatto dello
+  stile OpenFreeMap "dark": source `openmaptiles`→`tiles.openfreemap.org/planet`,
+  glyphs/sprite OpenFreeMap, palette da `theme.ts`, **zero POI/transit**, toponimi
+  minimi, centro **Terni**). `src/components/mappa/MapSurface.tsx` (Map+Camera API
+  v11: `mapStyle` / `initialViewState{center,zoom}`, north-up = rotate/pitch/compass
+  off, attribuzione OSM overlay + info nativo, velo di carico in dissolvenza,
+  StatoErrore + retry) caricata via **React.lazy** da `MapCanvas.tsx` con **guard
+  Expo Go** (`Constants.appOwnership`) → in Expo Go pannello "serve Dev Build" e il
+  modulo nativo NON viene mai valutato (resto app intatto). Ramo `map` full-height in
+  `home.tsx` (pattern DropFeed, fuori dalla ScrollView); rimossi il vecchio
+  ComingSoon "Mappa Vibe" e i file vuoti `AuraPin`/`BollaLive` (nuova spec: mai un
+  pin). Verifica: `tsc`/`eslint` puliti + **bundle Metro (`expo export` android) OK**
+  con maplibre incluso. ⏳ **Resta (azione owner)**: prima **Dev Build EAS**
+  (`eas build --profile development`) + verifica on-device (pan/zoom fluidi 60fps).
+- ✅ **MM6 fatto (codice)** (2026-07-08): mobile — opt-in gestuale + pipeline
+  posizione. Nessuna migrazione (RPC MM0 già live). Scoperta chiave:
+  `profiles.share_location` ha **default false** → il primo opt-in lo accende PRIMA
+  di `map_start_sharing` (che esige `share_location=true`). `expo-location@19.0.8`
+  (incluso in Expo Go: la pipeline è testabile anche senza Dev Build; la mappa
+  MapLibre no). app.json: plugin `expo-location` (When-In-Use, no background/
+  foreground-service), permesso **ACCESS_FINE_LOCATION** (posizione esatta di
+  default), copy iOS aggiornata (via il plugin). Nuovi file: `lib/location.ts`
+  (permesso/one-shot/watcher `Balanced` 25m·30s/haversine), `lib/map.ts` (wrapper
+  `map_start_sharing`/`map_stop_sharing`/`map_publish_location` + persistenza sessione
+  in SecureStore per il resume post-cold-start, §3), `store/mapStore.ts` (sessione/
+  permesso/myCoords/problema), `hooks/useCondivisionePosizione.ts` = **hook UI**
+  (avvia/estendi/spegni, consenso `location`, permesso, kill-switch master) + **runtime
+  watcher** (montato in ChatRuntime, app-wide foreground): osserva SOLO con sessione
+  attiva + permesso + foreground, publish con **throttling adattivo** (movimento ≥30m
+  o heartbeat ~4.5min, sopra il rate-limit server 20s), auto-spegnimento alla scadenza
+  (resta Last Seen), errori server "sessione finita" → azzera il client.
+  Componenti mappa: `MeMarker` (puntino "tu" nativo `Marker` v11, tappabile — non
+  l'Aura Skia, che è MM8), `MapPresenceControl` (pill stato/azione con countdown),
+  `MapOnboarding` (consenso GDPR `record_consent('location')` + permesso OS, stato
+  "negato"→Impostazioni), `ShareSheet` (durate 1/4/8h · gestione sessione), integrati
+  in `MapSurface` (camera-follow sul primo fix + "centra su di me"). Kill-switch:
+  schermata `app/(main)/impostazioni/posizione.tsx` (master toggle + "Spegni ora",
+  raggiungibile anche in Expo Go) + voce menu + rotta. `mapErrorMessage` in errors.ts,
+  `residuoCompatto` in datetime.ts, `ProfilePatch.share_location`. tsc/eslint/**bundle
+  Metro (android)** verdi. ⏳ **Resta (azione owner)**: verifica on-device (riga
+  presence sul DB via pooler dopo l'avvio, masking se in zona, battery in 1h foreground).
+- ✅ **MM7 fatto (codice)** (2026-07-09): mobile — dati reali sulla mappa (snapshot +
+  realtime). Nessuna migrazione (map_snapshot MM2 + inbox MM3 già live). Modello §13.3:
+  **snapshot = verità** a `server_now`, **realtime = delta**; confluiscono nei dizionari
+  amici/eventi dello store; stati Live/Echo/LastSeen **derivati client** su UTC calibrato
+  (`clockOffsetMs`), mai fetchati. Nuovi file: `lib/map-realtime.ts` (**primo canale
+  PRIVATO** del progetto: `channel('map:u:{uid}',{config:{private:true}})` + `realtime.
+  setAuth()` prima del subscribe; 4 eventi broadcast `presence`/`presence_removed`/
+  `event_started`/`event_ended`; solo ricezione), `hooks/useMappa.ts` (snapshot `useQuery`
+  + merge delta nello store + **enrich refetch debounced** quando un delta riguarda un
+  amico/evento sconosciuto = "comparire senza refresh" + refetch a foreground/riconnessione
+  + **refetchInterval 3min in foreground** per la freshness di un amico FERMO — il backend
+  non fa fan-out sotto ~30m, MM3), `components/mappa/MapPoints.tsx` (dot amici colore
+  `aura_color` + bolle eventi con decadimento Echo; **funzionale, estetica finale = MM8**).
+  Esteso `store/mapStore.ts` (dizionari `friends`/`events` normalizzati, `idrataSnapshot`
+  full-replace, `applicaPresenza`/`rimuoviAmico`/`applicaEventoStart`/`chiudiEvento`/
+  `rimuoviEvento`, selettori puri `statoAmico`/`statoEvento`/`fattoreEcho`/`amicoVisibile`/
+  `nowCalibrato`) e `types/supabase.ts` (shape grezze snapshot + payload delta). Confine
+  MM6↔MM7: lo snapshot non tocca `sessione`/`myCoords` (device-driven MM6). `useMappa()` +
+  `<MapPoints/>` montati in `MapSurface` (solo con mappa aperta, Dev Build). tsc/eslint/
+  **bundle Metro (android)** verdi. ⏳ **Resta (azione owner)**: verifica on-device 2 device
+  amici (A accende→B lo vede senza refresh; A revoca→sparisce; stanza live→bolla; fine
+  stanza→echo; estraneo→nulla).
+- ✅ **MM8 fatto (codice)** (2026-07-09): mobile — **resa Aura definitiva (Skia) +
+  clustering**. Nessuna migrazione (lo snapshot MM2 già restituisce `aura_color`).
+  **DECISION GATE §13.5 risolto**: adottato DA SUBITO il fallback pre-approvato dal PO —
+  **Marker MapLibre NATIVI (position-tracking) + mini-canvas Skia per-aura**, invece del
+  canvas full-screen con proiezione per-frame. Motivo: elimina *per costruzione* il rischio
+  n.1 (desync canvas↔camera: i Marker sono ancorati nativamente, zero proiezione JS);
+  clustering cappa i punti visibili (~40) → nessun degrado "molti marker"; il gate on-device
+  non è eseguibile da qui (Windows) → si sceglie il ramo provabilmente corretto. Il **respiro**
+  NON ridisegna Skia per-frame: è transform Reanimated **nativo** su un wrapper (thread UI).
+  Il **clustering** si ricalcola solo a gesto fermo (`onRegionDidChange`) + `onRegionIsChanging`
+  throttlato 250ms → zero re-render durante il pan (Marker incollati). Nuovi pacchetti:
+  `@shopify/react-native-skia@2.2.12` (via `expo install`) + `supercluster@8`/`@types`. Nuovi
+  file: `lib/clustering.ts` (supercluster puro: indice friends, cluster per bbox/zoom, spiderfy
+  a ventaglio con offset px per punti coincidenti, expansion-zoom per tap→zoom),
+  `components/mappa/AuraGlyph.tsx` (primitiva Skia: bloom BlurMask + anello + core, STATICA),
+  `AuraDot.tsx` (aura amico live/last-seen), `LiveRoomBubble.tsx`/`EchoBubble.tsx` (bolle stanza:
+  pulse live / decadimento Echo **fucsia→viola→trasparente** continuo su UTC calibrato, rampa
+  opacità su `MAP_TICK_MS`), `AuraLayer.tsx` (orchestratore: driver respiro/pulse condivisi,
+  tick 30s, cluster/dot/bolle, tap→card, cluster→easeTo), `MapFriendCard.tsx` (bottom sheet:
+  aura + tempo relativo calibrato + azioni Profilo/Messaggio via `get_or_create_dm`; join stanza
+  differito → serve la UI Live M4). Aggiornati: `MapSurface` (viewport→clustering, selezione+card,
+  `MapPoints`→`AuraLayer`), `MeMarker` (ora AuraGlyph, respiro quando accesa), `datetime.ts`
+  (`tempoRelativoCalibrato` su epoch-ms UTC), `mapStore.ts` (`MAP_TICK_MS`). **Rimosso**
+  `MapPoints.tsx` (grezzo MM7). Import Skia confinati sotto il lazy boundary di `MapSurface`
+  (Expo Go intatto: `MapCanvas` non monta mai la superficie). tsc/eslint/**bundle Metro
+  (android)** verdi. ⏳ **Resta (azione owner)**: la Dev Build EAS ora deve includere **anche
+  Skia** (ricostruire); verifica on-device 60fps con ~50 punti + decadimento continuo + cluster
+  non sovrapposti (chiusura del decision gate su device — se laggy, il fallback è già quello
+  adottato).
+- ✅ **1ª Dev Build FATTA + mappa+Skia VERIFICATE on-device (2026-07-09)**: build **locale**
+  `expo run:android` (JDK 21 di Android Studio JBR; RN0.81 vuole 17 ma il 21 compila; prebuild
+  `--clean` per autolinkare Skia/MapLibre/expo-location) → APK su device fisico (`BUILD
+  SUCCESSFUL 1m30s`). ⚠️⚠️ **GOTCHA CRITICO MapLibre + Android New Architecture**: con la
+  GLSurfaceView di **default** la mappa era **grigia/bianca** (overlay RN visibili ma la
+  superficie GL NON composta → si vedeva lo sfondo chiaro della finestra dietro; *sia* lo stile
+  dark *sia* un test rosso apparivano grigi). **FIX = `androidView="texture"` su `<Map>`**
+  (TextureView compone in-hierarchy) → mappa dark OpenFreeMap + **AuraGlyph Skia** rendono
+  perfettamente (Skia on-device confermato; aura "tu" blu che pulsa). Il log `Mbgl-HttpRequest
+  ... Canceled` era la surface non pronta, non un blocco di rete. tsc/eslint puliti.
+- ✅ **MM9 fatto (codice)** (2026-07-09): mobile — **Safe Zone UI + polish + chiusura
+  modulo**. Nessuna migrazione (le RPC `map_set_safe_zone`/`map_delete_safe_zone` sono
+  live da MM0 e lo snapshot `me.zones` estrae già lat/lng). **Editor Safe Zone dal
+  long-press** su `<Map>` (`onLongPress` → `nativeEvent.lngLat`): centro sul punto
+  premuto, camera-center + haptic, **cerchio di anteprima** che scala coi metri
+  (`GeoJSONSource`+`Layer` fill/line, poligono da `lib/geo.ts`→`cerchioGeoJSON`), nome
+  a chip suggerite (Casa/Lavoro/Palestra) o testo libero, raggio a **preset
+  100/200/350/500m** (**QA-3 risolta verso i preset**, non lo slider: zero gesture
+  in-Modal, targhe grandi, accessibile, e il cerchio live mostra la copertura); velo
+  leggero così l'anteprima resta visibile. Salvataggio via RPC + invalida lo snapshot
+  → il cerchio salvato (sobrio, **solo io lo vedo**) appare sulla mia mappa. Cap 2
+  gate sul long-press (avviso "Zone al completo") oltre al server. **Lista Zone sicure**
+  con elimina in `app/(main)/impostazioni/posizione.tsx` (via `useSafeZones`, che legge
+  dallo snapshot condiviso → **funziona anche in Expo Go**, senza mappa nativa). **Stati
+  vuoto/errore** in `MapSurface` (map.md §9): card "La tua lente sugli amici" quando non
+  ci sono amici/eventi visibili (con hint del long-press) + banner "Mappa non aggiornata ·
+  Tocca per riprovare" sull'errore snapshot; la mappa resta usabile. **Accessibilità**:
+  ruoli/label su aure amici (nome + stato), bolle live/echo, cluster ("N amici vicini"),
+  Aura "tu", chip e cestino zona; hitSlop ≥ area comoda. Nuovi file: `lib/geo.ts`,
+  `hooks/useSafeZones.ts`, `components/mappa/{ZonesLayer,SafeZoneEditor}.tsx`; +wrapper
+  `creaSafeZone`/`eliminaSafeZone` in `lib/map.ts`. `docs/map/MANUAL-TESTING.md` scritto
+  (scenari 2-device, permessi, Safe Zone+masking via DB, fusi simulati, privacy DoD).
+  `CLAUDE.md` §5 (Fase 5 → sostituita da M7) e §6 (**regola d'oro posizione QA-7**)
+  aggiornati. tsc/eslint verdi. ⏳ **Resta (azione owner)**: verifica on-device 2 device
+  del flusso Safe Zone (creazione → publish successivo mascherato: DB `map_presence.masked`
+  + `location`=centro-zona; l'amico vede "In zona").
+- **MODULO MAPPA (M7) CHIUSO lato sviluppo: MM0–MM4 backend + MM5–MM9 mobile.** ⏭️ Restano
+  solo verifiche on-device (azione owner) e la coda deploy-owner Edge (`gdpr-export` v4).
+- **Verifica:** solo amici visibili; opt-in gestuale revocabile all'istante;
+  criteri per milestone in `docs/map/map.md`.
 
 ### 🔔 M8 — Notifiche push (in-app)
 - ✅ `src/lib/expo-push.ts` + `src/hooks/useNotifiche.ts` + richiesta permessi:
@@ -406,13 +660,59 @@ contatori privati (anti-vanity a livello dati).
   (`gdpr-export`), elimina account (`gdpr-delete`).
 - **Verifica:** export scarica i dati; delete anonimizza subito.
 
+### 🔴 M12 — Live (broadcast video personale)
+Spec+piano ufficiale: `docs/live/live.md` (Rev. 1, milestone LM0–LM8; scritto
+2026-07-09, decisioni PO L-1..L-4). Live = broadcast video in prima persona,
+**solo-amici** (in Co-Live: unione degli amici degli host attivi), stati
+espliciti `live/paused/ended` a DB, commenti effimeri moderati (Perspective +
+auto-mute), report via sistema esistente (`moderation_target` esteso),
+notifiche di avvio **a tutti gli amici di default** (decisione PO "stile
+TikTok", toggle per abbassare), Aura `participation` a rendimenti decrescenti
+per live qualificate (≥5 min, ≥1 spettatore reale), badge LIVE sulla mappa M7
+(anello rosso + callout, decadimento 3h via pattern Echo, opt-in + masked-aware).
+Dominio NUOVO `lives`/`live_hosts`/`live_viewers`/`live_comments` che **COESISTE**
+con le Stanze audio (`rooms`, M4). Riuso massiccio: `can_see_live` su
+`are_friends`/`is_blocked_pair`, `enqueue_notification`, `emit_aura` 1/n,
+`map_events`+`map_fanout`+inbox `map:u:{uid}`, `livekit-token` estesa (mint=join),
+pattern drop_comments per i commenti realtime. Nuove Edge: `live-kick`,
+`livekit-webhook`; reti di sicurezza in `expire_content` v7 + GDPR v7/export v5.
+**Richiede Dev Build** (SDK `@livekit/react-native`).
+- ✅ **LM0 fatto** (2026-07-09): migrazioni 55–56 live via pooler
+  (`20260709120000_live_enums`: +5 valori enum su moderation_target/
+  notification_type/map_event_type · `20260709120100_live_foundation`).
+  Dominio: tabelle `lives` (unique parziale host attivo, `livekit_room_name`
+  dal trigger, `clip_consent` riservato) / `live_hosts` (tetto 4
+  invited+active) / `live_viewers` (fonte viewer_count + registro kick +
+  gancio 1:1 adulto-minore) / `live_comments` (testo ≤200, realtime
+  postgres_changes+RLS). `can_see_live` = UNICO predicato (host/co-host active
+  → sì; kickato/RIMOSSO → no, §0.4 risolto verso il meno aperto; bloccato con
+  alcun host attivo → no; all_friends = unione amici host ATTIVI L-3;
+  top_friends = solo cerchia host principale). Trigger: macchina a stati
+  (`ended` immutabile e terminale, toggle fotografati all'avvio, timestamp
+  forzati), cap 4, sync contatori (congelati a fine live), guardie commenti
+  (stato live + comments_enabled + rate-limit 5/30s per live). 8 RPC base
+  SECURITY DEFINER (create/pause/resume/end, invite/accept/remove cohost,
+  live_leave — pause/resume distinguono `live_already_ended` da
+  `invalid_transition`); contatori PRIVATI: viewer_count/peak_viewers FUORI
+  dal grant select per-colonna. `moderation_target_user` v3 (verbatim+add).
+  pgTAP 392→**468** (+76 LM0) verdi SUL REMOTO; smoke 62/62 rolled-back
+  (visibilità/blocchi/kick/unione L-3/top_friends/cap/rate-limit/stati).
+  Tipi TS a mano (+4 tabelle, +8 RPC, +5 alias) e `tsc` pulito. Nessuna Edge
+  nuova → coda deploy-owner invariata.
+- ⬜ **LM1–LM4 backend** (mappa backend badge LIVE → feed/fan-out/notifiche/
+  Aura → lifecycle+GDPR → Edge LiveKit); **LM5–LM8 mobile** (SDK+strato dati →
+  composer+schermo live host/spettatore → home feed striscia+verticale → badge
+  mappa + MANUAL-TESTING + chiusura). UNA milestone alla volta su comando PO.
+- **Verifica:** criteri per milestone e Definition of Done in `docs/live/live.md`
+  (§18–§20); QA aperte §22 (cap 8h, pausa 30 min, preview muta, soglie Aura).
+
 ### ♻️ Trasversale (continuo)
 Componenti UI residui (`Badge`, `BottomSheet`) · font (Inter, Clash Display) ·
 asset reali (icon/splash/logo anello) · stati loading/empty/error · accessibilità
 · config **EAS Dev Build** (sblocca LiveKit/Maps) · testing.
 
 ### 🚀 Pre-lancio (Terni, settembre 2026)
-Chiavi LiveKit · token Mapbox · `PERSPECTIVE_API_KEY` · build EAS produzione ·
+Chiavi LiveKit · `PERSPECTIVE_API_KEY` · build EAS produzione ·
 listing store · seed inviti scuole di Terni.
 
 ---

@@ -162,14 +162,19 @@ seguono quest'ordine.
 > decrescenti). "Numero di post / interazioni pubbliche" = drop + partecipazione
 > alle live, con rendimenti decrescenti.
 
-### Fase 5 — Mappa Vibe
-- `170000_map.sql` — **deviazione consapevole dal piano**: NON ho messo
-  `geohash5` su `rooms` (pubbliche → la posizione trapelerebbe a tutti). Invece
-  tabelle dedicate: `live_presence` ("sono in zona", effimera 15min, opt-in
-  `share_location`) e `room_locations` (posizione coarse della stanza solo mentre
-  è live). `geohash5` = ~5km. Vista **`vibe_map`** con `security_invoker = true`
-  → eredita la RLS **friends-only** delle tabelle base: un estraneo non vede
-  nulla. `expire_content()` esteso (v3) alla pulizia mappa.
+### Fase 5 — Mappa Vibe → **sostituita da M7 "La Mappa della Città"**
+- `170000_map.sql` (Mappa Vibe: `vibe_map` / `live_presence` / `room_locations`
+  + geohash coarse ~5km) è stata **deprecata e DROPpata** in M7/MM1
+  (`20260707130000_map_legacy_out.sql`, atomica con `expire_content` v6 e
+  `process_account_deletion` v6). Il dominio mappa vive ora in **M7** (spec+piano
+  `docs/map/map.md`, milestone MM0–MM9): tabelle `map_presence` / `map_events` /
+  `map_safe_zones` (PostGIS `extensions.geography(point,4326)`), **solo-amici**,
+  tre stati **Live / Echo (12h) / Last Seen (24h)** derivati client-side dai
+  timestamp UTC, posizione **esatta di default** + **Safe Zone** opzionale
+  (masking SERVER-SIDE prima della persistenza: il punto esatto in-zona non tocca
+  il disco), realtime **inbox privata** `map:u:{uid}` con fan-out server-side dal
+  grafo amici (`realtime.send()`), unica porta di lettura `map_snapshot()`;
+  client MapLibre + OpenFreeMap + Skia (richiede Dev Build EAS). MM0–MM9 completi.
 
 ### Fase 6 — Gamification & Notifiche
 - `180000_notifications.sql` — `devices` (token Expo multi-device, upsert via
@@ -253,7 +258,10 @@ Vincoli di safety minori + GDPR, validi su tutto:
   `profiles_private` (mai esposta). Maggiore età (18+) calcolata via `is_adult`.
 - **DM solo tra amici accettati**; blocchi reciproci a DB.
 - Voce dei minori **mai pubblica** (bucket privati + RLS path-based).
-- **Posizione** sempre coarse, effimera, **friends-only**, opt-in.
+- **Posizione** friends-only, opt-in, auto-expiry; **esatta di default**, coarse
+  su scelta (Safe Zone). Revoca istantanea = cancellazione fisica della riga;
+  mai visibile ai non-amici. (M7/QA-7: supera la vecchia regola "sempre coarse" —
+  la coarseness sopravvive come SCELTA dell'utente, non come default paternalistico.)
 - **Saldo reale gated 18+** a livello DB; i minori usano solo Vibes simboliche
   non monetizzabili. Le righe monetarie le scrive solo il server.
 - Token LiveKit / Stripe firmati **solo server-side**. `SERVICE_ROLE_KEY` e i

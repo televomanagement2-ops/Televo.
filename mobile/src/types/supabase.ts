@@ -40,8 +40,17 @@ export type NotificationType =
   | 'prop'
   | 'achievement'
   | 'drop_comment' // M6: commento/reply su un mio drop
-  | 'drop_prompt'; // DM7: "tema del giorno" (§16.2, notifica broadcast dosata)
-export type ModerationTarget = 'user' | 'room' | 'message' | 'drop' | 'drop_comment';
+  | 'drop_prompt' // DM7: "tema del giorno" (§16.2, notifica broadcast dosata)
+  | 'live_started' // M12: un amico ha avviato una live (default TUTTI, L-4)
+  | 'live_cohost_invite'; // M12: invito co-host
+export type ModerationTarget =
+  | 'user'
+  | 'room'
+  | 'message'
+  | 'drop'
+  | 'drop_comment'
+  | 'live' // M12: report sulla live (→ host principale)
+  | 'live_comment'; // M12: report sul singolo commento (→ autore)
 export type DropType = 'text' | 'audio' | 'media';
 // M6 (R-02, D-3): la "scuola" esce dal progetto → i drop sono SOLO friends.
 // La colonna resta a DB come punto di estensione (futuro 'circle').
@@ -49,6 +58,135 @@ export type DropAudience = 'friends';
 // Le reaction-tratto (gesto forte → prop → Aura): sottoinsieme di AuraEventType.
 export type DropReactionTrait = 'kindness' | 'humor' | 'welcoming' | 'contribution';
 export type FriendshipStatus = 'pending' | 'accepted' | 'blocked';
+// M7 (MM0) — tipo di evento georiferito sulla Mappa. M12 (LM0) aggiunge il
+// badge LIVE degli amici (attach/detach in LM1).
+export type MapEventType = 'room_live' | 'live_broadcast';
+// M12 (LM0) — Live: broadcast video personale solo-amici (docs/live/live.md).
+// Stati espliciti a DB (mai inferenza client); i toggle fotografano l'avvio.
+export type LiveStatus = 'live' | 'paused' | 'ended';
+export type LiveVisibility = 'all_friends' | 'top_friends';
+export type LiveNotifyMode = 'none' | 'top_friends' | 'all';
+export type LiveHostRole = 'host' | 'cohost';
+export type LiveHostStatus = 'invited' | 'active' | 'left' | 'removed';
+
+// =============================================================================
+// M7 (MM2/MM3) — Mappa v2: shape GREZZE restituite dal server (snapshot + delta
+// realtime). Timestamp UTC come stringhe ISO; il client li normalizza a epoch-ms
+// e deriva gli stati Live/Echo/LastSeen con un clock calibrato su `server_now`
+// (map.md §2/§8). Il server restituisce FATTI, mai stati. Fedeli ai payload delle
+// migrazioni 20260707140000_map_rooms_snapshot.sql e 20260707150000_map_realtime.sql.
+// =============================================================================
+
+/** Una Safe Zone dell'utente (solo nella propria vista: l'amico ne vede la maschera). */
+export interface MapZoneRaw {
+  id: string;
+  label: string;
+  radius_m: number;
+  lat: number;
+  lng: number;
+}
+
+/** `me` nello snapshot: stato della PROPRIA sessione + zone. Campi assenti finché
+ *  non ho mai condiviso (sharing_until null). lat/lng possono essere null (nessun fix). */
+export interface MapMeRaw {
+  user_id: string;
+  sharing_until: string | null;
+  updated_at?: string | null;
+  visibility_expires_at?: string | null;
+  masked?: boolean;
+  zone_label?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  zones?: MapZoneRaw[];
+}
+
+/** Un amico visibile nello snapshot: identità minima + aura + posizione + timestamp UTC. */
+export interface MapFriendRaw {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  aura_score: number | null;
+  aura_color: string | null;
+  lat: number;
+  lng: number;
+  masked: boolean;
+  zone_label: string | null;
+  updated_at: string;
+  sharing_until: string;
+  visibility_expires_at: string;
+}
+
+/** Un evento (stanza live/echo) nello snapshot. */
+export interface MapEventRaw {
+  id: string;
+  user_id: string;
+  room_id: string | null;
+  event_type: MapEventType;
+  title: string;
+  lat: number;
+  lng: number;
+  masked: boolean;
+  zone_label: string | null;
+  started_at: string;
+  ended_at: string | null;
+  visibility_expires_at: string | null;
+}
+
+/** Ritorno di map_snapshot(): la porta di lettura della mappa. */
+export interface MapSnapshotRaw {
+  server_now: string;
+  me: MapMeRaw;
+  friends: MapFriendRaw[];
+  events: MapEventRaw[];
+}
+
+// --- Payload dei delta realtime sull'inbox privata `map:u:{uid}` --------------
+// (map_fanout, migrazione MM3). Payload minimo: NON portano identità/aura — quella
+// vive solo nello snapshot (un delta di un amico sconosciuto → refetch di arricchimento).
+
+/** `presence`: un amico ha (ri)pubblicato la posizione. Nessuna identità nel payload. */
+export interface MapPresencePayload {
+  user_id: string;
+  lat: number;
+  lng: number;
+  masked: boolean;
+  zone_label: string | null;
+  updated_at: string;
+  sharing_until: string;
+  visibility_expires_at: string;
+}
+
+/** `presence_removed`: un amico ha spento (revoca/kill-switch) → sparizione fisica. */
+export interface MapPresenceRemovedPayload {
+  user_id: string;
+}
+
+/** `event_started`: bolla stanza live di un amico appena messa in mappa. */
+export interface MapEventStartedPayload {
+  id: string;
+  user_id: string;
+  room_id: string | null;
+  event_type: MapEventType;
+  title: string;
+  lat: number;
+  lng: number;
+  masked: boolean;
+  zone_label: string | null;
+  started_at: string;
+}
+
+/** `event_ended`: fine evento. `removed=true` = revoca (niente Echo, va rimosso);
+ *  `removed=false` = fine naturale → Echo (arriva ended_at + visibility_expires_at,
+ *  MA non lat/lng/title: si patcha l'evento già in store). */
+export interface MapEventEndedPayload {
+  id: string;
+  user_id: string;
+  room_id: string | null;
+  removed: boolean;
+  ended_at?: string;
+  visibility_expires_at?: string;
+}
 
 // Autore embeddato nelle RPC di lettura dei drop (drops_feed/drop_detail).
 export interface DropAuthor {
@@ -403,6 +541,54 @@ export interface Database {
         Insert: never; // via RPC record_consent
         Update: never;
       };
+      // M7 (MM0) — Mappa v2. Le tabelle di posizione NON sono leggibili dal client
+      // (RLS senza policy): la lettura passa SOLO da map_snapshot (RPC definer, MM2).
+      // Qui restano documentate; solo map_safe_zones è leggibile owner-only.
+      map_presence: {
+        // Una riga per utente = sessione opt-in + Last Seen. Solo via RPC.
+        Row: {
+          user_id: string;
+          masked: boolean;
+          zone_label: string | null;
+          sharing_until: string;
+          updated_at: string | null;
+          visibility_expires_at: string | null;
+          // location (geography) non è esposta al client raw: arriva via snapshot.
+        };
+        Insert: never; // via RPC map_start_sharing / map_publish_location
+        Update: never;
+      };
+      map_events: {
+        // Eventi georiferiti (stanze live/echo). Solo via RPC (snapshot MM2).
+        Row: {
+          id: string;
+          user_id: string;
+          room_id: string | null;
+          event_type: MapEventType;
+          title: string;
+          masked: boolean;
+          zone_label: string | null;
+          started_at: string;
+          ended_at: string | null;
+          visibility_expires_at: string | null;
+        };
+        Insert: never; // via RPC map_attach_room (MM2)
+        Update: never;
+      };
+      map_safe_zones: {
+        // Fino a 2 zone personali (owner-only in lettura via RLS). Mutazioni via
+        // RPC map_set_safe_zone / map_delete_safe_zone. `center` (geography) non è
+        // tipizzata qui: l'editor (MM9) userà label/radius_m.
+        Row: {
+          id: string;
+          user_id: string;
+          label: string;
+          radius_m: number;
+          created_at: string;
+        };
+        Insert: never; // via RPC map_set_safe_zone
+        Update: never;
+      };
       drops: {
         // Momenti effimeri (24h): alla scadenza NON si cancellano più (R-01),
         // diventano "Ricordi" del solo autore con stats_finali congelate.
@@ -494,6 +680,72 @@ export interface Database {
           created_at: string;
         };
         Insert: never; // via RPC save_drop
+        Update: never;
+      };
+      lives: {
+        // M12 (LM0) — un broadcast per riga. Scrittura SOLO via RPC (create_live,
+        // pause/resume/end). Il grant select è PER-COLONNA: viewer_count e
+        // peak_viewers sono PRIVATI (anti-vanity R-04, li darà live_detail al
+        // solo host in LM2) e livekit_room_name arriva solo da create_live/token.
+        Row: {
+          id: string;
+          host_id: string;
+          title: string;
+          status: LiveStatus;
+          visibility: LiveVisibility;
+          comments_enabled: boolean;
+          show_on_map: boolean;
+          notify_mode: LiveNotifyMode;
+          clip_consent: boolean; // riservato Fase 2, sempre false in v1
+          started_at: string;
+          paused_at: string | null; // valorizzato SOLO mentre in pausa
+          ended_at: string | null; // null = attiva; stato finale immutabile
+          created_at: string;
+        };
+        Insert: never; // via RPC create_live
+        Update: never;
+      };
+      live_hosts: {
+        // Host principale + co-host (tetto 4). RLS: l'host della live vede
+        // tutto, l'utente le proprie righe. Mutazioni solo via RPC.
+        Row: {
+          live_id: string;
+          user_id: string;
+          role: LiveHostRole;
+          status: LiveHostStatus;
+          invited_at: string;
+          joined_at: string | null;
+          left_at: string | null;
+        };
+        Insert: never;
+        Update: never;
+      };
+      live_viewers: {
+        // Spettatori reali (il mint del token è il join, LM4) + registro kick.
+        // RLS come live_hosts. Il client scrive solo via live_leave/Edge.
+        Row: {
+          live_id: string;
+          user_id: string;
+          joined_at: string;
+          left_at: string | null;
+          kicked_at: string | null;
+          kicked_by: string | null;
+        };
+        Insert: never;
+        Update: never;
+      };
+      live_comments: {
+        // Commenti effimeri (fade client-side; purge 24h dopo la fine, LM3).
+        // Solo testo ≤200, niente reply. Insert diretta validata dal trigger
+        // (stato live, comments_enabled, can_see_live, rate-limit 5/30s).
+        Row: {
+          id: string;
+          live_id: string;
+          author_id: string;
+          body: string;
+          created_at: string;
+        };
+        Insert: { live_id: string; body: string };
         Update: never;
       };
       props: {
@@ -603,16 +855,6 @@ export interface Database {
       };
     };
     Views: {
-      vibe_map: {
-        Row: {
-          user_id: string;
-          username: string;
-          aura_color: string | null;
-          geohash5: string | null;
-          kind: string;
-          room_id: string | null;
-        };
-      };
       // Classifica per carattere (somme DECADUTE, ultime 8 settimane). Espone solo
       // user_id/type/score: per username/avatar serve un join con `profiles`.
       leaderboard_character: {
@@ -790,6 +1032,46 @@ export interface Database {
         Returns: undefined;
       };
       request_gdpr: { Args: { kind: string }; Returns: undefined };
+      // M7 (MM0) — Mappa v2: RPC di scrittura (opt-in/posizione/Safe Zone).
+      // Tutte definer, ritornano jsonb {ok, …}. La lettura (map_snapshot) è MM2.
+      map_start_sharing: { Args: { p_hours: number }; Returns: Json }; // accende l'aura per N ore (1–12)
+      map_stop_sharing: { Args: Record<string, never>; Returns: Json }; // revoca istantanea (sparizione fisica)
+      map_publish_location: { Args: { p_lat: number; p_lng: number }; Returns: Json }; // {ok, masked} · no-op se rate-limited
+      map_set_safe_zone: {
+        Args: { p_label: string; p_lat: number; p_lng: number; p_radius_m?: number };
+        Returns: Json; // {ok, id}
+      };
+      map_delete_safe_zone: { Args: { p_id: string }; Returns: Json };
+      // M7 (MM2) — stanze sulla mappa + snapshot di lettura. attach/detach: {ok}.
+      // map_snapshot è LA porta di lettura: ritorna {server_now, me, friends[],
+      // events[]} con timestamp UTC grezzi (gli stati Live/Echo/LastSeen li deriva
+      // il client sul clock calibrato con server_now). Tipizzata come Json: la
+      // forma dell'oggetto è documentata nel dominio mappa (MM7).
+      map_attach_room: { Args: { p_room: string }; Returns: Json };
+      map_detach_room: { Args: { p_room: string }; Returns: Json };
+      map_snapshot: { Args: Record<string, never>; Returns: Json };
+      // M12 (LM0) — Live: RPC di scrittura in versione BASE (notifiche,
+      // fan-out realtime e aggancio mappa arrivano in LM2; lives_feed e
+      // live_detail pure). Errori come stringhe-codice (live_already_active,
+      // not_live_host, invalid_transition, live_already_ended,
+      // cohost_cap_reached, cohost_removed, not_friends, no_invite…).
+      create_live: {
+        Args: {
+          p_title: string;
+          p_visibility?: LiveVisibility;
+          p_comments_enabled?: boolean;
+          p_show_on_map?: boolean;
+          p_notify_mode?: LiveNotifyMode;
+        };
+        Returns: Json; // { live_id, livekit_room_name, map_attached }
+      };
+      pause_live: { Args: { p_live: string }; Returns: Json }; // { ok, status }
+      resume_live: { Args: { p_live: string }; Returns: Json };
+      end_live: { Args: { p_live: string }; Returns: Json }; // stato finale
+      live_invite_cohost: { Args: { p_live: string; p_user: string }; Returns: Json };
+      live_accept_cohost: { Args: { p_live: string }; Returns: Json };
+      live_remove_cohost: { Args: { p_live: string; p_user: string }; Returns: Json };
+      live_leave: { Args: { p_live: string }; Returns: Json }; // best-effort { ok, role }
     };
     Enums: {
       aura_event_type: AuraEventType;
@@ -798,6 +1080,10 @@ export interface Database {
       notification_type: NotificationType;
       friendship_status: FriendshipStatus;
       moderation_target: ModerationTarget;
+      map_event_type: MapEventType;
+      live_status: LiveStatus;
+      live_visibility: LiveVisibility;
+      live_notify_mode: LiveNotifyMode;
     };
   };
 }

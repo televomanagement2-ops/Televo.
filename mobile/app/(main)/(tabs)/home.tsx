@@ -17,6 +17,7 @@ import { FeedCard } from '@/components/feed/FeedCard';
 import { FeedLiveCard } from '@/components/feed/FeedLiveCard';
 import { ComingSoon } from '@/components/feed/ComingSoon';
 import { DropFeed } from '@/components/drops/DropFeed';
+import { MapCanvas } from '@/components/mappa/MapCanvas';
 import { FEED_ITEMS } from '@/constants/feedItems';
 import { DEFAULT_FEED_CATEGORY, type FeedCategoryKey } from '@/constants/feed';
 import { colors, spacing } from '@/constants/theme';
@@ -28,10 +29,13 @@ export default function Home() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <HomeHeader />
       <CategoryBar selected={category} onSelect={setCategory} />
-      {/* Drops (S1): FlatList paginata a tutta altezza — NON dentro la ScrollView
-          (una lista virtualizzata non si annida in uno scroll con lo stesso asse). */}
+      {/* Drops (S1) e Map (M7): resi a tutta altezza FUORI dalla ScrollView. La
+          lista virtualizzata dei drop e il pan/zoom della mappa non convivono con
+          uno scroll sullo stesso asse (gesture in conflitto). */}
       {category === 'drops' ? (
         <DropFeed />
+      ) : category === 'map' ? (
+        <MapCanvas />
       ) : (
         <ScrollView
           style={styles.flex}
@@ -60,7 +64,8 @@ function FeedBody({ category }: { category: FeedCategoryKey }) {
         </View>
       );
     case 'drops':
-      // Reso a tutta altezza fuori dalla ScrollView (vedi sopra): qui è un no-op.
+    case 'map':
+      // Resi a tutta altezza fuori dalla ScrollView (vedi sopra): qui no-op.
       return null;
     case 'live':
       return (
@@ -68,14 +73,6 @@ function FeedBody({ category }: { category: FeedCategoryKey }) {
           icon="radio-outline"
           title="Stanze Live in arrivo"
           subtitle="Qui vedrai chi è live ora. La voce, in tempo reale: la prova che dietro c'è una persona vera."
-        />
-      );
-    case 'map':
-      return (
-        <ComingSoon
-          icon="map-outline"
-          title="La Mappa Vibe arriva presto"
-          subtitle="Scoprirai dove sono i tuoi amici e le stanze live vicine. Sempre approssimativa, solo tra amici, sempre opt-in."
         />
       );
     case 'aura':

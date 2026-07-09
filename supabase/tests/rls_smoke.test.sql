@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(298);
+select plan(468);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -66,8 +66,6 @@ select has_table('public', 'usage_daily',           'usage_daily esiste');
 select has_table('public', 'drops',                 'drops esiste');
 select has_table('public', 'drop_reactions',        'drop_reactions esiste');
 select has_table('public', 'props',                 'props esiste');
-select has_table('public', 'live_presence',         'live_presence esiste');
-select has_table('public', 'room_locations',        'room_locations esiste');
 select has_table('public', 'devices',               'devices esiste');
 select has_table('public', 'notifications',         'notifications esiste');
 select has_table('public', 'achievements',          'achievements esiste');
@@ -91,7 +89,6 @@ select ok((select relrowsecurity from pg_class where oid = 'public.friendships':
 select ok((select relrowsecurity from pg_class where oid = 'public.messages'::regclass),          'RLS attiva su messages');
 select ok((select relrowsecurity from pg_class where oid = 'public.drops'::regclass),             'RLS attiva su drops');
 select ok((select relrowsecurity from pg_class where oid = 'public.props'::regclass),             'RLS attiva su props');
-select ok((select relrowsecurity from pg_class where oid = 'public.live_presence'::regclass),     'RLS attiva su live_presence');
 select ok((select relrowsecurity from pg_class where oid = 'public.notifications'::regclass),     'RLS attiva su notifications');
 select ok((select relrowsecurity from pg_class where oid = 'public.user_achievements'::regclass), 'RLS attiva su user_achievements');
 select ok((select relrowsecurity from pg_class where oid = 'public.reports'::regclass),           'RLS attiva su reports');
@@ -518,11 +515,12 @@ select ok((select has_column_privilege('authenticated', 'public.profiles', 'user
 -- =============================================================================
 -- CM8 — pulizia gruppi orfani (20260705130000): expire_content v4
 -- =============================================================================
--- La v3 resta intatta (verbatim) e si aggiunge la cancellazione degli orfani.
-select ok((select prosrc like '%room_locations%' and prosrc like '%live_presence%'
+-- La logica drops/messaggi resta intatta (verbatim) e si aggiunge la
+-- cancellazione degli orfani. (La parte mappa è passata a v6 in MM1: v. sotto.)
+select ok((select prosrc like '%stats_finali%' and prosrc like '%delete from public.messages%'
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'expire_content'),
-  'expire_content conserva la logica v3 (mappa/drops/messaggi)');
+  'expire_content conserva la logica drops (stats_finali) e messaggi');
 select ok((select prosrc like '%conversation_members%' and prosrc like '%delete from public.conversations%'
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = 'expire_content'),
@@ -888,6 +886,654 @@ select ok((select count(*)::int from cron.job where jobname = 'drop-prompt-notif
   'cron drop-prompt-notify schedulato');
 select ok((select exists (select 1 from public.drop_prompts where is_active)),
   'seed: almeno un tema curato attivo esiste');
+
+-- =============================================================================
+-- M7 · MM0 — Mappa v2, fondamenta backend (20260707120000_map_v2_foundation)
+-- =============================================================================
+-- docs/map/map.md §16 MM0. Invarianti: PostGIS attivo; le tabelle mappa NON sono
+-- leggibili dal client (lettura solo via RPC definer, MM2); masking/rate-limit/
+-- cap-2 codificati nelle RPC; ogni RPC è definer con search_path svuotato e
+-- grant mirato ad authenticated. Le prove FUNZIONALI (masking persiste il centro,
+-- rate-limit, cap enforced, publish rifiutato) sono nello smoke via pooler.
+
+-- PostGIS installato (prima estensione "pesante" del progetto).
+select ok((select exists (select 1 from pg_extension where extname = 'postgis')),
+  'PostGIS installato');
+
+-- Tabelle presenti.
+select has_table('public', 'map_presence',   'map_presence esiste');
+select has_table('public', 'map_events',      'map_events esiste');
+select has_table('public', 'map_safe_zones',  'map_safe_zones esiste');
+
+-- Enum del tipo evento (v1: room_live).
+select ok((select exists (
+    select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'map_event_type' and e.enumlabel = 'room_live')),
+  'map_event_type ha il valore room_live');
+
+-- RLS attiva su tutte e tre.
+select ok((select relrowsecurity from pg_class where oid = 'public.map_presence'::regclass),
+  'RLS attiva su map_presence');
+select ok((select relrowsecurity from pg_class where oid = 'public.map_events'::regclass),
+  'RLS attiva su map_events');
+select ok((select relrowsecurity from pg_class where oid = 'public.map_safe_zones'::regclass),
+  'RLS attiva su map_safe_zones');
+
+-- map_presence/map_events: NESSUNA policy (pattern audit_log → solo RPC definer).
+select is((select count(*)::int from pg_policies where schemaname='public' and tablename='map_presence'),
+  0, 'map_presence non ha policy (lettura solo via RPC)');
+select is((select count(*)::int from pg_policies where schemaname='public' and tablename='map_events'),
+  0, 'map_events non ha policy (lettura solo via RPC)');
+-- map_safe_zones: esattamente 1 policy (select owner-only).
+select is((select count(*)::int from pg_policies where schemaname='public' and tablename='map_safe_zones'),
+  1, 'map_safe_zones ha una sola policy (select owner-only)');
+
+-- Un estraneo/authenticated NON legge le tabelle di posizione.
+select ok((select not has_table_privilege('authenticated', 'public.map_presence', 'SELECT')),
+  'authenticated non legge map_presence (solo snapshot RPC)');
+select ok((select not has_table_privilege('authenticated', 'public.map_events', 'SELECT')),
+  'authenticated non legge map_events (solo snapshot RPC)');
+select ok((select not has_table_privilege('anon', 'public.map_presence', 'SELECT')),
+  'anon non legge map_presence');
+-- L'owner può leggere le proprie Safe Zone (via RLS), ma non mutarle direttamente.
+select ok((select has_table_privilege('authenticated', 'public.map_safe_zones', 'SELECT')),
+  'authenticated legge map_safe_zones (owner-only via RLS)');
+select ok((select not has_table_privilege('authenticated', 'public.map_safe_zones', 'INSERT')),
+  'authenticated non inserisce map_safe_zones (mutazioni solo via RPC)');
+
+-- Colonne chiave presenti.
+select has_column('public', 'map_presence', 'location',              'map_presence.location esiste');
+select has_column('public', 'map_presence', 'masked',                'map_presence.masked esiste');
+select has_column('public', 'map_presence', 'sharing_until',         'map_presence.sharing_until esiste');
+select has_column('public', 'map_presence', 'visibility_expires_at', 'map_presence.visibility_expires_at esiste');
+select has_column('public', 'map_events',   'visibility_expires_at', 'map_events.visibility_expires_at esiste');
+select has_column('public', 'map_safe_zones', 'radius_m',            'map_safe_zones.radius_m esiste');
+
+-- Indici distintivi: unique parziale "una bolla live per stanza" + GIST posizione.
+select ok((select exists (select 1 from pg_indexes
+             where schemaname='public' and indexname='map_events_room_live_uidx')),
+  'map_events: unique parziale room_id where ended_at is null');
+select ok((select exists (select 1 from pg_indexes
+             where schemaname='public' and indexname='map_presence_location_idx')),
+  'map_presence: indice GIST sulla posizione');
+
+-- Helper di visibilità: definer, search_path svuotato, NON eseguibile dal client.
+select has_function('public', 'can_see_on_map', 'can_see_on_map esiste');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='public' and p.proname='can_see_on_map'),
+  'can_see_on_map è security definer');
+select ok((select proconfig::text like '%search_path=%' from pg_proc p
+           join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='public' and p.proname='can_see_on_map'),
+  'can_see_on_map ha search_path svuotato');
+select ok((select not has_function_privilege('authenticated', 'public.can_see_on_map(uuid, uuid)', 'EXECUTE')),
+  'authenticated non esegue can_see_on_map (solo funzioni definer interne)');
+
+-- Le 5 RPC di scrittura esistono.
+select has_function('public', 'map_start_sharing',    'map_start_sharing esiste');
+select has_function('public', 'map_stop_sharing',     'map_stop_sharing esiste');
+select has_function('public', 'map_publish_location', 'map_publish_location esiste');
+select has_function('public', 'map_set_safe_zone',    'map_set_safe_zone esiste');
+select has_function('public', 'map_delete_safe_zone', 'map_delete_safe_zone esiste');
+
+-- Regola d'oro: definer + search_path svuotato (spot-check su publish).
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='public' and p.proname='map_publish_location'),
+  'map_publish_location è security definer');
+select ok((select proconfig::text like '%search_path=%' from pg_proc p
+           join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='public' and p.proname='map_publish_location'),
+  'map_publish_location ha search_path svuotato');
+
+-- Le RPC sono eseguibili SOLO da authenticated (client), non da anon.
+select ok((select has_function_privilege('authenticated', 'public.map_start_sharing(int)', 'EXECUTE')),
+  'authenticated esegue map_start_sharing');
+select ok((select has_function_privilege('authenticated', 'public.map_stop_sharing()', 'EXECUTE')),
+  'authenticated esegue map_stop_sharing');
+select ok((select has_function_privilege('authenticated', 'public.map_publish_location(double precision, double precision)', 'EXECUTE')),
+  'authenticated esegue map_publish_location');
+select ok((select has_function_privilege('authenticated', 'public.map_set_safe_zone(text, double precision, double precision, int)', 'EXECUTE')),
+  'authenticated esegue map_set_safe_zone');
+select ok((select has_function_privilege('authenticated', 'public.map_delete_safe_zone(uuid)', 'EXECUTE')),
+  'authenticated esegue map_delete_safe_zone');
+select ok((select not has_function_privilege('anon', 'public.map_start_sharing(int)', 'EXECUTE')),
+  'anon non esegue map_start_sharing (app invite-only)');
+
+-- Guardie prosrc: la semantica che protegge i pilastri è nel corpo delle RPC.
+select ok((select prosrc like '%invalid_duration%' and prosrc like '%is_active_user%'
+             and prosrc like '%location_sharing_off%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_start_sharing'),
+  'map_start_sharing: cap durata + is_active_user + kill-switch');
+select ok((select prosrc like '%st_dwithin%' and prosrc like '%masked%'
+             and prosrc like '%no_active_session%' and prosrc like '%20 seconds%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_publish_location'),
+  'map_publish_location: masking (st_dwithin) + sessione + rate-limit 20s');
+select ok((select prosrc like '%is_active_user%' and prosrc like '%invalid_location%'
+             and prosrc like '%visibility_expires_at%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_publish_location'),
+  'map_publish_location: enforcement + bounds + TTL 24h');
+select ok((select prosrc like '%zone_limit_reached%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_safe_zones_cap'),
+  'map_safe_zones_cap: cap 2 zone a livello dati');
+select ok((select prosrc like '%zone_limit_reached%' and prosrc like '%invalid_radius%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_set_safe_zone'),
+  'map_set_safe_zone: cap 2 + raggio 100-500m');
+
+-- Trigger di cap montato su map_safe_zones.
+select ok((select exists (select 1 from pg_trigger
+             where tgrelid='public.map_safe_zones'::regclass and tgname='map_safe_zones_cap_trg')),
+  'trigger map_safe_zones_cap_trg presente su map_safe_zones');
+
+-- Kill-switch master: spegnere share_location cancella la presenza (trigger su
+-- profiles), atomico. La funzione è definer.
+select ok((select exists (select 1 from pg_trigger
+             where tgrelid='public.profiles'::regclass and tgname='profiles_map_kill_switch_trg')),
+  'trigger profiles_map_kill_switch_trg presente su profiles (kill-switch)');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='public' and p.proname='profiles_map_kill_switch'),
+  'profiles_map_kill_switch è security definer');
+
+-- =============================================================================
+-- M7 · Mappa v2 (MM1) — legacy Fase 5 rimosso + ciclo di vita v6
+-- =============================================================================
+-- docs/map/map.md §16 MM1. La "Mappa Vibe" geohash (Fase 5) è deprecata: tabelle,
+-- view e RPC droppate ATOMICAMENTE con le v6 di expire_content /
+-- process_account_deletion (vincolo di ordinamento §13.4). Invarianti: nulla di
+-- legacy sopravvive; il kill-switch share_location resta; le v6 puliscono la
+-- Mappa v2 e non citano più le tabelle legacy.
+
+-- Tabelle e view legacy SPARITE.
+select hasnt_table('public', 'live_presence',  'live_presence rimossa (legacy Fase 5)');
+select hasnt_table('public', 'room_locations', 'room_locations rimossa (legacy Fase 5)');
+select hasnt_view('public',  'vibe_map',        'vibe_map rimossa (legacy Fase 5)');
+
+-- RPC geohash SPARITE (catalogo, per non dipendere dagli overload di hasnt_function).
+select ok((select not exists (select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+             where n.nspname='public' and p.proname='update_presence')),
+  'update_presence rimossa (RPC geohash legacy)');
+select ok((select not exists (select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+             where n.nspname='public' and p.proname='clear_presence')),
+  'clear_presence rimossa (RPC geohash legacy)');
+select ok((select not exists (select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+             where n.nspname='public' and p.proname='set_room_location')),
+  'set_room_location rimossa (RPC geohash legacy)');
+
+-- Kill-switch: profiles.share_location RESTA (nuova semantica, map.md §3).
+select has_column('public', 'profiles', 'share_location',
+  'profiles.share_location resta (kill-switch mappa v2)');
+
+-- expire_content v6: pulisce le tabelle Mappa v2, non più le legacy.
+select ok((select prosrc like '%map_presence%' and prosrc like '%map_events%'
+             and prosrc not like '%live_presence%' and prosrc not like '%room_locations%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='expire_content'),
+  'expire_content v6: pulizia map_presence/map_events, zero riferimenti legacy');
+
+-- process_account_deletion v6: rimuove le righe Mappa v2 dell'utente, non le legacy.
+select ok((select prosrc like '%map_presence%' and prosrc like '%map_events%'
+             and prosrc like '%map_safe_zones%'
+             and prosrc not like '%live_presence%' and prosrc not like '%room_locations%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='process_account_deletion'),
+  'process_account_deletion v6: cancella righe Mappa v2, zero riferimenti legacy');
+
+-- =============================================================================
+-- M7 · Mappa v2 (MM2) — stanze sulla mappa + snapshot di lettura
+-- =============================================================================
+-- docs/map/map.md §16 MM2. La porta di LETTURA (map_snapshot) + le bolle Stanze
+-- Live (map_attach_room/map_detach_room) + il trigger rooms→map_events (chiusura
+-- eventi → Echo). Invarianti strutturali qui; le prove FUNZIONALI (attach visibile
+-- all'amico e non all'estraneo, fine stanza → echo, detach = sparizione) sono
+-- nello smoke via pooler. La lettura resta blindata: nessuna select policy sulle
+-- tabelle di posizione, solo la RPC definer.
+
+-- Le 3 RPC di MM2 esistono.
+select has_function('public', 'map_attach_room',  'map_attach_room esiste');
+select has_function('public', 'map_detach_room',  'map_detach_room esiste');
+select has_function('public', 'map_snapshot',     'map_snapshot esiste');
+
+-- map_snapshot: definer + search_path svuotato (la porta di lettura filtra
+-- server-side; mai una select policy sulle tabelle di posizione).
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='public' and p.proname='map_snapshot'),
+  'map_snapshot è security definer');
+select ok((select proconfig::text like '%search_path=%' from pg_proc p
+           join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='public' and p.proname='map_snapshot'),
+  'map_snapshot ha search_path svuotato');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='public' and p.proname='map_attach_room'),
+  'map_attach_room è security definer');
+
+-- Le RPC sono eseguibili SOLO da authenticated (client), mai da anon.
+select ok((select has_function_privilege('authenticated', 'public.map_snapshot()', 'EXECUTE')),
+  'authenticated esegue map_snapshot');
+select ok((select has_function_privilege('authenticated', 'public.map_attach_room(uuid)', 'EXECUTE')),
+  'authenticated esegue map_attach_room');
+select ok((select has_function_privilege('authenticated', 'public.map_detach_room(uuid)', 'EXECUTE')),
+  'authenticated esegue map_detach_room');
+select ok((select not has_function_privilege('anon', 'public.map_snapshot()', 'EXECUTE')),
+  'anon non esegue map_snapshot (app invite-only)');
+
+-- Trigger rooms→map_events: la via PRIMARIA di chiusura degli eventi (→ Echo).
+select ok((select exists (select 1 from pg_trigger
+             where tgrelid='public.rooms'::regclass and tgname='rooms_map_close_events_trg')),
+  'trigger rooms_map_close_events_trg presente su rooms');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='public' and p.proname='rooms_map_close_events'),
+  'rooms_map_close_events è security definer');
+select ok((select not has_function_privilege('authenticated', 'public.rooms_map_close_events()', 'EXECUTE')),
+  'authenticated non esegue rooms_map_close_events (funzione trigger)');
+
+-- Guardie prosrc: la semantica che protegge i pilastri vive nel corpo delle RPC.
+select ok((select prosrc like '%not_room_host%' and prosrc like '%room_not_live%'
+             and prosrc like '%no_active_session%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_attach_room'),
+  'map_attach_room: solo host + stanza live + sessione attiva');
+select ok((select prosrc like '%room_live%' and prosrc like '%is_active_user%'
+             and prosrc like '%no_location%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_attach_room'),
+  'map_attach_room: enforcement + evento room_live con posizione host');
+select ok((select prosrc like '%delete from public.map_events%' and prosrc like '%ended_at is null%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_detach_room'),
+  'map_detach_room: DELETE dell''evento live (revoca, niente Echo)');
+select ok((select prosrc like '%server_now%' and prosrc like '%friends%'
+             and prosrc like '%events%' and prosrc like '%can_see_on_map%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_snapshot'),
+  'map_snapshot: {server_now, friends, events} filtrati da can_see_on_map');
+select ok((select prosrc like '%ended_at%' and prosrc like '%12 hours%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='rooms_map_close_events'),
+  'rooms_map_close_events: chiude gli eventi con Echo a +12h');
+
+-- =============================================================================
+-- M7 · Mappa v2 (MM3) — realtime inbox privata + fan-out server-side
+-- =============================================================================
+-- docs/map/map.md §16 MM3. Gli amici ricevono i DELTA (presence / presence_removed
+-- / event_started / event_ended) sull'inbox privata `map:u:{uid}` via
+-- realtime.send() dentro RPC/trigger definer. Invarianti STRUTTURALI qui: la policy
+-- di ricezione lega il topic all'utente (nessuno legge l'inbox altrui), il fan-out
+-- passa da un helper interno non esposto, e i punti di emissione sono cablati nelle
+-- funzioni. Le prove FUNZIONALI (righe scritte SOLO ai topic degli amici, mai
+-- all'estraneo; autorizzazione della sottoscrizione) sono nello smoke via pooler.
+
+-- Helper di fan-out: esiste, definer, search_path svuotato, NON eseguibile dal
+-- client (solo funzioni definer interne lo chiamano).
+select has_function('public', 'map_fanout', 'map_fanout esiste');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='public' and p.proname='map_fanout'),
+  'map_fanout è security definer');
+select ok((select proconfig::text like '%search_path=%' from pg_proc p
+           join pg_namespace n on n.oid=p.pronamespace
+           where n.nspname='public' and p.proname='map_fanout'),
+  'map_fanout ha search_path svuotato');
+select ok((select not has_function_privilege('authenticated', 'public.map_fanout(uuid, text, jsonb)', 'EXECUTE')),
+  'authenticated non esegue map_fanout (helper interno)');
+select ok((select not has_function_privilege('anon', 'public.map_fanout(uuid, text, jsonb)', 'EXECUTE')),
+  'anon non esegue map_fanout');
+
+-- Policy di ricezione sull'inbox privata: ESATTAMENTE una policy su
+-- realtime.messages (nessuna INSERT/ALL → il client non può inviare broadcast),
+-- di tipo SELECT, per authenticated, che lega il topic all'utente (`map:u:`).
+select is((select count(*)::int from pg_policies where schemaname='realtime' and tablename='messages'),
+  1, 'realtime.messages ha una sola policy (ricezione inbox, nessun invio client)');
+select ok((select exists (select 1 from pg_policies
+             where schemaname='realtime' and tablename='messages'
+               and policyname='map_inbox_select_own')),
+  'policy map_inbox_select_own presente su realtime.messages');
+select is((select cmd from pg_policies
+             where schemaname='realtime' and tablename='messages' and policyname='map_inbox_select_own'),
+  'SELECT', 'map_inbox_select_own è una policy di SELECT (sola ricezione)');
+select ok((select roles::text like '%authenticated%' from pg_policies
+             where schemaname='realtime' and tablename='messages' and policyname='map_inbox_select_own'),
+  'map_inbox_select_own vale per authenticated');
+select ok((select qual like '%map:u:%' from pg_policies
+             where schemaname='realtime' and tablename='messages' and policyname='map_inbox_select_own'),
+  'map_inbox_select_own lega il topic all''utente (map:u:{uid})');
+
+-- Guardie prosrc: il fan-out è cablato nei punti giusti (map.md §13.3).
+select ok((select prosrc like '%realtime.send%' and prosrc like '%friendships%'
+             and prosrc like '%accepted%' and prosrc like '%map:u:%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_fanout'),
+  'map_fanout: realtime.send agli amici accepted sul topic map:u:');
+select ok((select prosrc like '%map_fanout%' and prosrc like '%st_distance%' and prosrc like '%presence%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_publish_location'),
+  'map_publish_location: fan-out presence su movimento (st_distance)');
+select ok((select prosrc like '%map_fanout%' and prosrc like '%presence_removed%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_stop_sharing'),
+  'map_stop_sharing: fan-out presence_removed');
+select ok((select prosrc like '%map_fanout%' and prosrc like '%event_started%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_attach_room'),
+  'map_attach_room: fan-out event_started');
+select ok((select prosrc like '%map_fanout%' and prosrc like '%event_ended%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='map_detach_room'),
+  'map_detach_room: fan-out event_ended (removed)');
+select ok((select prosrc like '%map_fanout%' and prosrc like '%event_ended%' and prosrc like '%12 hours%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='rooms_map_close_events'),
+  'rooms_map_close_events: fan-out event_ended (Echo a +12h)');
+select ok((select prosrc like '%map_fanout%' and prosrc like '%presence_removed%'
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='profiles_map_kill_switch'),
+  'profiles_map_kill_switch: fan-out presence_removed');
+
+-- =============================================================================
+-- M7 · Mappa v2 (MM4) — GDPR + chiusura backend
+-- =============================================================================
+-- docs/map/map.md §16 MM4. Nessun oggetto DB nuovo: MM4 chiude il dominio mappa
+-- sul lato privacy/GDPR. Invarianti STRUTTURALI qui:
+--  · il consenso dedicato alla posizione esiste (consent_type='location', usato dal
+--    client PRIMA della prima accensione dell'aura, map.md §3);
+--  · il diritto all'oblio è coperto su ENTRAMBE le vie: soft-delete/anonimizzazione
+--    immediata via process_account_deletion v6 (guardia prosrc in MM1) + hard-delete
+--    a 30gg via cascade FK profiles→map_* (verificato qui).
+-- La prova FUNZIONALE (export che contiene le sezioni mappa; delete che svuota ogni
+-- riga mappa; estraneo escluso) è nello smoke MM4 via pooler. La Edge gdpr-export v4
+-- (art. 15) vive fuori dal DB → non testabile in pgTAP: va in coda deploy owner.
+
+-- Consenso posizione: il valore enum dedicato alla mappa esiste.
+select ok((select exists (
+    select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'consent_type' and e.enumlabel = 'location')),
+  'consent_type ha il valore location (consenso posizione mappa, map.md §3)');
+
+-- Hard-delete (retention 30gg, purge_due_deletions): la cancellazione del profilo
+-- deve cascadare su TUTTE le tabelle mappa dell'utente → nessuna posizione orfana.
+select ok((select bool_or(confdeltype = 'c') from pg_constraint
+    where conrelid = 'public.map_presence'::regclass and contype = 'f'
+      and confrelid = 'public.profiles'::regclass),
+  'map_presence.user_id → profiles ON DELETE CASCADE (hard-delete GDPR)');
+select ok((select bool_or(confdeltype = 'c') from pg_constraint
+    where conrelid = 'public.map_events'::regclass and contype = 'f'
+      and confrelid = 'public.profiles'::regclass),
+  'map_events.user_id → profiles ON DELETE CASCADE (hard-delete GDPR)');
+select ok((select bool_or(confdeltype = 'c') from pg_constraint
+    where conrelid = 'public.map_safe_zones'::regclass and contype = 'f'
+      and confrelid = 'public.profiles'::regclass),
+  'map_safe_zones.user_id → profiles ON DELETE CASCADE (hard-delete GDPR)');
+
+-- =============================================================================
+-- M12 · Live (LM0) — enum + fondamenta dominio
+-- =============================================================================
+-- docs/live/live.md §18 LM0. Il broadcast video personale SOLO amici (L-1),
+-- dominio parallelo a rooms (L-2). Invarianti STRUTTURALI qui: schema, RLS,
+-- grant contract (contatori privati a livello dati), macchina a stati e
+-- guardie nei trigger/RPC (guardie prosrc). Le prove FUNZIONALI (host crea →
+-- amico vede e l'estraneo no, transizioni illegali, tetto 4, kick, rate-limit)
+-- sono nello smoke via pooler.
+
+-- Valori enum aggiunti (migrazione live_enums).
+select ok((select exists (select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'moderation_target' and e.enumlabel = 'live')),
+  'moderation_target ha il valore live (report sulla live)');
+select ok((select exists (select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'moderation_target' and e.enumlabel = 'live_comment')),
+  'moderation_target ha il valore live_comment (report sul commento)');
+select ok((select exists (select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'notification_type' and e.enumlabel = 'live_started')),
+  'notification_type ha il valore live_started (avvio, default tutti gli amici L-4)');
+select ok((select exists (select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'notification_type' and e.enumlabel = 'live_cohost_invite')),
+  'notification_type ha il valore live_cohost_invite (invito co-host)');
+select ok((select exists (select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'map_event_type' and e.enumlabel = 'live_broadcast')),
+  'map_event_type ha il valore live_broadcast (badge LIVE sulla mappa, LM1)');
+
+-- Tipi nuovi del dominio con i valori esatti.
+select is((select array_agg(e.enumlabel::text order by e.enumsortorder)
+    from pg_enum e join pg_type t on t.oid = e.enumtypid where t.typname = 'live_status'),
+  array['live','paused','ended'],
+  'live_status = live|paused|ended (stati espliciti a DB, mai inferenza client)');
+select is((select array_agg(e.enumlabel::text order by e.enumsortorder)
+    from pg_enum e join pg_type t on t.oid = e.enumtypid where t.typname = 'live_visibility'),
+  array['all_friends','top_friends'],
+  'live_visibility = all_friends|top_friends');
+select is((select array_agg(e.enumlabel::text order by e.enumsortorder)
+    from pg_enum e join pg_type t on t.oid = e.enumtypid where t.typname = 'live_notify_mode'),
+  array['none','top_friends','all'],
+  'live_notify_mode = none|top_friends|all (default all, decisione PO L-4)');
+
+-- Tabelle del dominio.
+select has_table('public', 'lives',         'lives esiste');
+select has_table('public', 'live_hosts',    'live_hosts esiste');
+select has_table('public', 'live_viewers',  'live_viewers esiste');
+select has_table('public', 'live_comments', 'live_comments esiste');
+
+-- RLS attiva su tutte.
+select ok((select relrowsecurity from pg_class where oid = 'public.lives'::regclass),
+  'RLS attiva su lives');
+select ok((select relrowsecurity from pg_class where oid = 'public.live_hosts'::regclass),
+  'RLS attiva su live_hosts');
+select ok((select relrowsecurity from pg_class where oid = 'public.live_viewers'::regclass),
+  'RLS attiva su live_viewers');
+select ok((select relrowsecurity from pg_class where oid = 'public.live_comments'::regclass),
+  'RLS attiva su live_comments');
+
+-- Colonne chiave: clip_consent riservato (Momenti Salienti, Fase 2) e stanza
+-- LiveKit dedicata univoca.
+select has_column('public', 'lives', 'clip_consent',
+  'lives.clip_consent esiste (riservato Fase 2, sempre false in v1)');
+select ok((select exists (select 1 from pg_indexes
+    where schemaname = 'public' and tablename = 'lives'
+      and indexdef ilike '%unique%' and indexdef ilike '%livekit_room_name%')),
+  'lives.livekit_room_name è univoco (una stanza LiveKit per live)');
+
+-- UNA sola live attiva per host: unique parziale su (host_id) where ended_at is null.
+select ok((select exists (select 1 from pg_indexes
+    where schemaname = 'public' and tablename = 'lives'
+      and indexname = 'lives_host_active_uidx'
+      and indexdef ilike '%(host_id)%' and indexdef ilike '%ended_at is null%')),
+  'unique parziale host attivo: una sola live non-ended per host');
+
+-- Hard-delete GDPR: cascade su profiles per ogni tabella; le righe del corredo
+-- muoiono con la live.
+select ok((select bool_or(confdeltype = 'c') from pg_constraint
+    where conrelid = 'public.lives'::regclass and contype = 'f'
+      and confrelid = 'public.profiles'::regclass),
+  'lives.host_id → profiles ON DELETE CASCADE (hard-delete GDPR)');
+select ok((select bool_or(confdeltype = 'c') from pg_constraint
+    where conrelid = 'public.live_hosts'::regclass and contype = 'f'
+      and confrelid = 'public.profiles'::regclass),
+  'live_hosts.user_id → profiles ON DELETE CASCADE');
+select ok((select bool_or(confdeltype = 'c') from pg_constraint
+    where conrelid = 'public.live_viewers'::regclass and contype = 'f'
+      and confrelid = 'public.profiles'::regclass),
+  'live_viewers.user_id → profiles ON DELETE CASCADE');
+select ok((select bool_or(confdeltype = 'c') from pg_constraint
+    where conrelid = 'public.live_comments'::regclass and contype = 'f'
+      and confrelid = 'public.profiles'::regclass),
+  'live_comments.author_id → profiles ON DELETE CASCADE');
+select ok((select bool_or(confdeltype = 'c') from pg_constraint
+    where conrelid = 'public.live_hosts'::regclass and contype = 'f'
+      and confrelid = 'public.lives'::regclass),
+  'live_hosts.live_id → lives ON DELETE CASCADE (le righe muoiono con la live)');
+
+-- can_see_live: l'UNICO predicato di visibilità (RLS, RPC, token, fan-out).
+select has_function('public', 'can_see_live', array['uuid','uuid'],
+  'can_see_live(uuid,uuid) esiste');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'can_see_live'),
+  'can_see_live è security definer');
+select ok((select proconfig::text like '%search_path=%' from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'can_see_live'),
+  'can_see_live ha search_path svuotato');
+select ok((select has_function_privilege('authenticated', 'public.can_see_live(uuid, uuid)', 'EXECUTE')),
+  'authenticated esegue can_see_live (le policy RLS la valutano come chiamante)');
+select ok((select not has_function_privilege('anon', 'public.can_see_live(uuid, uuid)', 'EXECUTE')),
+  'anon non esegue can_see_live');
+select ok((select prosrc like '%kicked_at%' and prosrc like '%removed%'
+             and prosrc like '%is_blocked_pair%' and prosrc like '%are_friends%'
+             and prosrc like '%top_friends%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'can_see_live'),
+  'can_see_live: nega kickati/rimossi/bloccati e applica top_friends al solo host principale');
+
+-- Macchina a stati: lives_before_write è l'unico arbitro delle transizioni.
+select ok((select exists (select 1 from pg_trigger
+    where tgrelid = 'public.lives'::regclass and tgname = 'lives_before_write_trg')),
+  'trigger lives_before_write_trg presente su lives');
+select ok((select prosrc like '%live_already_ended%' and prosrc like '%invalid_transition%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_before_write'),
+  'lives_before_write: ended immutabile + transizioni illegali rifiutate');
+select ok((select prosrc like '%gen_random_uuid%' and strpos(prosrc, '''live_''') > 0
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_before_write'),
+  'lives_before_write: livekit_room_name generato server-side, mai dal client');
+select ok((select not has_function_privilege('authenticated', 'public.lives_before_write()', 'EXECUTE')),
+  'authenticated non esegue lives_before_write (funzione trigger)');
+
+-- Tetto 4 host (invited+active) per live.
+select ok((select exists (select 1 from pg_trigger
+    where tgrelid = 'public.live_hosts'::regclass and tgname = 'live_hosts_cap_trg')),
+  'trigger live_hosts_cap_trg presente su live_hosts');
+select ok((select prosrc like '%cohost_cap_reached%' and prosrc like '%invited%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_hosts_cap'),
+  'live_hosts_cap: tetto 4 su invited+active');
+
+-- Sync contatori spettatori (privati: mai nel grant select del client).
+select ok((select exists (select 1 from pg_trigger
+    where tgrelid = 'public.live_viewers'::regclass and tgname = 'live_viewers_count_trg')),
+  'trigger live_viewers_count_trg presente su live_viewers');
+select ok((select prosrc like '%peak_viewers%' and prosrc like '%greatest%'
+             and prosrc like '%kicked_at is null%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'sync_live_viewer_count'),
+  'sync_live_viewer_count: conta gli spettatori ATTIVI e aggiorna il picco');
+
+-- Guardie commenti: stato live + toggle + visibilità + rate-limit 5/30s.
+select ok((select exists (select 1 from pg_trigger
+    where tgrelid = 'public.live_comments'::regclass and tgname = 'live_comments_before_insert_trg')),
+  'trigger live_comments_before_insert_trg presente su live_comments');
+select ok((select prosrc like '%live_not_commentable%' and prosrc like '%comments_disabled%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_comments_before_insert'),
+  'live_comments_before_insert: rifiuta live non in diretta e commenti disabilitati');
+select ok((select prosrc like '%rate_limited%' and prosrc like '%30 seconds%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_comments_before_insert'),
+  'live_comments_before_insert: rate-limit 5 commenti / 30 secondi per live');
+select ok((select prosrc like '%can_see_live%' and prosrc like '%is_active_user%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_comments_before_insert'),
+  'live_comments_before_insert: visibilità + enforcement sanzioni');
+
+-- Le 8 RPC di scrittura esistono.
+select has_function('public', 'create_live',        'create_live esiste');
+select has_function('public', 'pause_live',         'pause_live esiste');
+select has_function('public', 'resume_live',        'resume_live esiste');
+select has_function('public', 'end_live',           'end_live esiste');
+select has_function('public', 'live_invite_cohost', 'live_invite_cohost esiste');
+select has_function('public', 'live_accept_cohost', 'live_accept_cohost esiste');
+select has_function('public', 'live_remove_cohost', 'live_remove_cohost esiste');
+select has_function('public', 'live_leave',         'live_leave esiste');
+
+-- Grant contract: eseguibili da authenticated, mai da anon.
+select ok((select has_function_privilege('authenticated',
+    'public.create_live(text, public.live_visibility, boolean, boolean, public.live_notify_mode)', 'EXECUTE')),
+  'authenticated esegue create_live');
+select ok((select has_function_privilege('authenticated', 'public.pause_live(uuid)', 'EXECUTE')),
+  'authenticated esegue pause_live');
+select ok((select has_function_privilege('authenticated', 'public.resume_live(uuid)', 'EXECUTE')),
+  'authenticated esegue resume_live');
+select ok((select has_function_privilege('authenticated', 'public.end_live(uuid)', 'EXECUTE')),
+  'authenticated esegue end_live');
+select ok((select has_function_privilege('authenticated', 'public.live_invite_cohost(uuid, uuid)', 'EXECUTE')),
+  'authenticated esegue live_invite_cohost');
+select ok((select has_function_privilege('authenticated', 'public.live_accept_cohost(uuid)', 'EXECUTE')),
+  'authenticated esegue live_accept_cohost');
+select ok((select has_function_privilege('authenticated', 'public.live_remove_cohost(uuid, uuid)', 'EXECUTE')),
+  'authenticated esegue live_remove_cohost');
+select ok((select has_function_privilege('authenticated', 'public.live_leave(uuid)', 'EXECUTE')),
+  'authenticated esegue live_leave');
+select ok((select not has_function_privilege('anon',
+    'public.create_live(text, public.live_visibility, boolean, boolean, public.live_notify_mode)', 'EXECUTE')),
+  'anon non esegue create_live (app invite-only)');
+
+-- Nessuna scrittura client diretta su lives (solo RPC definer).
+select ok((select not has_table_privilege('authenticated', 'public.lives', 'INSERT')),
+  'authenticated non inserisce su lives');
+select ok((select not has_table_privilege('authenticated', 'public.lives', 'UPDATE')),
+  'authenticated non aggiorna lives');
+select ok((select not has_table_privilege('authenticated', 'public.lives', 'DELETE')),
+  'authenticated non cancella lives');
+
+-- Contatori PRIVATI a livello dati (pattern drops R-04): il select per-colonna
+-- esclude viewer_count/peak_viewers; il resto della riga è leggibile.
+select ok((select not has_column_privilege('authenticated', 'public.lives', 'viewer_count', 'SELECT')),
+  'viewer_count NON leggibile dal client (anti-vanity a livello dati)');
+select ok((select not has_column_privilege('authenticated', 'public.lives', 'peak_viewers', 'SELECT')),
+  'peak_viewers NON leggibile dal client');
+select ok((select has_column_privilege('authenticated', 'public.lives', 'title', 'SELECT')),
+  'title leggibile dal client (controllo positivo del grant per-colonna)');
+
+-- live_hosts / live_viewers: sola lettura, mutazioni solo RPC/definer.
+select ok((select not has_table_privilege('authenticated', 'public.live_hosts', 'INSERT')
+             and not has_table_privilege('authenticated', 'public.live_hosts', 'UPDATE')
+             and not has_table_privilege('authenticated', 'public.live_hosts', 'DELETE')),
+  'live_hosts: nessuna scrittura client');
+select ok((select not has_table_privilege('authenticated', 'public.live_viewers', 'INSERT')
+             and not has_table_privilege('authenticated', 'public.live_viewers', 'UPDATE')
+             and not has_table_privilege('authenticated', 'public.live_viewers', 'DELETE')),
+  'live_viewers: nessuna scrittura client');
+
+-- live_comments: insert diretta SOLO su (live_id, body); autore forzato dal trigger.
+select ok((select has_column_privilege('authenticated', 'public.live_comments', 'body', 'INSERT')),
+  'live_comments: insert su body consentita');
+select ok((select not has_column_privilege('authenticated', 'public.live_comments', 'author_id', 'INSERT')),
+  'live_comments: author_id fuori dal grant insert (forzato dal trigger)');
+
+-- Policy: lives ha SOLO la select via can_see_live; commenti col pattern drop_comments.
+select is((select count(*)::int from pg_policies where schemaname = 'public' and tablename = 'lives'),
+  1, 'lives ha una sola policy (select visibile, zero scrittura client)');
+select ok((select exists (select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'lives'
+      and policyname = 'lives_select_visible' and cmd = 'SELECT'
+      and qual like '%can_see_live%')),
+  'lives_select_visible: SELECT via can_see_live');
+select ok((select exists (select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'live_comments'
+      and policyname = 'live_comments_insert_own')),
+  'live_comments_insert_own presente');
+select ok((select exists (select 1 from pg_policies
+      where schemaname = 'public' and tablename = 'live_hosts'
+        and policyname = 'live_hosts_select_own_or_host')
+    and exists (select 1 from pg_policies
+      where schemaname = 'public' and tablename = 'live_viewers'
+        and policyname = 'live_viewers_select_own_or_host')),
+  'live_hosts/live_viewers: select limitata a sé stessi o all''host della live');
+
+-- Realtime: i commenti live sono in pubblicazione (postgres_changes + RLS).
+select ok((select exists (select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'live_comments')),
+  'live_comments in pubblicazione supabase_realtime');
+
+-- moderation_target_user v3: rami live (→ host) e live_comment (→ autore).
+select ok((select prosrc like '%public.lives%' and prosrc like '%public.live_comments%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'moderation_target_user'),
+  'moderation_target_user v3: mappa live e live_comment ai responsabili');
+
+-- anon a zero sull''intero dominio.
+select ok((select not has_any_column_privilege('anon', 'public.lives', 'SELECT')
+             and not has_any_column_privilege('anon', 'public.live_comments', 'SELECT')),
+  'anon non legge nulla del dominio live');
 
 select * from finish();
 rollback;

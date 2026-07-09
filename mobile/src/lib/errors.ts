@@ -127,6 +127,35 @@ export function dropErrorMessage(error: unknown): string {
   return DROP_MESSAGES[code] ?? 'Qualcosa è andato storto. Riprova.';
 }
 
+// =============================================================================
+// Mappa della Città (M7) — codici sollevati dalle RPC map_* (condivisione
+// posizione, Safe Zone). Copy dedicata al dominio "posizione", fallback generico.
+// =============================================================================
+const MAP_MESSAGES: Record<string, string> = {
+  // Condivisione posizione (map_start_sharing / map_publish_location / stop)
+  not_authenticated: 'Sessione scaduta, riprova ad accedere.',
+  invalid_duration: 'Durata non valida (da 1 a 12 ore).',
+  user_not_active: 'Il tuo account non può condividere la posizione ora.',
+  location_sharing_off: 'La condivisione della posizione è spenta. Riattivala per apparire sulla mappa.',
+  no_active_session: 'La tua Aura sulla mappa è già spenta.',
+  invalid_location: 'Posizione non valida.',
+  // Safe Zone (MM9)
+  zone_limit_reached: 'Puoi avere al massimo 2 zone.',
+  invalid_label: 'Dai un nome alla zona.',
+  invalid_radius: 'Raggio non valido (da 100 a 500 metri).',
+  // Stanze sulla mappa (MM2 → MM8)
+  not_room_host: 'Solo chi ha creato la stanza può metterla sulla mappa.',
+  room_not_live: 'La stanza non è più live.',
+  // Permesso OS (sollevato dal client)
+  permesso_posizione_negato: 'Per apparire sulla mappa consenti l’accesso alla posizione nelle impostazioni.',
+};
+
+/** Messaggio utente in italiano per un errore del dominio Mappa (fallback generico). */
+export function mapErrorMessage(error: unknown): string {
+  const code = authErrorCode(error);
+  return MAP_MESSAGES[code] ?? 'Qualcosa è andato storto. Riprova.';
+}
+
 /**
  * Variante per l'insert diretta in `props`: la violazione dell'indice unico
  * (giver, recipient, tratto, contenuto) arriva come codice SQL 23505, non come

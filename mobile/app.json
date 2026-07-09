@@ -7,6 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "televo",
     "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",
@@ -17,8 +18,7 @@
       "bundleIdentifier": "app.televo.mobile",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Televo usa il microfono per le Stanze Live e i messaggi vocali.",
-        "NSCameraUsageDescription": "Televo usa la fotocamera per scattare foto da inviare in chat.",
-        "NSLocationWhenInUseUsageDescription": "Televo mostra le live vicine a te sulla Mappa Vibe, solo se attivi la condivisione."
+        "NSCameraUsageDescription": "Televo usa la fotocamera per scattare foto da inviare in chat."
       }
     },
     "android": {
@@ -30,6 +30,7 @@
       "permissions": [
         "RECORD_AUDIO",
         "CAMERA",
+        "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
       ],
       "blockedPermissions": [
@@ -67,7 +68,17 @@
           "contactsPermission": "Televo confronta la rubrica in forma anonima (solo impronte, mai i contatti in chiaro) per trovare i tuoi amici."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "@maplibre/maplibre-react-native",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Televo mostra te e i tuoi amici sulla Mappa della Città solo quando accendi la tua Aura: la posizione è visibile solo agli amici, dura il tempo che scegli e la spegni quando vuoi.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": false

@@ -46,6 +46,8 @@ export interface ProfilePatch {
   /** Toggle privacy chat (S10, CM3) — grant per-colonna già live a DB. */
   show_last_seen?: boolean;
   show_read_receipts?: boolean;
+  /** Kill-switch master della Mappa (M7, MM6): off → il trigger DB azzera la presenza. */
+  share_location?: boolean;
 }
 
 /** Aggiorna il profilo proprio; invalida le query e ricarica authStore. */

@@ -38,6 +38,11 @@ export default function Menu() {
   // menu resta per le sezioni future (niente voce "Profilo").
   const voci: Voce[] = [
     { icon: 'people-outline', label: 'Amici', onPress: () => router.push(ROUTES.amici) },
+    {
+      icon: 'navigate-outline',
+      label: 'Posizione e mappa',
+      onPress: () => router.push(ROUTES.impostazioniPosizione),
+    },
     { icon: 'gift-outline', label: 'Invita amici', soon: true },
     { icon: 'settings-outline', label: 'Impostazioni', soon: true },
     { icon: 'shield-checkmark-outline', label: 'Privacy e dati', soon: true },

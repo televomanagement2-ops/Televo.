@@ -36,6 +36,7 @@ export const ROUTES = {
   messaggiImportante: '/messaggi/importante',
   messaggiImpostazioni: '/messaggi/impostazioni',
   messaggiContatti: '/messaggi/contatti',
+  impostazioniPosizione: '/impostazioni/posizione', // kill-switch mappa (M7, MM6)
 
   // --- Drops (M6) ---
   dropNuovo: '/drop/nuovo', // S2 composer (attiva in DM1; ?tipo=foto|audio|testo)

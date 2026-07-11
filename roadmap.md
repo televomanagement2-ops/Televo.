@@ -4,7 +4,37 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-11 sera (**M12 Live: LM2 FATTO** — feed,
+> **Ultimo aggiornamento:** 2026-07-11 notte (**M12 Live: LM3 FATTO** — lifecycle
+> & GDPR: **59 migrazioni** (59 = `live_lifecycle` via pooler; entrambe le
+> funzioni ridefinite in UNA transazione — vincolo MM1: il cron a 5 min non
+> vede mai uno stato intermedio). **`expire_content` v7** (corpo v6 VERBATIM +
+> blocchi live in coda): force-end con cap durata **8h** (QA-1), auto-end
+> della pausa dimenticata a **30 min** (QA-2), force-end delle live il cui
+> host non passa più `is_active_user()` (ban/mute, latenza ≤5 min, §11) — il
+> force-end passa dall'UPDATE di stato, così la macchina a stati resta l'unico
+> arbitro e gli after-trigger di dominio (Echo mappa 3h, premio Aura se
+> qualificata) girano da soli; purge commenti/spettatori a **24h** dalla fine
+> (finestra di moderazione: gli excerpt segnalati sopravvivono in
+> moderation_queue), minimizzazione righe `lives` a **30 giorni** (nessun
+> archivio), cintura difensiva mappa (evento `live_broadcast` aperto su live
+> non più in corso → Echo **3h**, specchio della cintura rooms).
+> **`process_account_deletion` v7** (verbatim+add): END + DELETE delle live
+> proprie (macchina a stati rispettata; il premio Aura è un no-op — emit_aura
+> salta i profili cancellati) + rimozione di ogni traccia su live ALTRUI
+> (commenti/spettatore/co-host). **`gdpr-export` v5** in repo (art. 15:
+> sezioni lives/live_comments/live_viewers/live_hosts). NESSUN job cron
+> nuovo. pgTAP **537/537** SUL REMOTO (+10 LM3) + smoke funzionale **18/18**
+> rolled-back (cap 8h, pausa 31 min, host mutato, purge 24h con riga lives
+> che resta, minimizzazione 31 gg con cascade live_hosts, cintura mappa
+> ≈ +3h, GDPR delete con live attiva terminata+cancellata e live altrui
+> indisturbata); cron `expire-content` verde post-apply (job_run_details).
+> Nessun tipo TS da toccare (zero superfici client nuove). ⚠️ Coda deploy
+> owner: `gdpr-export` passa a **v5** (supera la v4 in coda — si deploya una
+> volta sola l'ultima). Prossimo: **LM4** (Edge LiveKit: ramo live in
+> `livekit-token`, `live-kick`, `livekit-webhook`, `moderate-text`) su
+> comando PO.)
+>
+> **Aggiornamento precedente:** 2026-07-11 sera (**M12 Live: LM2 FATTO** — feed,
 > fan-out, notifiche, Aura: **58 migrazioni** (58 = `live_social` via pooler).
 > `live_fanout` = unico punto di fan-out del dominio sull'inbox privata M7
 > (`map:u:{uid}`): unione degli amici degli host ATTIVI con dedup, filtrata da
@@ -33,32 +63,7 @@
 > (notify all/top/none, dedup, cap visibilità su notifiche e fan-out, Aura
 > 1.0→0.5 e zero per live senza spettatori, feed/detail, invito co-host,
 > unione L-3 nel fan-out). Tipi TS (+2 RPC lettura), `tsc` pulito. Nessuna
-> Edge nuova → coda deploy-owner invariata. Prossimo: **LM3** (lifecycle &
-> GDPR: expire_content v7, process_account_deletion v7, gdpr-export v5) su
-> comando PO.)
->
-> **Aggiornamento precedente:** 2026-07-11 (**M12 Live: LM1 FATTO** — la Live sulla
-> Mappa della Città, backend: **57 migrazioni** (57 = `live_map` via pooler).
-> `map_events.live_id` (FK SET NULL + unique parziale attiva + check
-> `map_events_single_source_chk`: room_id/live_id mai insieme), RPC
-> `map_attach_live`/`map_detach_live` (specchio esatto delle versioni room:
-> sessione M7 attiva + fix richiesti, masked-aware, title denormalizzato,
-> fan-out `event_started`/`event_ended{removed:true}` con `live_id` nel
-> payload), trigger `lives_map_close_events` (SOLO al passaggio a `ended`:
-> Echo a **+3h** vs 12h stanze + fan-out `event_ended{removed:false}`; in
-> `paused` il badge resta pieno), `map_snapshot` **v2** (verbatim+add: espone
-> `live_id` negli events — il client naviga a `/live/[id]`). pgTAP
-> **491/491** SUL REMOTO (+23 LM1) + smoke funzionale **22/22** rolled-back
-> (guardie not_live_host/no_active_session/no_location/live_not_active/
-> live_already_ended; amico vede nello snapshot, estraneo no; fan-out solo
-> all'amico e UNA volta; pause→badge resta; end→Echo 3h; detach senza Echo;
-> `map_stop_sharing`→sparizione istantanea). Tipi TS aggiornati (`live_id`
-> in MapEventRaw/payload + 2 RPC), `tsc` pulito. Nessuna Edge nuova → coda
-> deploy-owner invariata. ⚙️ Nota operativa: la **CLI supabase è tornata
-> utilizzabile** (2.107.0, `supabase login` fatto) per `migration list` —
-> pgTAP/smoke restano via pooler (niente Docker: `test db --linked` non gira);
-> pgtap NON è installata sul remoto, lo script la crea DENTRO la transazione
-> rolled-back.)
+> Edge nuova → coda deploy-owner invariata.)
 
 ---
 
@@ -72,7 +77,7 @@ Progetto Supabase hosted `mmunnybytyfybncohkky` ("Televo Project"), org
 | Area | Stato |
 |------|-------|
 | **42 migrazioni** (Fasi 0–8 + GDPR + onboarding + Aura v3 + chat 25–33 + hardening CM1 34–35 + chat modern CM4 36 + media hardening CM5 37 + CM7/CM8 38–42: contact_revoke, chat_overview, chat_receipts, chat_cleanup, grants_audit) | ✅ tutte applicate (le 38–42 via pooler: CLI bloccata da criterio app Windows, vedi nota) |
-| 10 Edge Functions | ✅ deployate — ⚠️ coda deploy owner: `gdpr-export` v2 + `send-push` v2 (repo aggiornato, CLI 403 → serve l'account owner) |
+| 10 Edge Functions | ✅ deployate — ⚠️ coda deploy owner: `storage-cleanup` (nuova) + `gdpr-export` **v5** (LM3, supera v2–v4) + `send-push` v2 (repo aggiornato, CLI 403 → serve l'account owner) |
 | 3 Vault secrets (`edge_base_url`, `service_role_key`, `cron_secret`) | ✅ registrati il 2026-07-02 (`dispatch_push` attivo) |
 | 209 invarianti pgTAP | ✅ 209/209 verdi SUL REMOTO (suite eseguita via pooler il 2026-07-04; pgtap creata DENTRO la transazione della suite, rollback) |
 | 7 cron job pg_cron (`aura-recompute` ora **daily**; `expire_content` v4 pulisce anche i gruppi orfani) | ✅ attivi e verificati |
@@ -784,12 +789,38 @@ pattern drop_comments per i commenti realtime. Nuove Edge: `live-kick`,
   anti-vanity, invito co-host, unione L-3 nel fan-out con l'amico del solo
   co-host). Tipi TS (+2 RPC lettura), `tsc` pulito. Nessuna Edge nuova →
   coda deploy-owner invariata.
-- ⬜ **LM3–LM4 backend** (lifecycle+GDPR: `expire_content` v7 +
-  `process_account_deletion` v7 + `gdpr-export` v5 → Edge LiveKit:
-  `livekit-token` ramo live, `live-kick`, `livekit-webhook`,
-  `moderate-text`); **LM5–LM8 mobile** (SDK+strato dati → composer+schermo
-  live host/spettatore → home feed striscia+verticale → badge mappa +
-  MANUAL-TESTING + chiusura). UNA milestone alla volta su comando PO.
+- ✅ **LM3 fatto** (2026-07-11): migrazione 59 (`20260711140000_live_lifecycle`)
+  via pooler — `expire_content` v7 e `process_account_deletion` v7 nella
+  STESSA transazione (vincolo MM1: il cron a 5 min non vede stati intermedi),
+  entrambe corpo v6 VERBATIM + soli blocchi live. **expire_content v7**:
+  force-end via UPDATE di stato (macchina a stati unico arbitro; after-trigger
+  Echo mappa 3h + premio Aura girano da soli; niente fan-out `live_ended` nei
+  force-end: snapshot-as-truth, scelta del piano) per cap durata 8h (QA-1),
+  pausa dimenticata >30 min (QA-2) e host che non passa più
+  `is_active_user()` (ban/mute/auto-mute, latenza ≤5 min, §11); purge
+  commenti/spettatori a 24h dalla fine (gli excerpt segnalati sopravvivono in
+  moderation_queue); minimizzazione righe `lives` a 30 giorni (live_hosts
+  cascade, `map_events.live_id` → NULL da sé); cintura difensiva mappa:
+  evento `live_broadcast` aperto su live non più in corso → Echo +3h
+  (specchio cintura rooms, copre anche l'evento orfano di live già purgata).
+  **process_account_deletion v7**: END + DELETE delle live proprie (premio
+  Aura no-op: emit_aura salta i profili cancellati, anonimizzati a inizio
+  funzione) + delete di commenti/presenze spettatore/righe co-host su live
+  altrui. **gdpr-export v5** in repo (art. 15: sezioni lives, live_comments,
+  live_viewers, live_hosts — effimere per design, l'export fotografa lo stato
+  corrente). NESSUN job cron nuovo (cadenza `expire-content` 5 min
+  esistente). pgTAP 527→**537** (+10 LM3) verdi SUL REMOTO; smoke **18/18**
+  rolled-back (cap 8h, pausa 31 min, host mutato, purge 24h con riga lives
+  che resta, minimizzazione 31 gg, cintura mappa ≈ +3h, GDPR con live attiva
+  terminata+cancellata, live altrui indisturbata, profilo anonimizzato);
+  cron `expire-content` verde post-apply. Zero tipi TS da toccare. ⚠️ Coda
+  deploy owner: `gdpr-export` sale a **v5**.
+- ⬜ **LM4 backend** (Edge LiveKit: `livekit-token` ramo live con mint=join,
+  `live-kick`, `livekit-webhook` firma WebhookReceiver, `moderate-text`
+  +`live_comment`/`live`); **LM5–LM8 mobile** (SDK+strato dati →
+  composer+schermo live host/spettatore → home feed striscia+verticale →
+  badge mappa + MANUAL-TESTING + chiusura). UNA milestone alla volta su
+  comando PO.
 - **Verifica:** criteri per milestone e Definition of Done in `docs/live/live.md`
   (§18–§20); QA aperte §22 (cap 8h, pausa 30 min, preview muta, soglie Aura).
 

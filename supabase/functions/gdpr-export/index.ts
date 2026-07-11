@@ -18,6 +18,13 @@
 // di PostgREST. Il consenso alla posizione (consent_type='location') è già incluso
 // nella sezione `consents`.
 //
+// v5 (M12 / LM3): aggiunte le sezioni Live — lives (broadcast propri),
+// live_comments (commenti scritti, anche su live altrui), live_viewers
+// (presenze da spettatore) e live_hosts (righe host/co-host). Il dominio è
+// effimero per design (commenti/spettatori purgati a 24h dalla fine, righe
+// lives a 30 giorni — expire_content v7): l'export fotografa ciò che esiste
+// al momento della richiesta; sezioni vuote = nessuna live recente.
+//
 // verify_jwt = true.
 //   POST -> 200 { ok: true, exported_at, data: {...} }
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
@@ -47,6 +54,7 @@ Deno.serve(async (req) => {
     savedMessages, convMemberships, contactHashes, messageReactions,
     dropComments, dropLikes, dropSaves,
     mapPresence, mapEvents, mapSafeZones,
+    lives, liveComments, liveViewers, liveHosts,
   ] = await Promise.all([
     db.from("profiles").select("*").eq("id", uid).maybeSingle(),
     db.from("profiles_private").select("*").eq("id", uid).maybeSingle(),
@@ -84,6 +92,13 @@ Deno.serve(async (req) => {
     db.from("map_presence").select("*").eq("user_id", uid).maybeSingle(),
     db.from("map_events").select("*").eq("user_id", uid),
     db.from("map_safe_zones").select("*").eq("user_id", uid),
+    // M12 (LM3): Live — broadcast propri e ogni traccia lasciata su live altrui
+    // (commenti, presenze da spettatore, righe co-host). Art. 15; il dominio è
+    // effimero (purge 24h/30gg), l'export fotografa lo stato corrente.
+    db.from("lives").select("*").eq("host_id", uid),
+    db.from("live_comments").select("*").eq("author_id", uid),
+    db.from("live_viewers").select("*").eq("user_id", uid),
+    db.from("live_hosts").select("*").eq("user_id", uid),
   ]);
 
   const data = {
@@ -114,6 +129,10 @@ Deno.serve(async (req) => {
     map_presence: mapPresence.data,
     map_events: mapEvents.data ?? [],
     map_safe_zones: mapSafeZones.data ?? [],
+    lives: lives.data ?? [],
+    live_comments: liveComments.data ?? [],
+    live_viewers: liveViewers.data ?? [],
+    live_hosts: liveHosts.data ?? [],
   };
 
   // Marca completate le richieste di export pendenti + audit.

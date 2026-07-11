@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(527);
+select plan(537);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -1804,6 +1804,69 @@ select ok((select prosrc like '%is_cohost%' and prosrc like '%can_comment%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'live_detail'),
   'live_detail: flag del chiamante (is_host/is_cohost/can_comment)');
+
+-- =============================================================================
+-- M12 · Live (LM3) — ciclo di vita v7 (reti di sicurezza cron + GDPR)
+-- =============================================================================
+-- docs/live/live.md §18 LM3. expire_content v7 e process_account_deletion v7
+-- ridefinite nella STESSA migrazione (vincolo di transazionalità MM1): nessuna
+-- live orfana possibile, diritto all'oblio su tutto il dominio. Invarianti
+-- prosrc qui; le prove FUNZIONALI (pausa 31 min → force-end, host sanzionato →
+-- force-end, purge 24h/30gg, cintura mappa, delete account con live attiva)
+-- sono nello smoke via pooler.
+
+-- expire_content v7: le tre reti di sicurezza del force-end (§12.1/§12.2/§12.10).
+select ok((select prosrc like '%8 hours%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v7: cap durata 8h (QA-1, host crashato senza webhook)');
+select ok((select prosrc like '%30 minutes%' and prosrc like '%paused%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v7: auto-end della pausa dimenticata a 30 min (QA-2)');
+select ok((select prosrc like '%is_active_user%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v7: force-end delle live con host sanzionato (mute/ban, ≤5 min)');
+
+-- expire_content v7: effimerità del dominio (nessun archivio, §0.2).
+select ok((select prosrc like '%live_comments%' and prosrc like '%live_viewers%'
+             and prosrc like '%24 hours%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v7: purge commenti/spettatori a 24h dalla fine (finestra moderazione)');
+select ok((select prosrc like '%delete from public.lives%' and prosrc like '%30 days%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v7: minimizzazione righe lives a 30 giorni');
+select ok((select prosrc like '%live_broadcast%' and prosrc like '%3 hours%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v7: cintura difensiva mappa (evento live aperto → Echo 3h)');
+
+-- expire_content v7: verbatim+add — il corpo v6 è conservato per intero.
+select ok((select prosrc like '%stats_finali%' and prosrc like '%map_presence%'
+             and prosrc like '%delete from public.conversations%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v7: corpo v6 conservato (drops, mappa, gruppi orfani — nessuna regressione)');
+
+-- process_account_deletion v7: art. 17 sul dominio live.
+select ok((select prosrc like '%update public.lives%' and prosrc like '%host_id = p_user%'
+             and prosrc like '%delete from public.lives%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'process_account_deletion'),
+  'process_account_deletion v7: end + DELETE delle live proprie (macchina a stati rispettata)');
+select ok((select prosrc like '%live_comments%' and prosrc like '%live_viewers%'
+             and prosrc like '%live_hosts%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'process_account_deletion'),
+  'process_account_deletion v7: tracce su live altrui rimosse (commenti/spettatore/co-host)');
+select ok((select prosrc like '%map_safe_zones%' and prosrc like '%contact_hashes%'
+             and prosrc like '%drop_saves%' and prosrc like '%log_audit%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'process_account_deletion'),
+  'process_account_deletion v7: corpo v6 conservato (mappa, chat, drops, audit)');
 
 select * from finish();
 rollback;

@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(491);
+select plan(527);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -1642,6 +1642,168 @@ select ok((select prosrc like '%live_id%' from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'map_snapshot'),
   'map_snapshot v2: events con live_id (porta di lettura unica, forma invariata)');
+
+-- =============================================================================
+-- M12 · Live (LM2) — feed, fan-out realtime, notifiche, premio Aura
+-- =============================================================================
+-- docs/live/live.md §18 LM2. Invarianti STRUTTURALI qui (esistenza, ACL,
+-- guardie prosrc); le prove FUNZIONALI (notify_mode all/top/none, dedup 10 min,
+-- inbox realtime, delta Aura 1.0 → 0.5, ordinamento feed, anti-vanity nel
+-- payload di live_detail) sono nello smoke via pooler.
+
+-- live_fanout: l'UNICO punto di fan-out del dominio (inbox privata M7 riusata).
+select has_function('public', 'live_fanout', array['uuid','text','jsonb'],
+  'live_fanout(uuid,text,jsonb) esiste');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_fanout'),
+  'live_fanout è security definer con search_path svuotato');
+select ok((select not has_function_privilege('authenticated', 'public.live_fanout(uuid, text, jsonb)', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.live_fanout(uuid, text, jsonb)', 'EXECUTE')),
+  'live_fanout è interno: né authenticated né anon lo eseguono');
+select ok((select prosrc like '%realtime.send%' and prosrc like '%map:u:%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_fanout'),
+  'live_fanout: broadcast best-effort sull''inbox privata per-utente');
+select ok((select prosrc like '%can_see_live%' and prosrc like '%friendships%'
+             and prosrc like '%distinct%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_fanout'),
+  'live_fanout: unione amici host attivi con dedup, filtrata dall''unico predicato');
+
+-- create_live v2: notifiche set-based + fan-out + attach mappa best-effort.
+select ok((select prosrc like '%live_started%' and prosrc like '%public.notifications%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'create_live'),
+  'create_live v2: notifica live_started set-based all''avvio (L-4)');
+select ok((select prosrc like '%10 minutes%' and prosrc like '%read_at%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'create_live'),
+  'create_live v2: guardia anti-spam 10 minuti per host (dedup non lette)');
+select ok((select prosrc like '%notify_mode%' and prosrc like '%top_friends%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'create_live'),
+  'create_live v2: destinatari secondo notify_mode (all / top_friends / none)');
+select ok((select prosrc like '%can_see_live%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'create_live'),
+  'create_live v2: mai notificare chi non può vedere la live (perimetro unico)');
+select ok((select prosrc like '%map_attach_live%' and prosrc like '%map_attached%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'create_live'),
+  'create_live v2: attach mappa best-effort (senza sessione/posizione NON fallisce)');
+select ok((select prosrc like '%live_fanout%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'create_live'),
+  'create_live v2: fan-out live_started sull''inbox degli amici');
+select ok((select prosrc like '%live_already_active%' and prosrc like '%is_active_user%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'create_live'),
+  'create_live v2: guardie LM0 conservate (verbatim+add, nessuna regressione)');
+select ok((select has_function_privilege('authenticated',
+      'public.create_live(text, public.live_visibility, boolean, boolean, public.live_notify_mode)', 'EXECUTE')
+    and not has_function_privilege('anon',
+      'public.create_live(text, public.live_visibility, boolean, boolean, public.live_notify_mode)', 'EXECUTE')),
+  'create_live v2: ACL preservato dalla ridefinizione (authenticated sì, anon no)');
+
+-- pause/resume/end v2: delta realtime, mai nuove notifiche.
+select ok((select prosrc like '%live_fanout%' and prosrc like '%live_status%'
+             and strpos(prosrc, '''paused''') > 0
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'pause_live'),
+  'pause_live v2: fan-out live_status (pausa = delta, non notifica)');
+select ok((select prosrc like '%live_fanout%' and prosrc like '%live_status%'
+             and prosrc like '%invalid_transition%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'resume_live'),
+  'resume_live v2: fan-out live_status + transizioni LM0 conservate');
+select ok((select prosrc like '%live_fanout%' and prosrc like '%live_ended%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'end_live'),
+  'end_live v2: fan-out live_ended (la live sparisce da striscia e feed)');
+select ok((select prosrc like '%not_live_host%' and prosrc like '%live_already_ended%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'end_live'),
+  'end_live v2: guardie LM0 conservate (solo host, stato finale)');
+
+-- live_invite_cohost v2: notifica al singolo invitato.
+select ok((select prosrc like '%enqueue_notification%' and prosrc like '%live_cohost_invite%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_invite_cohost'),
+  'live_invite_cohost v2: notifica live_cohost_invite al solo invitato');
+select ok((select prosrc like '%cohost_cap_reached%' and prosrc like '%cohost_removed%'
+             and prosrc like '%not_friends%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_invite_cohost'),
+  'live_invite_cohost v2: guardie LM0 conservate (tetto, rimossi, solo amici)');
+
+-- Premio Aura: trigger su ended, live qualificata, rendimenti decrescenti.
+select ok((select exists (select 1 from pg_trigger
+    where tgrelid = 'public.lives'::regclass and tgname = 'lives_award_participation_trg')),
+  'trigger lives_award_participation_trg presente su lives');
+select ok((select pg_get_triggerdef(oid) ilike '%after update of status%'
+             and pg_get_triggerdef(oid) ilike '%''ended''%'
+    from pg_trigger
+    where tgrelid = 'public.lives'::regclass and tgname = 'lives_award_participation_trg'),
+  'lives_award_participation_trg scatta solo al passaggio a ended (via unica)');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'lives_award_participation')
+    and not has_function_privilege('authenticated', 'public.lives_award_participation()', 'EXECUTE'),
+  'lives_award_participation: definer, non eseguibile dal client (funzione trigger)');
+select ok((select prosrc like '%5 minutes%' and prosrc like '%live_viewers%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_award_participation'),
+  'lives_award_participation: qualificata = durata ≥5 min E ≥1 spettatore reale (QA-4)');
+select ok((select prosrc like '%emit_aura%' and prosrc like '%participation%'
+             and prosrc like '%round%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_award_participation'),
+  'lives_award_participation: premio 1/n a rendimenti decrescenti (formula drops)');
+
+-- lives_feed: la porta di lettura della Home.
+select has_function('public', 'lives_feed', 'lives_feed esiste');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_feed'),
+  'lives_feed è security definer con search_path svuotato');
+select ok((select has_function_privilege('authenticated', 'public.lives_feed()', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.lives_feed()', 'EXECUTE')),
+  'lives_feed: authenticated sì, anon no');
+select ok((select prosrc like '%can_see_live%' and prosrc like '%ended_at is null%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_feed'),
+  'lives_feed: solo live attive visibili al chiamante (unico predicato)');
+select ok((select prosrc like '%top_friends%' and prosrc like '%viewer_count%'
+             and prosrc like '%aura_score%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_feed'),
+  'lives_feed: ordinamento server-side (Top Friends → spettatori reali → Aura)');
+select ok((select prosrc like '%server_now%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_feed'),
+  'lives_feed: server_now per il clock calibrato del client (M7 §8)');
+
+-- live_detail: dettaglio + revalidation, contatori solo all'host.
+select has_function('public', 'live_detail', array['uuid'], 'live_detail(uuid) esiste');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_detail'),
+  'live_detail è security definer con search_path svuotato');
+select ok((select has_function_privilege('authenticated', 'public.live_detail(uuid)', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.live_detail(uuid)', 'EXECUTE')),
+  'live_detail: authenticated sì, anon no');
+select ok((select prosrc like '%not_visible%' and prosrc like '%can_see_live%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_detail'),
+  'live_detail: not_visible se il predicato nega (il client si disconnette, §5)');
+select ok((select prosrc like '%is_host%' and prosrc like '%viewer_count%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_detail'),
+  'live_detail: contatori spettatori SOLO all''host principale (anti-vanity R-04)');
+select ok((select prosrc like '%is_cohost%' and prosrc like '%can_comment%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_detail'),
+  'live_detail: flag del chiamante (is_host/is_cohost/can_comment)');
 
 select * from finish();
 rollback;

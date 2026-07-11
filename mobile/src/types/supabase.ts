@@ -1060,9 +1060,12 @@ export interface Database {
       // completezza del contratto.
       map_attach_live: { Args: { p_live: string }; Returns: Json };
       map_detach_live: { Args: { p_live: string }; Returns: Json };
-      // M12 (LM0) — Live: RPC di scrittura in versione BASE (notifiche,
-      // fan-out realtime e aggancio mappa arrivano in LM2; lives_feed e
-      // live_detail pure). Errori come stringhe-codice (live_already_active,
+      // M12 (LM0+LM2) — Live: RPC di scrittura. Da LM2 sono la versione
+      // "sociale": create_live notifica gli amici secondo notify_mode (dedup
+      // 10 min), fa fan-out live_started sull'inbox realtime e aggancia la
+      // mappa best-effort (map_attached dice la verità); pause/resume/end
+      // fanno fan-out live_status/live_ended; live_invite_cohost notifica
+      // l'invitato. Errori come stringhe-codice (live_already_active,
       // not_live_host, invalid_transition, live_already_ended,
       // cohost_cap_reached, cohost_removed, not_friends, no_invite…).
       create_live: {
@@ -1082,6 +1085,20 @@ export interface Database {
       live_accept_cohost: { Args: { p_live: string }; Returns: Json };
       live_remove_cohost: { Args: { p_live: string; p_user: string }; Returns: Json };
       live_leave: { Args: { p_live: string }; Returns: Json }; // best-effort { ok, role }
+      // M12 (LM2) — Live: porte di lettura. lives_feed = Home (striscia +
+      // feed verticale): live ATTIVE (live/paused) degli amici visibili al
+      // chiamante, ordinate server-side (Top Friends del viewer → spettatori
+      // reali → Aura host) SENZA mai esporre i contatori; la propria live è
+      // esclusa (il feed è "amici in live"). Ritorna { server_now, lives:
+      // [{ live_id, title, status, visibility, comments_enabled, started_at,
+      // paused_at, is_top_friend, host: { user_id, username, display_name,
+      // avatar_url, aura_score, aura_color } }] }. live_detail = dettaglio +
+      // revalidation 60s: { server_now, live, hosts[], me: { is_host,
+      // is_cohost, can_comment } } + viewer_count/peak_viewers SOLO se il
+      // chiamante è l'host (anti-vanity R-04); errore not_visible se il
+      // predicato nega → il client si disconnette.
+      lives_feed: { Args: Record<string, never>; Returns: Json };
+      live_detail: { Args: { p_live: string }; Returns: Json };
     };
     Enums: {
       aura_event_type: AuraEventType;

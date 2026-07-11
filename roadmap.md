@@ -4,7 +4,40 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-11 (**M12 Live: LM1 FATTO** — la Live sulla
+> **Ultimo aggiornamento:** 2026-07-11 sera (**M12 Live: LM2 FATTO** — feed,
+> fan-out, notifiche, Aura: **58 migrazioni** (58 = `live_social` via pooler).
+> `live_fanout` = unico punto di fan-out del dominio sull'inbox privata M7
+> (`map:u:{uid}`): unione degli amici degli host ATTIVI con dedup, filtrata da
+> `can_see_live` (visibility/bloccati/kickati/rimossi esclusi dall'UNICO
+> predicato, grafo letto all'invio), host attivi esclusi dai destinatari;
+> eventi `live_started` (identità host nel payload) / `live_status` /
+> `live_ended`, best-effort (lo snapshot resta la verità). RPC v2
+> verbatim+add: `create_live` (notifiche `live_started` SET-BASED secondo
+> `notify_mode` con guardia anti-spam 10 min per host e destinatari SEMPRE
+> intersecati con `can_see_live` — con visibility=top_friends anche
+> notify=all notifica SOLO la cerchia, conflitto risolto verso il MENO
+> aperto — + fan-out + attach mappa BEST-EFFORT con `map_attached` reale),
+> `pause/resume_live` (fan-out `live_status`, mai notifiche), `end_live`
+> (fan-out `live_ended`), `live_invite_cohost` (notifica
+> `live_cohost_invite` al solo invitato, mai sui ritorni idempotenti).
+> Trigger `lives_award_participation` su `ended` (via UNICA: copre anche i
+> force-end LM3/LM4): live qualificata = ≥5 min E ≥1 spettatore reale →
+> `emit_aura('participation', round(1.0/n,3))`, n = live qualificate chiuse
+> oggi (formula drops). Porte di lettura: `lives_feed()` (identità host,
+> `is_top_friend` = cerchia del VIEWER, ordine server-side Top Friends →
+> spettatori reali → Aura host SENZA mai esporre i contatori, propria live
+> esclusa, `server_now`) e `live_detail(p_live)` (hosts attivi, flag
+> is_host/is_cohost/can_comment, `not_visible` per la revalidation 60s,
+> viewer_count/peak_viewers SOLO all'host — anti-vanity R-04). pgTAP
+> **527/527** SUL REMOTO (+36 LM2) + smoke funzionale **43/43** rolled-back
+> (notify all/top/none, dedup, cap visibilità su notifiche e fan-out, Aura
+> 1.0→0.5 e zero per live senza spettatori, feed/detail, invito co-host,
+> unione L-3 nel fan-out). Tipi TS (+2 RPC lettura), `tsc` pulito. Nessuna
+> Edge nuova → coda deploy-owner invariata. Prossimo: **LM3** (lifecycle &
+> GDPR: expire_content v7, process_account_deletion v7, gdpr-export v5) su
+> comando PO.)
+>
+> **Aggiornamento precedente:** 2026-07-11 (**M12 Live: LM1 FATTO** — la Live sulla
 > Mappa della Città, backend: **57 migrazioni** (57 = `live_map` via pooler).
 > `map_events.live_id` (FK SET NULL + unique parziale attiva + check
 > `map_events_single_source_chk`: room_id/live_id mai insieme), RPC
@@ -25,38 +58,7 @@
 > utilizzabile** (2.107.0, `supabase login` fatto) per `migration list` —
 > pgTAP/smoke restano via pooler (niente Docker: `test db --linked` non gira);
 > pgtap NON è installata sul remoto, lo script la crea DENTRO la transazione
-> rolled-back. Prossimo: **LM2** (feed, fan-out, notifiche, Aura) su comando
-> PO.)
->
-> **Aggiornamento precedente:** 2026-07-09 notte (**M12 Live: LM0 FATTO** — enum +
-> fondamenta dominio LIVE sul remoto: **56 migrazioni** (55–56 via pooler:
-> `live_enums` + `live_foundation`), tabelle `lives`/`live_hosts`/`live_viewers`/
-> `live_comments` con RLS + grant per-colonna (contatori PRIVATI a livello dati),
-> `can_see_live` (L-3 unione host attivi; top_friends = solo cerchia host
-> principale; kickati/rimossi/bloccati fuori), macchina a stati nel trigger
-> (`ended` immutabile), tetto 4 host, rate-limit commenti 5/30s, 8 RPC base,
-> `moderation_target_user` v3, realtime `live_comments`. pgTAP **468/468** SUL
-> REMOTO + smoke funzionale **62/62** rolled-back (8 utenti sintetici). Tipi TS
-> aggiornati, `tsc` pulito. Nessuna Edge nuova → coda deploy-owner invariata.
-> Prossimo: **LM1** (mappa backend, badge LIVE) su comando PO. In giornata anche:
-> M12 spec+piano ufficiale SCRITTO (`docs/live/live.md` Rev. 1, LM0–LM8,
-> decisioni PO L-1..L-4) e M7 Mappa **MM9 implementato lato codice —
-> MODULO MAPPA CHIUSO lato sviluppo (MM0–MM9)**. MM9 = Safe Zone UI + polish +
-> chiusura. Editor Safe Zone dal **long-press** sulla mappa (centro dal punto,
-> cerchio di anteprima live, nome a chip/testo, raggio a preset 100/200/350/500m —
-> **QA-3 risolta verso i preset** per robustezza in-Modal e accessibilità); **lista
-> Zone sicure** con elimina in `impostazioni/posizione.tsx` (legge dallo snapshot →
-> funziona anche in Expo Go); **stati vuoto/errore** sulla mappa (copy della lente
-> + banner "mappa non aggiornata"); **accessibilità** (ruoli/label su aure, bolle,
-> cluster, "tu", chip, cestino zona; hitSlop). Nuovi file: `lib/geo.ts`
-> (`cerchioGeoJSON`), `hooks/useSafeZones.ts`, `components/mappa/{ZonesLayer,
-> SafeZoneEditor}.tsx`; +wrapper RPC `creaSafeZone`/`eliminaSafeZone` in `lib/map.ts`.
-> Nessuna migrazione (RPC `map_set_safe_zone`/`map_delete_safe_zone` e `me.zones`
-> nello snapshot erano già live da MM0/MM2). `docs/map/MANUAL-TESTING.md` scritto;
-> `CLAUDE.md` §5/§6 aggiornati (**regola d'oro posizione QA-7**: friends-only,
-> opt-in, auto-expiry, esatta di default + coarse su scelta Safe Zone). tsc/eslint
-> verdi. ⏳ Resta la 1ª Dev Build EAS + verifica on-device 2 device del flusso Safe
-> Zone/masking = azione owner)
+> rolled-back.)
 
 ---
 
@@ -746,9 +748,47 @@ pattern drop_comments per i commenti realtime. Nuove Edge: `live-kick`,
   MapEventRaw e payload inbox, +2 RPC), `tsc` pulito. Nessuna Edge nuova →
   coda deploy-owner invariata. Cintura difensiva cron per gli eventi
   `live_broadcast` orfani → arriva con `expire_content` v7 (LM3, da piano).
-- ⬜ **LM2–LM4 backend** (feed/fan-out/notifiche/Aura → lifecycle+GDPR →
-  Edge LiveKit); **LM5–LM8 mobile** (SDK+strato dati → composer+schermo live
-  host/spettatore → home feed striscia+verticale → badge mappa +
+- ✅ **LM2 fatto** (2026-07-11): migrazione 58 (`20260711130000_live_social`)
+  via pooler. `live_fanout` = unico punto di fan-out del dominio sull'inbox
+  privata M7 (`map:u:{uid}`): unione degli amici degli host ATTIVI con dedup,
+  filtrata da `can_see_live` (visibility top_friends, bloccati, kickati e
+  co-host rimossi esclusi dall'unico predicato, grafo letto al momento
+  dell'invio), host attivi esclusi dai destinatari; eventi `live_started`
+  (identità host denormalizzata nel payload) / `live_status` / `live_ended`,
+  best-effort come `realtime.send` (lo snapshot resta la verità). RPC v2
+  verbatim+add: `create_live` (notifiche `live_started` SET-BASED secondo
+  `notify_mode` con guardia anti-spam 10 min per host — pattern dedup dei
+  commenti drop — e destinatari SEMPRE intersecati con `can_see_live`: con
+  visibility=top_friends anche notify=all notifica SOLO la cerchia, conflitto
+  risolto verso il MENO aperto + fan-out `live_started` + attach mappa
+  BEST-EFFORT: senza sessione/posizione NON fallisce e `map_attached` dice la
+  verità al client), `pause/resume_live` (fan-out `live_status`, mai nuove
+  notifiche), `end_live` (fan-out `live_ended`; i force-end non-RPC di
+  LM3/LM4 restano snapshot-as-truth, scelta del piano), `live_invite_cohost`
+  (notifica `live_cohost_invite` al solo invitato, mai sui ritorni
+  idempotenti). Trigger `lives_award_participation` su `ended` (via UNICA:
+  copre anche i force-end futuri): live QUALIFICATA = durata ≥5 min E ≥1
+  spettatore reale (righe `live_viewers`, QA-4) →
+  `emit_aura('participation', round(1.0/n,3))`, n = live qualificate
+  dell'host chiuse oggi (ledger come contatore, formula identica ai drop).
+  Porte di lettura: `lives_feed()` (live/paused visibili, identità host,
+  `is_top_friend` = cerchia del VIEWER, ordinamento server-side Top Friends
+  → spettatori reali → Aura host SENZA mai esporre i contatori, propria live
+  esclusa — il feed è "amici in live" —, `server_now` per il clock
+  calibrato) e `live_detail(p_live)` (hosts attivi con identità, flag
+  is_host/is_cohost/can_comment, errore `not_visible` per la revalidation
+  60s, viewer_count/peak_viewers SOLO all'host — anti-vanity R-04). pgTAP
+  491→**527** (+36 LM2) verdi SUL REMOTO; smoke 43/43 rolled-back (7 utenti
+  sintetici: notify all/top/none, dedup, cap visibilità anche su notifiche e
+  fan-out, Aura 1.0→0.5 e zero per live senza spettatori, feed/detail
+  anti-vanity, invito co-host, unione L-3 nel fan-out con l'amico del solo
+  co-host). Tipi TS (+2 RPC lettura), `tsc` pulito. Nessuna Edge nuova →
+  coda deploy-owner invariata.
+- ⬜ **LM3–LM4 backend** (lifecycle+GDPR: `expire_content` v7 +
+  `process_account_deletion` v7 + `gdpr-export` v5 → Edge LiveKit:
+  `livekit-token` ramo live, `live-kick`, `livekit-webhook`,
+  `moderate-text`); **LM5–LM8 mobile** (SDK+strato dati → composer+schermo
+  live host/spettatore → home feed striscia+verticale → badge mappa +
   MANUAL-TESTING + chiusura). UNA milestone alla volta su comando PO.
 - **Verifica:** criteri per milestone e Definition of Done in `docs/live/live.md`
   (§18–§20); QA aperte §22 (cap 8h, pausa 30 min, preview muta, soglie Aura).

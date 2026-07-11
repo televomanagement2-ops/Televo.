@@ -117,11 +117,12 @@ export interface MapFriendRaw {
   visibility_expires_at: string;
 }
 
-/** Un evento (stanza live/echo) nello snapshot. */
+/** Un evento (stanza o live, vivo/echo) nello snapshot. live_id: M12 LM1. */
 export interface MapEventRaw {
   id: string;
   user_id: string;
   room_id: string | null;
+  live_id: string | null;
   event_type: MapEventType;
   title: string;
   lat: number;
@@ -167,6 +168,7 @@ export interface MapEventStartedPayload {
   id: string;
   user_id: string;
   room_id: string | null;
+  live_id?: string | null; // presente solo sugli eventi live_broadcast (M12 LM1)
   event_type: MapEventType;
   title: string;
   lat: number;
@@ -183,6 +185,7 @@ export interface MapEventEndedPayload {
   id: string;
   user_id: string;
   room_id: string | null;
+  live_id?: string | null; // presente solo sugli eventi live_broadcast (M12 LM1)
   removed: boolean;
   ended_at?: string;
   visibility_expires_at?: string;
@@ -559,10 +562,11 @@ export interface Database {
         Update: never;
       };
       map_events: {
-        // Eventi georiferiti (stanze live/echo). Solo via RPC (snapshot MM2).
+        // Eventi georiferiti (stanze e live, vivi/echo). Solo via RPC (snapshot MM2).
         Row: {
           id: string;
           user_id: string;
+          live_id: string | null; // M12 LM1: bolla live_broadcast (Echo a +3h)
           room_id: string | null;
           event_type: MapEventType;
           title: string;
@@ -1050,6 +1054,12 @@ export interface Database {
       map_attach_room: { Args: { p_room: string }; Returns: Json };
       map_detach_room: { Args: { p_room: string }; Returns: Json };
       map_snapshot: { Args: Record<string, never>; Returns: Json };
+      // M12 (LM1) — la Live sulla mappa: specchio delle versioni room (badge
+      // dell'host principale, Echo a +3h). In v1 il client non le chiama
+      // direttamente (l'attach è dentro create_live v2, LM2): tipizzate per
+      // completezza del contratto.
+      map_attach_live: { Args: { p_live: string }; Returns: Json };
+      map_detach_live: { Args: { p_live: string }; Returns: Json };
       // M12 (LM0) — Live: RPC di scrittura in versione BASE (notifiche,
       // fan-out realtime e aggancio mappa arrivano in LM2; lives_feed e
       // live_detail pure). Errori come stringhe-codice (live_already_active,

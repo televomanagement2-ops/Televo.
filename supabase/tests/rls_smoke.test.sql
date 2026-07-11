@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(468);
+select plan(491);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -1534,6 +1534,114 @@ select ok((select prosrc like '%public.lives%' and prosrc like '%public.live_com
 select ok((select not has_any_column_privilege('anon', 'public.lives', 'SELECT')
              and not has_any_column_privilege('anon', 'public.live_comments', 'SELECT')),
   'anon non legge nulla del dominio live');
+
+-- =============================================================================
+-- M12 · Live (LM1) — la Live sulla Mappa della Città (badge LIVE)
+-- =============================================================================
+-- docs/live/live.md §18 LM1. Riuso integrale di map_events (M7): colonna
+-- live_id + RPC map_attach_live/map_detach_live (specchio delle versioni room)
+-- + trigger di chiusura con Echo a +3h (vs 12h stanze). Invarianti STRUTTURALI
+-- qui; le prove FUNZIONALI (attach visibile all'amico e non all'estraneo,
+-- end → Echo 3h, pause → badge resta, detach/stop_sharing → sparizione) sono
+-- nello smoke via pooler.
+
+-- Colonna di collegamento: FK a lives con SET NULL (l'Echo sopravvive alla
+-- purge della riga live, LM3).
+select has_column('public', 'map_events', 'live_id',
+  'map_events.live_id esiste (badge LIVE sulla mappa)');
+select ok((select bool_or(confdeltype = 'n') from pg_constraint
+    where conrelid = 'public.map_events'::regclass and contype = 'f'
+      and confrelid = 'public.lives'::regclass),
+  'map_events.live_id → lives ON DELETE SET NULL (Echo coerente dopo la purge)');
+
+-- UNA sola bolla live per broadcast + una riga referenzia UN solo dominio.
+select ok((select exists (select 1 from pg_indexes
+    where schemaname = 'public' and tablename = 'map_events'
+      and indexname = 'map_events_live_broadcast_uidx'
+      and indexdef ilike '%unique%' and indexdef ilike '%(live_id)%'
+      and indexdef ilike '%ended_at is null%')),
+  'unique parziale (live_id) where ended_at is null: una bolla live per broadcast');
+select ok((select exists (select 1 from pg_constraint
+    where conrelid = 'public.map_events'::regclass
+      and conname = 'map_events_single_source_chk' and contype = 'c')),
+  'check map_events_single_source_chk: room_id e live_id mai insieme');
+
+-- Le 2 RPC esistono, definer, search_path svuotato.
+select has_function('public', 'map_attach_live', 'map_attach_live esiste');
+select has_function('public', 'map_detach_live', 'map_detach_live esiste');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'map_attach_live'),
+  'map_attach_live è security definer');
+select ok((select proconfig::text like '%search_path=%' from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'map_attach_live'),
+  'map_attach_live ha search_path svuotato');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'map_detach_live'),
+  'map_detach_live è security definer con search_path svuotato');
+
+-- Grant contract: authenticated sì, anon no.
+select ok((select has_function_privilege('authenticated', 'public.map_attach_live(uuid)', 'EXECUTE')),
+  'authenticated esegue map_attach_live');
+select ok((select has_function_privilege('authenticated', 'public.map_detach_live(uuid)', 'EXECUTE')),
+  'authenticated esegue map_detach_live');
+select ok((select not has_function_privilege('anon', 'public.map_attach_live(uuid)', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.map_detach_live(uuid)', 'EXECUTE')),
+  'anon non esegue attach/detach live (app invite-only)');
+
+-- Guardie prosrc: la semantica che protegge i pilastri vive nel corpo delle RPC.
+select ok((select prosrc like '%not_live_host%' and prosrc like '%live_not_active%'
+             and prosrc like '%no_active_session%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'map_attach_live'),
+  'map_attach_live: solo host principale + live in diretta + sessione mappa attiva');
+select ok((select prosrc like '%live_already_ended%' and prosrc like '%is_active_user%'
+             and prosrc like '%no_location%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'map_attach_live'),
+  'map_attach_live: enforcement sanzioni + posizione pubblicata richiesta');
+select ok((select prosrc like '%live_broadcast%' and prosrc like '%map_fanout%'
+             and prosrc like '%event_started%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'map_attach_live'),
+  'map_attach_live: evento live_broadcast + fan-out event_started agli amici');
+select ok((select prosrc like '%delete from public.map_events%' and prosrc like '%ended_at is null%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'map_detach_live'),
+  'map_detach_live: DELETE dell''evento aperto (revoca, niente Echo)');
+select ok((select prosrc like '%map_fanout%' and prosrc like '%event_ended%'
+             and prosrc like '%removed%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'map_detach_live'),
+  'map_detach_live: fan-out event_ended (removed)');
+
+-- Trigger di chiusura: via PRIMARIA, SOLO al passaggio a ended (in paused il
+-- badge resta pieno); Echo a +3 ore (vs 12h stanze).
+select ok((select exists (select 1 from pg_trigger
+    where tgrelid = 'public.lives'::regclass and tgname = 'lives_map_close_events_trg')),
+  'trigger lives_map_close_events_trg presente su lives');
+select ok((select pg_get_triggerdef(oid) ilike '%after update of status%'
+             and pg_get_triggerdef(oid) ilike '%''ended''%'
+    from pg_trigger
+    where tgrelid = 'public.lives'::regclass and tgname = 'lives_map_close_events_trg'),
+  'lives_map_close_events_trg scatta solo verso ended (pause non chiude il badge)');
+select ok((select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_map_close_events'),
+  'lives_map_close_events è security definer');
+select ok((select not has_function_privilege('authenticated', 'public.lives_map_close_events()', 'EXECUTE')),
+  'authenticated non esegue lives_map_close_events (funzione trigger)');
+select ok((select prosrc like '%3 hours%' and prosrc like '%map_fanout%'
+             and prosrc like '%event_ended%' and prosrc like '%removed%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_map_close_events'),
+  'lives_map_close_events: Echo a +3h + fan-out event_ended (removed=false)');
+
+-- map_snapshot v2: espone live_id negli events (il client naviga a /live/[id]).
+select ok((select prosrc like '%live_id%' from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'map_snapshot'),
+  'map_snapshot v2: events con live_id (porta di lettura unica, forma invariata)');
 
 select * from finish();
 rollback;

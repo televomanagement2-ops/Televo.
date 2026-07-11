@@ -4,7 +4,31 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-09 notte (**M12 Live: LM0 FATTO** — enum +
+> **Ultimo aggiornamento:** 2026-07-11 (**M12 Live: LM1 FATTO** — la Live sulla
+> Mappa della Città, backend: **57 migrazioni** (57 = `live_map` via pooler).
+> `map_events.live_id` (FK SET NULL + unique parziale attiva + check
+> `map_events_single_source_chk`: room_id/live_id mai insieme), RPC
+> `map_attach_live`/`map_detach_live` (specchio esatto delle versioni room:
+> sessione M7 attiva + fix richiesti, masked-aware, title denormalizzato,
+> fan-out `event_started`/`event_ended{removed:true}` con `live_id` nel
+> payload), trigger `lives_map_close_events` (SOLO al passaggio a `ended`:
+> Echo a **+3h** vs 12h stanze + fan-out `event_ended{removed:false}`; in
+> `paused` il badge resta pieno), `map_snapshot` **v2** (verbatim+add: espone
+> `live_id` negli events — il client naviga a `/live/[id]`). pgTAP
+> **491/491** SUL REMOTO (+23 LM1) + smoke funzionale **22/22** rolled-back
+> (guardie not_live_host/no_active_session/no_location/live_not_active/
+> live_already_ended; amico vede nello snapshot, estraneo no; fan-out solo
+> all'amico e UNA volta; pause→badge resta; end→Echo 3h; detach senza Echo;
+> `map_stop_sharing`→sparizione istantanea). Tipi TS aggiornati (`live_id`
+> in MapEventRaw/payload + 2 RPC), `tsc` pulito. Nessuna Edge nuova → coda
+> deploy-owner invariata. ⚙️ Nota operativa: la **CLI supabase è tornata
+> utilizzabile** (2.107.0, `supabase login` fatto) per `migration list` —
+> pgTAP/smoke restano via pooler (niente Docker: `test db --linked` non gira);
+> pgtap NON è installata sul remoto, lo script la crea DENTRO la transazione
+> rolled-back. Prossimo: **LM2** (feed, fan-out, notifiche, Aura) su comando
+> PO.)
+>
+> **Aggiornamento precedente:** 2026-07-09 notte (**M12 Live: LM0 FATTO** — enum +
 > fondamenta dominio LIVE sul remoto: **56 migrazioni** (55–56 via pooler:
 > `live_enums` + `live_foundation`), tabelle `lives`/`live_hosts`/`live_viewers`/
 > `live_comments` con RLS + grant per-colonna (contatori PRIVATI a livello dati),
@@ -76,12 +100,15 @@ moderazione + safety · economia Vibes (simbolica attiva, Stripe inerte) · GDPR
   verifiche di catalogo e la registrazione dei Vault secrets senza dashboard.
 - **NON rifare `db push`** delle migrazioni già applicate: `migration list` è la
   fonte di verità (tutte e 37 risultano live al 2026-07-03).
-- ⚠️ Dal 2026-07-03 la **CLI supabase è bloccata** su questa macchina da un
-  criterio di controllo applicazioni Windows (spawn di `supabase.exe` negato
-  anche fuori sandbox). Alternativa piena già collaudata: **pooler** (Deno +
-  postgres.js) per SQL/pgTAP E per applicare migrazioni — ricordandosi di
-  registrare la versione in `supabase_migrations.schema_migrations` (fatto per
-  la 37, script in scratchpad `apply_migration.ts`).
+- ⚠️ Dal 2026-07-03 la **CLI supabase era bloccata** su questa macchina da un
+  criterio di controllo applicazioni Windows. **Dal 2026-07-11 è tornata
+  utilizzabile** (2.107.0, dopo `supabase login`): ok `migration list --linked`;
+  `test db --linked` NON gira (richiede Docker, assente). Per pgTAP, smoke e
+  applicazione migrazioni resta la via collaudata: **pooler** (Deno +
+  postgres.js), registrando la versione in
+  `supabase_migrations.schema_migrations`. Nota: **pgtap NON è installata sul
+  remoto** — lo script della suite la crea DENTRO la transazione (il rollback
+  finale la rimuove).
 
 > ✅ **CM0 chiuso (2026-07-02)**: tutte le migrazioni (comprese Aura v3 e chat
 > 25–33) risultano applicate al remoto; realtime publication, cron e Vault
@@ -699,10 +726,30 @@ pattern drop_comments per i commenti realtime. Nuove Edge: `live-kick`,
   (visibilità/blocchi/kick/unione L-3/top_friends/cap/rate-limit/stati).
   Tipi TS a mano (+4 tabelle, +8 RPC, +5 alias) e `tsc` pulito. Nessuna Edge
   nuova → coda deploy-owner invariata.
-- ⬜ **LM1–LM4 backend** (mappa backend badge LIVE → feed/fan-out/notifiche/
-  Aura → lifecycle+GDPR → Edge LiveKit); **LM5–LM8 mobile** (SDK+strato dati →
-  composer+schermo live host/spettatore → home feed striscia+verticale → badge
-  mappa + MANUAL-TESTING + chiusura). UNA milestone alla volta su comando PO.
+- ✅ **LM1 fatto** (2026-07-11): migrazione 57 (`20260711120000_live_map`) via
+  pooler. `map_events.live_id` (FK → lives ON DELETE SET NULL, unique parziale
+  `(live_id) where ended_at is null`, check `map_events_single_source_chk`:
+  una riga referenzia UN solo dominio — chiude il rischio annotato nel piano).
+  RPC `map_attach_live`/`map_detach_live` = specchio delle versioni room
+  (is_active_user, solo host principale, solo stato `live`, sessione M7
+  attiva + posizione pubblicata, masked-aware, title denormalizzato,
+  idempotenti; fan-out `event_started`/`event_ended{removed:true}` con
+  `live_id` e `room_id:null` nel payload — il client M7 li parsa già).
+  Trigger `lives_map_close_events`: SOLO al passaggio a `ended` (WHEN sul
+  trigger: in `paused` il badge resta pieno) → Echo a **+3h** (vs 12h stanze)
+  + fan-out `event_ended{removed:false}`. `map_snapshot` v2 verbatim+add
+  (`live_id` negli events). Revoca istantanea gratis: `map_stop_sharing` e
+  kill-switch cancellavano già TUTTI gli eventi dell'utente. pgTAP
+  468→**491** (+23 LM1) verdi SUL REMOTO; smoke 22/22 rolled-back (guardie,
+  snapshot amico sì/estraneo no, fan-out una-volta solo all'amico,
+  pause/end/detach/stop_sharing, check constraint). Tipi TS (+`live_id` su
+  MapEventRaw e payload inbox, +2 RPC), `tsc` pulito. Nessuna Edge nuova →
+  coda deploy-owner invariata. Cintura difensiva cron per gli eventi
+  `live_broadcast` orfani → arriva con `expire_content` v7 (LM3, da piano).
+- ⬜ **LM2–LM4 backend** (feed/fan-out/notifiche/Aura → lifecycle+GDPR →
+  Edge LiveKit); **LM5–LM8 mobile** (SDK+strato dati → composer+schermo live
+  host/spettatore → home feed striscia+verticale → badge mappa +
+  MANUAL-TESTING + chiusura). UNA milestone alla volta su comando PO.
 - **Verifica:** criteri per milestone e Definition of Done in `docs/live/live.md`
   (§18–§20); QA aperte §22 (cap 8h, pausa 30 min, preview muta, soglie Aura).
 

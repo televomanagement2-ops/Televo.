@@ -402,9 +402,21 @@ deno_version = 2
 [functions.verify-invite]
 verify_jwt = true
 
-# livekit-token: solo utenti autenticati possono ottenere un token stanza.
+# livekit-token: solo utenti autenticati possono ottenere un token stanza/live.
+# M12/LM4: body { room_id } XOR { live_id }; per la live il mint È il join.
 [functions.livekit-token]
 verify_jwt = true
+
+# live-kick: l'host principale rimuove spettatore/co-host da una Live (M12).
+# DB prima (kicked_at/removed), poi removeParticipant su LiveKit.
+[functions.live-kick]
+verify_jwt = true
+
+# livekit-webhook: riconciliazione lifecycle Live dai webhook di LiveKit Cloud.
+# verify_jwt=false: l'autenticità arriva dalla firma LiveKit (WebhookReceiver
+# con API key/secret), non dal JWT utente. Ignora le stanze non-live_*.
+[functions.livekit-webhook]
+verify_jwt = false
 
 # aura-recompute: wrapper HTTP per il ricalcolo Aura (trigger manuale/esterno).
 # Lo scheduling ricorrente avviene via pg_cron che chiama direttamente le

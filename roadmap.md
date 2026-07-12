@@ -4,7 +4,51 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-11 notte (**M12 Live: LM3 FATTO** — lifecycle
+> **Ultimo aggiornamento:** 2026-07-12 (**M12 Live: LM4 FATTO — Edge LiveKit,
+> DEPLOYATE + coda owner SVUOTATA.** Nessuna migrazione (59 invariate,
+> `migration list` allineato locale=remoto). **`livekit-token` v2** — UN punto
+> di mint per i due domini (L-2), body `{room_id}` XOR `{live_id}`; ramo live:
+> joinable in `live`/`paused` (`ended` → 409 `live_not_joinable`; entrare in
+> pausa è previsto, §12.19), host/co-host ATTIVO → `canPublish` (il co-host
+> `invited` resta spettatore finché non accetta), tutti gli altri passano
+> dall'UNICO predicato `can_see_live` via RPC (kickati/rimossi/bloccati/
+> non-amici → 403 `forbidden`); **il mint È il join**: upsert `live_viewers`
+> con rientro (`left_at` azzerato, `joined_at` del primo ingresso — il
+> rientro post-kick muore nel predicato); un host attivo che minta CHIUDE la
+> propria riga viewer (contatori onesti); `canPublishData` solo a chi
+> pubblica. **`live-kick`** (verify_jwt=true) — solo host principale,
+> `{live_id, user_id, scope: viewer|cohost}`: **DB PRIMA** (upsert
+> `kicked_at`/`kicked_by`, kick preventivo consentito; co-host → `removed`,
+> non rientra) **media DOPO** (`RoomServiceClient.removeParticipant`
+> best-effort, esito in `media_removed` — se fallisce il predicato ha già
+> chiuso, retry idempotente). **`livekit-webhook`** (verify_jwt=false, firma
+> **WebhookReceiver** con la STESSA API key/secret del mint — l'auth è di
+> LiveKit, non x-cron-secret): `participant_left` → riconcilia lo spettatore
+> caduto (`left_at`, kickati intatti) e il co-host attivo (`left`), host
+> principale MAI toccato; `room_finished` → end server-side idempotente via
+> UPDATE di stato (macchina a stati unico arbitro, after-trigger Echo mappa
+> 3h + premio Aura da soli, NESSUN fan-out: snapshot-as-truth); ignora le
+> stanze non-`live_*` (le rooms audio sono `televo_*`). **`moderate-text`
+> v3**: +`live`/`live_comment` E fix di un **bug latente M6** — il client
+> inviava `target_type='drop_comment'` da sempre ma l'array dei target non lo
+> ammetteva (400 silenzioso inghiottito dal fire-and-forget): ora ammesso.
+> `config.toml`: registrate `live-kick` (true) e `livekit-webhook` (false).
+> **Test locali 14/14** (Deno, SDK reale livekit-server-sdk@2: round-trip
+> firma webhook — valida accettata, body manomesso e chiave sbagliata
+> rifiutati, `identity`/`room.name` intatti; grant token host vs spettatore
+> subscribe-only, TTL 1h) + `deno check` pulito su tutte e 4. **DEPLOY VIA
+> CLI RIUSCITO** (login owner del 2026-07-12): le 4 di LM4 **+ TUTTA la coda
+> deploy-owner** (`gdpr-export` v5, `send-push` v2, `storage-cleanup`) — 13
+> funzioni ACTIVE, flag verify_jwt verificati con `functions list`, smoke sul
+> webhook deployato (risponde 500 `livekit_not_configured`: degrado atteso
+> finché mancano le env). ⏳ **Azioni owner rimaste (pre-lancio, NON
+> bloccanti per LM5)**: secrets Edge `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`/
+> `LIVEKIT_WS_URL` + configurare l'URL del webhook nella dashboard LiveKit
+> Cloud (`https://mmunnybytyfybncohkky.supabase.co/functions/v1/livekit-webhook`)
+> — senza webhook il sistema resta corretto (reti cron LM3), solo più lento a
+> chiudere. Prossimo: **LM5** (mobile: fondamenta LiveKit) su comando PO.)
+>
+> **Aggiornamento precedente:** 2026-07-11 notte (**M12 Live: LM3 FATTO** — lifecycle
 > & GDPR: **59 migrazioni** (59 = `live_lifecycle` via pooler; entrambe le
 > funzioni ridefinite in UNA transazione — vincolo MM1: il cron a 5 min non
 > vede mai uno stato intermedio). **`expire_content` v7** (corpo v6 VERBATIM +
@@ -33,37 +77,6 @@
 > volta sola l'ultima). Prossimo: **LM4** (Edge LiveKit: ramo live in
 > `livekit-token`, `live-kick`, `livekit-webhook`, `moderate-text`) su
 > comando PO.)
->
-> **Aggiornamento precedente:** 2026-07-11 sera (**M12 Live: LM2 FATTO** — feed,
-> fan-out, notifiche, Aura: **58 migrazioni** (58 = `live_social` via pooler).
-> `live_fanout` = unico punto di fan-out del dominio sull'inbox privata M7
-> (`map:u:{uid}`): unione degli amici degli host ATTIVI con dedup, filtrata da
-> `can_see_live` (visibility/bloccati/kickati/rimossi esclusi dall'UNICO
-> predicato, grafo letto all'invio), host attivi esclusi dai destinatari;
-> eventi `live_started` (identità host nel payload) / `live_status` /
-> `live_ended`, best-effort (lo snapshot resta la verità). RPC v2
-> verbatim+add: `create_live` (notifiche `live_started` SET-BASED secondo
-> `notify_mode` con guardia anti-spam 10 min per host e destinatari SEMPRE
-> intersecati con `can_see_live` — con visibility=top_friends anche
-> notify=all notifica SOLO la cerchia, conflitto risolto verso il MENO
-> aperto — + fan-out + attach mappa BEST-EFFORT con `map_attached` reale),
-> `pause/resume_live` (fan-out `live_status`, mai notifiche), `end_live`
-> (fan-out `live_ended`), `live_invite_cohost` (notifica
-> `live_cohost_invite` al solo invitato, mai sui ritorni idempotenti).
-> Trigger `lives_award_participation` su `ended` (via UNICA: copre anche i
-> force-end LM3/LM4): live qualificata = ≥5 min E ≥1 spettatore reale →
-> `emit_aura('participation', round(1.0/n,3))`, n = live qualificate chiuse
-> oggi (formula drops). Porte di lettura: `lives_feed()` (identità host,
-> `is_top_friend` = cerchia del VIEWER, ordine server-side Top Friends →
-> spettatori reali → Aura host SENZA mai esporre i contatori, propria live
-> esclusa, `server_now`) e `live_detail(p_live)` (hosts attivi, flag
-> is_host/is_cohost/can_comment, `not_visible` per la revalidation 60s,
-> viewer_count/peak_viewers SOLO all'host — anti-vanity R-04). pgTAP
-> **527/527** SUL REMOTO (+36 LM2) + smoke funzionale **43/43** rolled-back
-> (notify all/top/none, dedup, cap visibilità su notifiche e fan-out, Aura
-> 1.0→0.5 e zero per live senza spettatori, feed/detail, invito co-host,
-> unione L-3 nel fan-out). Tipi TS (+2 RPC lettura), `tsc` pulito. Nessuna
-> Edge nuova → coda deploy-owner invariata.)
 
 ---
 
@@ -77,7 +90,7 @@ Progetto Supabase hosted `mmunnybytyfybncohkky` ("Televo Project"), org
 | Area | Stato |
 |------|-------|
 | **42 migrazioni** (Fasi 0–8 + GDPR + onboarding + Aura v3 + chat 25–33 + hardening CM1 34–35 + chat modern CM4 36 + media hardening CM5 37 + CM7/CM8 38–42: contact_revoke, chat_overview, chat_receipts, chat_cleanup, grants_audit) | ✅ tutte applicate (le 38–42 via pooler: CLI bloccata da criterio app Windows, vedi nota) |
-| 10 Edge Functions | ✅ deployate — ⚠️ coda deploy owner: `storage-cleanup` (nuova) + `gdpr-export` **v5** (LM3, supera v2–v4) + `send-push` v2 (repo aggiornato, CLI 403 → serve l'account owner) |
+| **13 Edge Functions** | ✅ TUTTE deployate e allineate al repo (2026-07-12, CLI con login owner): coda deploy-owner SVUOTATA (`gdpr-export` v5, `send-push` v2, `storage-cleanup`) + le 4 di LM4 (`livekit-token` v2, `live-kick`, `livekit-webhook`, `moderate-text` v3); flag verify_jwt verificati con `functions list` |
 | 3 Vault secrets (`edge_base_url`, `service_role_key`, `cron_secret`) | ✅ registrati il 2026-07-02 (`dispatch_push` attivo) |
 | 209 invarianti pgTAP | ✅ 209/209 verdi SUL REMOTO (suite eseguita via pooler il 2026-07-04; pgtap creata DENTRO la transazione della suite, rollback) |
 | 7 cron job pg_cron (`aura-recompute` ora **daily**; `expire_content` v4 pulisce anche i gruppi orfani) | ✅ attivi e verificati |
@@ -127,8 +140,11 @@ moderazione + safety · economia Vibes (simbolica attiva, Stripe inerte) · GDPR
 > `20260702130000_chat_hardening_fix.sql`. Dettagli nell'header della migrazione
 > e nella checklist CM1 del piano chat.
 >
-> ⚠️ **Unico passo manuale rimasto**: `supabase functions deploy gdpr-export`
-> dall'account owner (la CLI di questo ambiente riceve 403 dal management API).
+> ✅ **Coda deploy Edge CHIUSA (2026-07-12)**: la CLI è tornata operativa con
+> login owner — tutte le funzioni in coda deployate insieme a LM4. Restano solo
+> le azioni pre-lancio LiveKit: secrets `LIVEKIT_*` + URL del webhook nella
+> dashboard LiveKit Cloud
+> (`https://mmunnybytyfybncohkky.supabase.co/functions/v1/livekit-webhook`).
 
 ### 1.2 Frontend — 🟢 Avvio + Auth/Onboarding completi
 
@@ -432,9 +448,10 @@ contatori privati (anti-vanity a livello dati).
   `docs/media/MANUAL-TESTING.md` (sezioni 0–13). pgTAP **298/298 sul remoto**
   (+27 DM7) + smoke funzionale (broadcast=utenti attivi, secondo invio no-op,
   zero leak, rolled-back). Tipi TS allineati.
-- ⬜ **Restano (esterni al codice):** **deploy owner** delle Edge in coda
-  (`storage-cleanup`, `gdpr-export` v3, `send-push` v2 — CLI 403) + esecuzione
-  di `docs/media/MANUAL-TESTING.md` su 2 device.
+- ⬜ **Restano (esterni al codice):** esecuzione di
+  `docs/media/MANUAL-TESTING.md` su 2 device (la coda deploy Edge è stata
+  svuotata il 2026-07-12 con la CLI owner: `storage-cleanup`, `gdpr-export`,
+  `send-push` sono live).
 - ⚠️ **Nota lancio:** con la feature attiva, la **prima notifica "Tema di oggi"**
   parte automaticamente questo pomeriggio (ora di Roma) agli utenti attivi. Per
   rimandarla: `update public.drop_prompt_of_day set notified_at = now() where
@@ -669,7 +686,7 @@ MM1).
   del flusso Safe Zone (creazione → publish successivo mascherato: DB `map_presence.masked`
   + `location`=centro-zona; l'amico vede "In zona").
 - **MODULO MAPPA (M7) CHIUSO lato sviluppo: MM0–MM4 backend + MM5–MM9 mobile.** ⏭️ Restano
-  solo verifiche on-device (azione owner) e la coda deploy-owner Edge (`gdpr-export` v4).
+  solo verifiche on-device (azione owner); `gdpr-export` è live (v5, deployata 2026-07-12).
 - **Verifica:** solo amici visibili; opt-in gestuale revocabile all'istante;
   criteri per milestone in `docs/map/map.md`.
 
@@ -815,12 +832,33 @@ pattern drop_comments per i commenti realtime. Nuove Edge: `live-kick`,
   terminata+cancellata, live altrui indisturbata, profilo anonimizzato);
   cron `expire-content` verde post-apply. Zero tipi TS da toccare. ⚠️ Coda
   deploy owner: `gdpr-export` sale a **v5**.
-- ⬜ **LM4 backend** (Edge LiveKit: `livekit-token` ramo live con mint=join,
-  `live-kick`, `livekit-webhook` firma WebhookReceiver, `moderate-text`
-  +`live_comment`/`live`); **LM5–LM8 mobile** (SDK+strato dati →
-  composer+schermo live host/spettatore → home feed striscia+verticale →
-  badge mappa + MANUAL-TESTING + chiusura). UNA milestone alla volta su
-  comando PO.
+- ✅ **LM4 fatto** (2026-07-12): Edge LiveKit — **deployate** (CLI con login
+  owner tornato operativo; nessuna migrazione, 59 invariate). `livekit-token`
+  v2: UN punto di mint per i due domini, body `{room_id}` XOR `{live_id}`;
+  ramo live joinable in `live`/`paused` (`ended` → 409; entrare in pausa è
+  previsto §12.19), host/co-host ATTIVO → `canPublish` (l'`invited` resta
+  spettatore), gli altri passano da `can_see_live` via RPC (kickati/rimossi/
+  bloccati/non-amici → 403); **il mint È il join** (upsert `live_viewers`,
+  rientro con `left_at` azzerato); l'host attivo che minta chiude la propria
+  riga viewer (contatori onesti); `canPublishData` solo a chi pubblica.
+  `live-kick` (verify_jwt=true): solo host principale, scope viewer|cohost,
+  **DB prima** (kick preventivo consentito; co-host → `removed`) **media
+  dopo** (`removeParticipant` best-effort, `media_removed`). `livekit-webhook`
+  (verify_jwt=false, firma WebhookReceiver con API key/secret):
+  `participant_left` riconcilia spettatore/co-host caduto (host principale
+  mai), `room_finished` → end idempotente via UPDATE di stato (after-trigger
+  Echo 3h + Aura da soli, nessun fan-out: snapshot-as-truth); ignora stanze
+  non-`live_*`. `moderate-text` v3: +`live`/`live_comment` + **fix bug
+  latente M6** (`drop_comment` mai ammesso nell'array → 400 silenzioso).
+  Test locali 14/14 (round-trip firma contro livekit-server-sdk@2, grant
+  token host/spettatore) + `deno check` 4/4; smoke sul webhook deployato
+  (degrado `livekit_not_configured` atteso). **Coda deploy-owner svuotata**
+  nello stesso round. ⏳ Azioni owner pre-lancio: secrets `LIVEKIT_*` +
+  webhook URL in dashboard LiveKit Cloud (senza, il lifecycle resta corretto
+  via reti cron LM3 — solo più lento).
+- ⬜ **LM5–LM8 mobile** (SDK+strato dati → composer+schermo live
+  host/spettatore → home feed striscia+verticale → badge mappa +
+  MANUAL-TESTING + chiusura). UNA milestone alla volta su comando PO.
 - **Verifica:** criteri per milestone e Definition of Done in `docs/live/live.md`
   (§18–§20); QA aperte §22 (cap 8h, pausa 30 min, preview muta, soglie Aura).
 

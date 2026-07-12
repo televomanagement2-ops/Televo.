@@ -13,7 +13,8 @@
 // (RLS sulla coda è moderator-only). enqueue_moderation è SECURITY DEFINER.
 //
 // Contratto:
-//   POST { text, target_type: 'message'|'drop'|'user'|'room', target_id }
+//   POST { text, target_type: 'message'|'drop'|'drop_comment'|'user'|'room'
+//                             |'live'|'live_comment', target_id }
 //   200 -> { ok, allowed, degraded, severity, scores }
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { adminClient, userClient } from "../_shared/clients.ts";
@@ -67,7 +68,13 @@ Deno.serve(async (req) => {
   const targetType = payload.target_type ?? "message";
   const targetId = payload.target_id ?? null;
   if (!text) return jsonResponse({ error: "text_required" }, 400);
-  if (!["user", "room", "message", "drop"].includes(targetType)) {
+  // M12/LM4: +live/live_comment (commenti in diretta, §6). Già che siamo qui:
+  // +drop_comment, che il client M6 invia da sempre ma l'array non ammetteva
+  // (il fire-and-forget inghiottiva il 400 — bug latente, enum DB già pronto).
+  if (
+    !["user", "room", "message", "drop", "drop_comment", "live", "live_comment"]
+      .includes(targetType)
+  ) {
     return jsonResponse({ error: "invalid_target_type" }, 400);
   }
 

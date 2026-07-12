@@ -7,7 +7,44 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-12 notte (**M12 Live: LM7 FATTO — Mobile:
+> **Ultimo aggiornamento:** 2026-07-12 notte (**M12 Live: LM8 FATTO — Mobile:
+> badge mappa + chiusura modulo. IL MODULO LIVE (LM0–LM8) È COMPLETO lato
+> sviluppo.** Nessuna migrazione (59 invariate), nessuna Edge toccata: solo
+> `mobile/` + documenti. **Badge LIVE sulla mappa** (live.md §8, backend LM1
+> già live): `mapStore` porta `liveId` su `PuntoEvento` + selettore puro
+> `eventoLiveBroadcastDi` (diretta aperta > echo più recente); `AuraGlyph` con
+> prop `liveRingOpacity` disegna l'**anello ESTERNO rosso** (`colors.danger`,
+> statico come tutto il glyph — architettura MM8 preservata: zero redraw
+> per-frame); `AuraDot` compone il **callout balloon "LIVE"** persistente
+> (nuovo `LiveBadge.tsx`, variante rossa di LiveRoomBubble con punta) SOPRA il
+> glyph nella colonna del Marker, compensando l'ancoraggio di metà callout —
+> in onda l'aura pulsa a `motion.pulse` (il callout resta fermo), dopo la fine
+> anello+callout DECADONO in 3h via `fattoreEcho` (niente pulse: è memoria).
+> `AuraLayer` orchestra l'indice live-per-host (al più UN evento per utente) e
+> decide la resa: badge sull'AuraDot se l'amico è un punto reso nel viewport;
+> **bolla rossa standalone** (`LiveBadgeBubble`, EchoBubble-like con chip LIVE
+> + titolo + pulse/rampa) se l'amico non ha punto visibile, è fuso in un
+> cluster o è la MIA stessa live. `MapFriendCard` estesa: stato "In diretta
+> ora" + azione **"Guarda la live"** → `/live/[id]`, REATTIVA sullo store (il
+> bottone sparisce se la live finisce con la card aperta; funziona anche
+> sulla bolla della propria live = rientro host); copy evento dedicata
+> (In diretta ora / Live finita Xm fa). Chiusura modulo:
+> **`docs/live/MANUAL-TESTING.md`** scritto (12 sezioni, scenari 2 device:
+> guard Expo Go, composer, notifiche L-4+dedup, feed budget R-3, commenti+
+> moderazione, Co-Live L-3 con utente D, kick/blocco a metà live, reti cron
+> retrodatate via pooler, badge mappa con decadimento simulato, Aura 1/n,
+> GDPR, privacy DoD); **`CLAUDE.md`** aggiornato (§4 dominio M12 completo,
+> §5 tabella Edge con live-kick/livekit-webhook/token v2/export v5, §6 regole
+> d'oro Live: can_see_live verso il meno aperto, video mai persistito,
+> contatori solo host, una notifica per live, no AI sui flussi); memoria di
+> progetto scritta. `tsc --noEmit` ed `eslint` PULITI. ⏳ Done-when on-device
+> (2 device, §18/LM8: anello+callout su B, pausa → badge pieno, fine →
+> dissolvenza con expiry retrodatato, Safe Zone → centro-zona) alla Dev Build
+> EAS + esecuzione integrale di MANUAL-TESTING.md (azioni owner). Restano le
+> azioni pre-lancio LiveKit: secrets `LIVEKIT_*` + webhook URL in dashboard.
+> Prossimo modulo su comando PO.)
+>
+> **Aggiornamento precedente:** 2026-07-12 notte (**M12 Live: LM7 FATTO — Mobile:
 > home feed (striscia + feed verticale).** Nessuna migrazione (59 invariate),
 > nessuna Edge toccata: solo `mobile/`. La **categoria `live` della Home è
 > REALE** (via il ComingSoon): ramo full-height FUORI dalla ScrollView
@@ -55,63 +92,6 @@
 > sulla dashboard LiveKit, fine live → sparisce, vuoto corretto) alla Dev
 > Build EAS (azione owner già tracciata in LM5). Prossimo: **LM8** (badge
 > mappa + MANUAL-TESTING + chiusura modulo) su comando PO.)
->
-> **Aggiornamento precedente:** 2026-07-12 notte (**M12 Live: LM6 FATTO — Mobile:
-> composer + schermo live (host e spettatore).** Nessuna migrazione (59
-> invariate), nessuna Edge toccata: solo `mobile/`. **Voce "Live" ATTIVA nel
-> MenuCrea** (sostituisce il placeholder "Stanza Live"; `createTypes.ts` con
-> nuovo campo `route`, rotte `liveNuovo` + `dynamicRoutes.live` in
-> `routes.ts`) e **ingresso dalla push**: `rottaPerNotifica` instrada
-> `live_started`/`live_cohost_invite` → `/live/[id]` (payload `{live_id}` di
-> LM2). **Composer camera-first `/live/nuovo`** (§3, lazy dietro guard Expo
-> Go): permessi camera+mic ALL'INGRESSO (negati → stato spiegato +
-> openSettings, pattern CM7), preview full-screen dalla traccia LOCALE
-> (`createLocalVideoTrack`, nessuna expo-camera in più; flip
-> user/environment; renderer `VideoView` — l'unico che accetta una traccia
-> non pubblicata), titolo obbligatorio 1–80, riga chip `ComposerToggles`
-> (Co-Live con selezione fino a 3 amici · commenti · mappa opt-in OFF ·
-> visibilità amici/top · notifica tutti/top/nessuna, default L-4), "Avvia
-> Live" → `create_live` → inviti co-host best-effort → replace su
-> `/live/[id]`; hint §12.12 se `map_attached=false`; `live_already_active` →
-> **rientro nella live attiva** (bonifica di un avvio crashato). Un
-> proprietario per risorsa: la preview si ferma PRIMA di navigare, lo schermo
-> live riacquisisce la camera. **Schermo live `/live/[id]`** (stessa rotta,
-> ruolo dal token/detail): **`useLiveSession`** possiede la Room end-to-end —
-> detail → token (mint=join) → AudioSession → connect → publish se canPublish
-> e stato `live`; griglia video 1 pieno / 2 colonna / 3–4 2×2 (Co-Live);
-> pausa = **unpublish REALE** delle tracce (camera e mic spenti, non un frame
-> nero; ripresa = republish rispettando i toggle correnti); tre canali di
-> verità in ordine di autorità: revalidation `live_detail` 60s
-> (`not_visible`/`ended` → teardown, §5) + delta inbox
-> `live_status`/`live_ended` (istantanei per gli spettatori) + eventi Room
-> (`PARTICIPANT_REMOVED` = kick → stato NEUTRO "non più disponibile"; altri
-> Disconnected → revalida e riconnette con MINT NUOVO = ricontrollo completo
-> visibilità/kick, §12.13). §12.2: AppState background → auto-pausa
-> best-effort dell'host, ritorno → auto-ripresa SOLO se la pausa era
-> automatica. Back hardware dell'host intercettato (`beforeRemove`) →
-> conferma "Terminare la live?" (la fine è sempre esplicita). Prompt
-> live-vuota a 3 min con 0 spettatori (QA-6), contati dagli eventi
-> participant LiveKit — gli stessi che alimentano il numero visibile al SOLO
-> host (anti-vanity §1.2) e la `ListaSpettatori` con kick (conferma → Edge:
-> DB prima, media dopo). **Commenti** (§6): postgres_changes su
-> `live_comments` via nuova `lib/live-realtime.ts` (RLS `can_see_live`, solo
-> INSERT), insert diretta con eco realtime dedupata per id + `moderate-text`
-> fire-and-forget (`live_comment`), overlay `CommentiOverlay` con fade SOLO
-> visivo (10s dall'ARRIVO sul device, niente clock di rete; max 4 a schermo),
-> pillola → overlay blur (`CommentInput`; Android degrada a velo scuro),
-> errori del trigger INLINE (rate-limit 5/30s, pausa, commenti spenti);
-> long-press su commento altrui → segnala, flag spettatore → segnala la live
-> (`file_report` `live_comment`/`live`, motivi condivisi REPORT_REASONS).
-> **Co-Live**: `CoHostSheet` a 2 modalità (selezione nel composer / gestione
-> in live: invita·revoca·rimuovi con tetto 4 letto dalle righe `live_hosts`
-> via RLS), banner "Accetta invito" per l'invitato → accept → riconnessione
-> con token nuovo (canPublish). Nuovi
-> `components/live/{PannelloDevBuild,StatoPausa}` (guard condiviso + velo
-> pausa). Schermo di prova LM5 `/live/test` **RIMOSSO** (sostituito dagli
-> schermi veri). `tsc --noEmit` ed `eslint` PULITI. ⏳ Verifica on-device del
-> Done-when (§18/LM6, 2 device) quando la **Dev Build EAS nuova** è pronta
-> (azione owner già tracciata in LM5). Prossimo: **LM7** (home feed:
-> striscia + verticale) su comando PO.)
 
 ---
 
@@ -961,8 +941,29 @@ pattern drop_comments per i commenti realtime. Nuove Edge: `live-kick`,
   `FeedLiveCard` placeholder e `FEED_LIVE` RIMOSSE. tsc/eslint puliti.
   ⏳ Done-when on-device (2 device, §18/LM7: realtime senza refresh, UNA
   connessione per volta su dashboard LiveKit) alla nuova Dev Build EAS.
-- ⬜ **LM8 mobile** (badge mappa: anello rosso + callout su M7 →
-  MANUAL-TESTING + chiusura modulo). UNA milestone alla volta su comando PO.
+- ✅ **LM8 fatto** (2026-07-12): mobile — badge mappa + chiusura modulo.
+  Nessuna migrazione (59 invariate), nessuna Edge toccata. **Badge LIVE**
+  (live.md §8, backend LM1): `mapStore` con `liveId` su `PuntoEvento` +
+  selettore `eventoLiveBroadcastDi` (diretta aperta > echo più recente);
+  `AuraGlyph` prop `liveRingOpacity` = anello ESTERNO rosso statico
+  (architettura MM8 preservata: pulse via wrapper Reanimated, zero redraw
+  Skia); nuovo `LiveBadge.tsx` (callout balloon "LIVE" con punta — persistente
+  e fermo — + `LiveBadgeBubble` standalone EchoBubble-like); `AuraDot` compone
+  callout+glyph compensando l'ancoraggio del Marker, pulsa a `motion.pulse`
+  SOLO in onda, decade in 3h via `fattoreEcho` (echo = memoria, niente pulse);
+  `AuraLayer` decide la resa (badge sul punto amico reso nel viewport, bolla
+  standalone per amico senza punto/fuso in cluster/propria live — al più UN
+  evento live per host); `MapFriendCard` con stato "In diretta ora" + azione
+  "Guarda la live" → `/live/[id]`, reattiva sullo store (sparisce a live
+  finita; sulla propria bolla = rientro host). Chiusura:
+  `docs/live/MANUAL-TESTING.md` (12 sezioni, scenari 2 device + simulazioni
+  retrodatate via pooler), `CLAUDE.md` §4/§5/§6 (dominio M12, Edge, regole
+  d'oro live), memoria di progetto. tsc/eslint puliti. ⏳ Done-when on-device
+  alla Dev Build EAS (azione owner).
+- **MODULO LIVE (M12) CHIUSO lato sviluppo: LM0–LM4 backend + LM5–LM8 mobile.**
+  ⏭️ Restano azioni owner: Dev Build EAS con LiveKit, secrets `LIVEKIT_*` +
+  webhook URL in dashboard LiveKit Cloud, esecuzione integrale di
+  `docs/live/MANUAL-TESTING.md` su 2 device.
 - **Verifica:** criteri per milestone e Definition of Done in `docs/live/live.md`
   (§18–§20); QA aperte §22 (cap 8h, pausa 30 min, preview muta, soglie Aura).
 

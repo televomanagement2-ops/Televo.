@@ -1,11 +1,17 @@
 // =============================================================================
-// MapFriendCard — card di dettaglio di un punto sulla mappa (M7 / MM8).
+// MapFriendCard — card di dettaglio di un punto sulla mappa (M7 / MM8, estesa M12).
 // =============================================================================
 // Tap su un'aura o su una bolla → bottom sheet (riuso BottomSheet/Modal come
 // ShareSheet) con identità minima + anello Aura + tempo relativo ("2h fa",
 // calibrato UTC) + azioni: Vedi profilo · Messaggio (map.md §6). Il "join stanza"
 // arriverà con la UI Live (M4): finché non c'è la rotta stanza, mostriamo lo stato
 // live ma non un pulsante che porterebbe a un vicolo cieco.
+//
+// M12 (LM8) — live.md §8: se la persona è host di una Live APERTA (evento
+// live_broadcast con ended_at nullo), la card offre "Guarda la live" →
+// /live/[id]. L'azione è REATTIVA sul dizionario eventi dello store: se la
+// live finisce con la card aperta, il bottone sparisce da solo. Vale anche per
+// la bolla della MIA stessa live (persona nulla): il tap è il rientro da host.
 //
 // La mappa NON crea contenuti: da qui si esce verso profilo/chat esistenti (RPC
 // get_or_create_dm via useApriDm — DM solo tra amici, già garantito a monte).
@@ -21,7 +27,13 @@ import { useApriDm } from '@/hooks/useAmici';
 import { avvisa } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
 import { tempoRelativoCalibrato } from '@/lib/datetime';
-import { statoAmico, type PuntoAmico, type PuntoEvento } from '@/store/mapStore';
+import {
+  eventoLiveBroadcastDi,
+  statoAmico,
+  useMapStore,
+  type PuntoAmico,
+  type PuntoEvento,
+} from '@/store/mapStore';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, spacing } from '@/constants/theme';
 
@@ -40,14 +52,25 @@ interface Props {
 export function MapFriendCard({ selezione, nowMs, onClose }: Props) {
   const router = useRouter();
   const apriDm = useApriDm();
+  const events = useMapStore((s) => s.events);
 
-  // L'utente al centro dell'azione: l'amico, o l'host della stanza.
+  // L'utente al centro dell'azione: l'amico, o l'host della stanza/live.
   const persona: PuntoAmico | null =
     selezione?.tipo === 'amico'
       ? selezione.amico
       : selezione?.tipo === 'evento'
         ? selezione.host
         : null;
+
+  // La Live APERTA collegata alla selezione (M12): dalla bolla stessa (copia
+  // fresca dello store se c'è ancora) o dal badge dell'amico selezionato.
+  let eventoLive: PuntoEvento | null = null;
+  if (selezione?.tipo === 'evento' && selezione.evento.eventType === 'live_broadcast') {
+    eventoLive = events[selezione.evento.id] ?? selezione.evento;
+  } else if (selezione?.tipo === 'amico') {
+    eventoLive = eventoLiveBroadcastDi(events, selezione.amico.userId, nowMs);
+  }
+  const liveAperta = eventoLive != null && eventoLive.endedAt == null && eventoLive.liveId != null;
 
   const vaiAlProfilo = () => {
     if (!persona) return;
@@ -66,6 +89,12 @@ export function MapFriendCard({ selezione, nowMs, onClose }: Props) {
     });
   };
 
+  const guardaLive = () => {
+    if (!eventoLive?.liveId) return;
+    onClose();
+    router.push(dynamicRoutes.live(eventoLive.liveId));
+  };
+
   return (
     <Modal
       visible={!!selezione}
@@ -76,15 +105,25 @@ export function MapFriendCard({ selezione, nowMs, onClose }: Props) {
     >
       <BottomSheet onClose={onClose}>
         {selezione?.tipo === 'amico' ? (
-          <ContenutoAmico amico={selezione.amico} nowMs={nowMs} />
+          <ContenutoAmico amico={selezione.amico} inDiretta={liveAperta} nowMs={nowMs} />
         ) : selezione?.tipo === 'evento' ? (
           <ContenutoEvento evento={selezione.evento} host={selezione.host} nowMs={nowMs} />
         ) : null}
 
-        {persona ? (
+        {persona || liveAperta ? (
           <View style={styles.azioni}>
-            <Button label="Messaggio" onPress={messaggia} loading={apriDm.isPending} />
-            <Button label="Vedi profilo" variant="secondary" onPress={vaiAlProfilo} />
+            {liveAperta ? <Button label="Guarda la live" onPress={guardaLive} /> : null}
+            {persona ? (
+              <>
+                <Button
+                  label="Messaggio"
+                  variant={liveAperta ? 'secondary' : undefined}
+                  onPress={messaggia}
+                  loading={apriDm.isPending}
+                />
+                <Button label="Vedi profilo" variant="secondary" onPress={vaiAlProfilo} />
+              </>
+            ) : null}
           </View>
         ) : null}
       </BottomSheet>
@@ -93,9 +132,18 @@ export function MapFriendCard({ selezione, nowMs, onClose }: Props) {
 }
 
 // -----------------------------------------------------------------------------
-// Contenuto: amico (aura piena/spenta + tempo relativo, "In zona" se mascherato).
+// Contenuto: amico (aura piena/spenta + tempo relativo, "In zona" se mascherato;
+// M12: "In diretta ora" quando è host di una Live aperta).
 // -----------------------------------------------------------------------------
-function ContenutoAmico({ amico, nowMs }: { amico: PuntoAmico; nowMs: number }) {
+function ContenutoAmico({
+  amico,
+  inDiretta,
+  nowMs,
+}: {
+  amico: PuntoAmico;
+  inDiretta: boolean;
+  nowMs: number;
+}) {
   const live = statoAmico(amico, nowMs) === 'live';
   const nome = amico.displayName ?? amico.username ?? 'Amico';
 
@@ -114,7 +162,12 @@ function ContenutoAmico({ amico, nowMs }: { amico: PuntoAmico; nowMs: number }) 
           </Text>
         ) : null}
         <View style={styles.statoRiga}>
-          {live ? (
+          {inDiretta ? (
+            <>
+              <View style={styles.dotDiretta} />
+              <Text style={styles.statoDiretta}>In diretta ora</Text>
+            </>
+          ) : live ? (
             <>
               <View style={styles.dotLive} />
               <Text style={styles.statoLive}>Ora sulla mappa</Text>
@@ -137,7 +190,9 @@ function ContenutoAmico({ amico, nowMs }: { amico: PuntoAmico; nowMs: number }) 
 }
 
 // -----------------------------------------------------------------------------
-// Contenuto: evento stanza (titolo + stato live/echo + host se amico noto).
+// Contenuto: evento (stanza O live) — titolo + stato live/echo + host se amico
+// noto. Per i live_broadcast il linguaggio è quello della Live (rosso), non
+// quello delle stanze.
 // -----------------------------------------------------------------------------
 function ContenutoEvento({
   evento,
@@ -149,22 +204,31 @@ function ContenutoEvento({
   nowMs: number;
 }) {
   const live = evento.endedAt == null;
+  const broadcast = evento.eventType === 'live_broadcast';
+
+  const icona = broadcast ? (live ? 'videocam' : 'time-outline') : live ? 'radio' : 'time-outline';
+  const tinta = live ? (broadcast ? colors.danger : colors.accent) : colors.muted;
+  const stato = broadcast
+    ? live
+      ? 'In diretta ora'
+      : evento.endedAt != null
+        ? `Live finita ${tempoRelativoCalibrato(evento.endedAt, nowMs)}`
+        : 'Live'
+    : live
+      ? 'Stanza live ora'
+      : evento.endedAt != null
+        ? `Finita ${tempoRelativoCalibrato(evento.endedAt, nowMs)}`
+        : 'Stanza';
 
   return (
     <View style={styles.body}>
       <View style={styles.eventoTitolo}>
-        <Ionicons name={live ? 'radio' : 'time-outline'} size={18} color={live ? colors.accent : colors.muted} />
+        <Ionicons name={icona} size={18} color={tinta} />
         <Text style={styles.nome} numberOfLines={2}>
-          {evento.title ?? 'Stanza'}
+          {evento.title ?? (broadcast ? 'Live' : 'Stanza')}
         </Text>
       </View>
-      <Text style={styles.statoMuted}>
-        {live
-          ? 'Stanza live ora'
-          : evento.endedAt != null
-            ? `Finita ${tempoRelativoCalibrato(evento.endedAt, nowMs)}`
-            : 'Stanza'}
-      </Text>
+      <Text style={broadcast && live ? styles.statoDiretta : styles.statoMuted}>{stato}</Text>
       {host ? (
         <View style={styles.hostRiga}>
           <Avatar uri={host.avatarUrl} name={host.username ?? undefined} size={28} />
@@ -185,7 +249,9 @@ const styles = StyleSheet.create({
   username: { color: colors.muted, fontSize: fontSize.sm, fontFamily: fontFamily.sans },
   statoRiga: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: 2 },
   dotLive: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent },
+  dotDiretta: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger },
   statoLive: { color: colors.accentSoft, fontSize: fontSize.sm, fontFamily: fontFamily.semibold },
+  statoDiretta: { color: colors.danger, fontSize: fontSize.sm, fontFamily: fontFamily.semibold },
   statoMuted: { color: colors.muted, fontSize: fontSize.sm, fontFamily: fontFamily.medium },
   zonaRiga: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: 2 },
   zonaText: { color: colors.accentSoft, fontSize: fontSize.xs, fontFamily: fontFamily.medium },

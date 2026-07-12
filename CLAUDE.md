@@ -227,21 +227,61 @@ seguono quest'ordine.
 - Edge `gdpr-export` (art. 15: esporta tutti i dati dell'utente) e `gdpr-delete`
   (art. 17: anonimizza subito + banna l'identità auth; hard-delete dopo retention).
 
+### M12 — Live (broadcast video personale) — COMPLETO (LM0–LM8, 2026-07-12)
+Spec+piano `docs/live/live.md` (Rev. 1) + `docs/live/MANUAL-TESTING.md`.
+La **Live** è il broadcast video in prima persona, **solo-amici** (L-1), che
+COESISTE con le Stanze audio `rooms` (L-2). Migrazioni 55–59
+(`live_enums`, `live_foundation`, `live_map`, `live_social`, `live_lifecycle`):
+- **Dominio**: `lives` (stati espliciti `live/paused/ended`, `ended` terminale,
+  una live attiva per host via unique parziale, `clip_consent` riservato) ·
+  `live_hosts` (Co-Live fino a 4, invited/active/left/removed) · `live_viewers`
+  (il mint del token È il join; registro kick; gancio 1:1 adulto-minore) ·
+  `live_comments` (≤200 char, rate-limit 5/30s, realtime postgres_changes+RLS,
+  purge a 24h dalla fine). **`can_see_live`** = UNICO predicato di visibilità
+  (RLS, feed, token, commenti, fan-out): unione amici degli host ATTIVI (L-3),
+  `top_friends` = solo cerchia dell'host principale, bloccati/kickati esclusi.
+- **Social**: notifiche `live_started` set-based secondo `notify_mode` (default
+  TUTTI gli amici, L-4; dedup 10 min) + `live_cohost_invite`; fan-out
+  `live_started`/`live_status`/`live_ended` via `live_fanout` sull'inbox privata
+  M7 `map:u:{uid}`; Aura `participation` 1/n SOLO per live qualificate (≥5 min,
+  ≥1 spettatore reale); porte di lettura `lives_feed()`/`live_detail()`
+  (contatori SOLO all'host, anti-vanity).
+- **Mappa**: `map_events.live_id` + `map_attach_live`/`map_detach_live`
+  (opt-in, masked-aware) + trigger di chiusura → **Echo 3h** (vs 12h stanze);
+  in `paused` il badge resta pieno. Client: anello rosso + callout "LIVE"
+  sull'avatar (AuraDot/AuraGlyph), bolla standalone senza punto amico,
+  dissolvenza via `fattoreEcho`, card con "Guarda la live".
+- **Lifecycle**: `expire_content` v7 (cap 8h, pausa >30 min, host sanzionato,
+  purge 24h/30gg, cintura mappa) · webhook LiveKit (`room_finished`,
+  `participant_left`) · `process_account_deletion` v7 · `gdpr-export` v5.
+- **Edge**: `livekit-token` v2 (ramo `live_id`, mint=join, canPublish solo
+  host/co-host attivi) · `live-kick` (DB prima, media dopo) · `livekit-webhook`
+  (firma WebhookReceiver) · `moderate-text` v3 (`live`, `live_comment`).
+- **Mobile** (`mobile/`, Dev Build EAS): SDK `@livekit/react-native`, composer
+  camera-first `/live/nuovo`, schermo host/spettatore `/live/[id]`
+  (`useLiveSession`), commenti overlay con fade, Co-Live, kick, Home striscia +
+  feed verticale paged (preview subscribe-only della SOLA pagina visibile,
+  budget R-3), badge mappa LM8. NO moderazione AI sui flussi video (report +
+  coda umana); NESSUNA registrazione (il video non è mai persistito).
+
 ---
 
 ## 5. Edge Functions e Cron (riepilogo)
 
 | Funzione | verify_jwt | Note |
 |----------|-----------|------|
-| verify-invite, livekit-token | true | Fase 0-3 |
+| verify-invite | true | Fase 0-3 |
+| livekit-token | true | v2 (M12/LM4): UN punto di mint per stanze `{room_id}` E live `{live_id}`; il mint della live È il join (upsert live_viewers) |
 | aura-recompute | false | x-cron-secret |
 | send-push | false | x-cron-secret; via dispatch_push (pg_cron+pg_net) |
-| moderate-text | true | Perspective; degrada senza chiave |
+| moderate-text | true | Perspective; degrada senza chiave (v3: +`live`/`live_comment`) |
 | process-tip | true | tip simbolico attivo |
 | create-vibe-purchase | true | inerte senza STRIPE_SECRET_KEY |
 | stripe-webhook | false | firma Stripe; inerte senza STRIPE_WEBHOOK_SECRET |
-| gdpr-export, gdpr-delete | true | art. 15 / 17 (export v3: incl. interazioni drops) |
+| gdpr-export, gdpr-delete | true | art. 15 / 17 (export v5: incl. drops, mappa e live) |
 | storage-cleanup | false | x-cron-secret; via dispatch_storage_cleanup (pg_cron+pg_net); svuota storage_cleanup_queue via Storage API (M6/DM6) |
+| live-kick | true | M12/LM4: solo host principale; DB prima (kicked_at/removed), media dopo (removeParticipant) |
+| livekit-webhook | false | M12/LM4: firma **WebhookReceiver** LiveKit (NON x-cron-secret); room_finished → end, participant_left → riconcilia |
 
 **Cron (pg_cron)**: `aura-recompute-weekly`, `spotlight-daily`, `expire-content`
 (5 min), `streak-rollover-daily`, `dispatch-push-minutely`,
@@ -268,6 +308,15 @@ Vincoli di safety minori + GDPR, validi su tutto:
   secret **mai** nel client; vivono in Supabase secrets / Vault.
 - `mute`/`ban` disattivano la creazione contenuti via `is_active_user()`; ogni
   azione di moderazione è in `audit_log`.
+- **Live (M12)**: visibilità SOLO amici accettati via l'unico predicato
+  `can_see_live` (unione degli host attivi in Co-Live, L-3) — in caso di
+  conflitto risolvere sempre verso il MENO aperto; `canPublish` nel token solo
+  per host/co-host attivi, spettatori subscribe-only; il video **non è mai
+  persistito** (nessuna registrazione/bucket: il flusso vive solo in LiveKit);
+  contatori spettatori visibili SOLO all'host (anti-vanity R-04); UNA notifica
+  per live (mai su pausa/ripresa, dedup 10 min); le live finite spariscono
+  (nessun archivio); NO moderazione AI sui flussi video/audio (report reattivo
+  + coda umana).
 
 **Convenzioni del repo (seguile alla lettera quando aggiungi codice):**
 - Migrazioni: `supabase/migrations/YYYYMMDDHHMMSS_dominio.sql`, header

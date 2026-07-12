@@ -66,11 +66,12 @@ export interface PuntoAmico {
   visibilityExpiresAt: number; //  updatedAt + 24h → oltre, il client lo nasconde
 }
 
-/** Un evento (stanza live/echo) sulla mappa. */
+/** Un evento (stanza o broadcast live, vivo/echo) sulla mappa. */
 export interface PuntoEvento {
   id: string;
   userId: string;
   roomId: string | null;
+  liveId: string | null; // M12 (LM8): la Live collegata — apre /live/[id] dalla card
   eventType: MapEventType;
   title: string | null;
   lat: number;
@@ -79,7 +80,7 @@ export interface PuntoEvento {
   zoneLabel: string | null;
   startedAt: number | null;
   endedAt: number | null; //          null = live; valorizzato = Echo
-  visibilityExpiresAt: number | null; // ended_at + 12h (finestra dell'Echo)
+  visibilityExpiresAt: number | null; // ended_at + 12h stanze / + 3h live (finestra Echo)
 }
 
 const ms = (iso: string | null | undefined): number => (iso ? Date.parse(iso) : 0);
@@ -168,6 +169,7 @@ export const useMapStore = create<MapState>((set) => ({
           id: e.id,
           userId: e.user_id,
           roomId: e.room_id,
+          liveId: e.live_id,
           eventType: e.event_type,
           title: e.title,
           lat: e.lat,
@@ -227,6 +229,7 @@ export const useMapStore = create<MapState>((set) => ({
           id: e.id,
           userId: e.user_id,
           roomId: e.room_id,
+          liveId: e.live_id ?? null,
           eventType: e.event_type,
           title: e.title,
           lat: e.lat,
@@ -335,4 +338,25 @@ export function fattoreEcho(e: PuntoEvento, nowMs: number): number {
   if (durata <= 0) return 0;
   const f = (e.visibilityExpiresAt - nowMs) / durata;
   return Math.max(0, Math.min(1, f));
+}
+
+/**
+ * M12 (LM8): il badge LIVE di un amico — il suo evento `live_broadcast` più
+ * rilevante a un dato istante. Preferisce la diretta APERTA (`ended_at` nullo,
+ * al più una per l'unique parziale a DB); altrimenti l'Echo più recente non
+ * scaduto (live appena finita, dissolvenza 3h). Nessun evento valido → null.
+ */
+export function eventoLiveBroadcastDi(
+  events: Record<string, PuntoEvento>,
+  userId: string,
+  nowMs: number,
+): PuntoEvento | null {
+  let echo: PuntoEvento | null = null;
+  for (const e of Object.values(events)) {
+    if (e.eventType !== 'live_broadcast' || e.userId !== userId) continue;
+    if (statoEvento(e, nowMs) === 'expired') continue;
+    if (e.endedAt == null) return e; // diretta aperta: vince sempre
+    if (!echo || (echo.endedAt != null && e.endedAt > echo.endedAt)) echo = e;
+  }
+  return echo;
 }

@@ -4,7 +4,64 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-12 sera (**M12 Live: LM5 FATTO — Mobile:
+> **Ultimo aggiornamento:** 2026-07-12 notte (**M12 Live: LM6 FATTO — Mobile:
+> composer + schermo live (host e spettatore).** Nessuna migrazione (59
+> invariate), nessuna Edge toccata: solo `mobile/`. **Voce "Live" ATTIVA nel
+> MenuCrea** (sostituisce il placeholder "Stanza Live"; `createTypes.ts` con
+> nuovo campo `route`, rotte `liveNuovo` + `dynamicRoutes.live` in
+> `routes.ts`) e **ingresso dalla push**: `rottaPerNotifica` instrada
+> `live_started`/`live_cohost_invite` → `/live/[id]` (payload `{live_id}` di
+> LM2). **Composer camera-first `/live/nuovo`** (§3, lazy dietro guard Expo
+> Go): permessi camera+mic ALL'INGRESSO (negati → stato spiegato +
+> openSettings, pattern CM7), preview full-screen dalla traccia LOCALE
+> (`createLocalVideoTrack`, nessuna expo-camera in più; flip
+> user/environment; renderer `VideoView` — l'unico che accetta una traccia
+> non pubblicata), titolo obbligatorio 1–80, riga chip `ComposerToggles`
+> (Co-Live con selezione fino a 3 amici · commenti · mappa opt-in OFF ·
+> visibilità amici/top · notifica tutti/top/nessuna, default L-4), "Avvia
+> Live" → `create_live` → inviti co-host best-effort → replace su
+> `/live/[id]`; hint §12.12 se `map_attached=false`; `live_already_active` →
+> **rientro nella live attiva** (bonifica di un avvio crashato). Un
+> proprietario per risorsa: la preview si ferma PRIMA di navigare, lo schermo
+> live riacquisisce la camera. **Schermo live `/live/[id]`** (stessa rotta,
+> ruolo dal token/detail): **`useLiveSession`** possiede la Room end-to-end —
+> detail → token (mint=join) → AudioSession → connect → publish se canPublish
+> e stato `live`; griglia video 1 pieno / 2 colonna / 3–4 2×2 (Co-Live);
+> pausa = **unpublish REALE** delle tracce (camera e mic spenti, non un frame
+> nero; ripresa = republish rispettando i toggle correnti); tre canali di
+> verità in ordine di autorità: revalidation `live_detail` 60s
+> (`not_visible`/`ended` → teardown, §5) + delta inbox
+> `live_status`/`live_ended` (istantanei per gli spettatori) + eventi Room
+> (`PARTICIPANT_REMOVED` = kick → stato NEUTRO "non più disponibile"; altri
+> Disconnected → revalida e riconnette con MINT NUOVO = ricontrollo completo
+> visibilità/kick, §12.13). §12.2: AppState background → auto-pausa
+> best-effort dell'host, ritorno → auto-ripresa SOLO se la pausa era
+> automatica. Back hardware dell'host intercettato (`beforeRemove`) →
+> conferma "Terminare la live?" (la fine è sempre esplicita). Prompt
+> live-vuota a 3 min con 0 spettatori (QA-6), contati dagli eventi
+> participant LiveKit — gli stessi che alimentano il numero visibile al SOLO
+> host (anti-vanity §1.2) e la `ListaSpettatori` con kick (conferma → Edge:
+> DB prima, media dopo). **Commenti** (§6): postgres_changes su
+> `live_comments` via nuova `lib/live-realtime.ts` (RLS `can_see_live`, solo
+> INSERT), insert diretta con eco realtime dedupata per id + `moderate-text`
+> fire-and-forget (`live_comment`), overlay `CommentiOverlay` con fade SOLO
+> visivo (10s dall'ARRIVO sul device, niente clock di rete; max 4 a schermo),
+> pillola → overlay blur (`CommentInput`; Android degrada a velo scuro),
+> errori del trigger INLINE (rate-limit 5/30s, pausa, commenti spenti);
+> long-press su commento altrui → segnala, flag spettatore → segnala la live
+> (`file_report` `live_comment`/`live`, motivi condivisi REPORT_REASONS).
+> **Co-Live**: `CoHostSheet` a 2 modalità (selezione nel composer / gestione
+> in live: invita·revoca·rimuovi con tetto 4 letto dalle righe `live_hosts`
+> via RLS), banner "Accetta invito" per l'invitato → accept → riconnessione
+> con token nuovo (canPublish). Nuovi
+> `components/live/{PannelloDevBuild,StatoPausa}` (guard condiviso + velo
+> pausa). Schermo di prova LM5 `/live/test` **RIMOSSO** (sostituito dagli
+> schermi veri). `tsc --noEmit` ed `eslint` PULITI. ⏳ Verifica on-device del
+> Done-when (§18/LM6, 2 device) quando la **Dev Build EAS nuova** è pronta
+> (azione owner già tracciata in LM5). Prossimo: **LM7** (home feed:
+> striscia + verticale) su comando PO.)
+>
+> **Aggiornamento precedente:** 2026-07-12 sera (**M12 Live: LM5 FATTO — Mobile:
 > fondamenta LiveKit.** Nessuna migrazione (59 invariate), nessuna Edge nuova.
 > **SDK installato con matrice versioni verificata PRIMA dell'install**
 > (rischio R-1): `@livekit/react-native@2.11.1` +
@@ -51,50 +108,6 @@
 > — poi su device: `/live/test` connette e mostra il video locale, eventi
 > inbox su 2 device; restano le azioni LM4 (secrets `LIVEKIT_*` + webhook
 > dashboard). Prossimo: **LM6** (composer + schermo live) su comando PO.)
->
-> **Aggiornamento precedente:** 2026-07-12 (**M12 Live: LM4 FATTO — Edge LiveKit,
-> DEPLOYATE + coda owner SVUOTATA.** Nessuna migrazione (59 invariate,
-> `migration list` allineato locale=remoto). **`livekit-token` v2** — UN punto
-> di mint per i due domini (L-2), body `{room_id}` XOR `{live_id}`; ramo live:
-> joinable in `live`/`paused` (`ended` → 409 `live_not_joinable`; entrare in
-> pausa è previsto, §12.19), host/co-host ATTIVO → `canPublish` (il co-host
-> `invited` resta spettatore finché non accetta), tutti gli altri passano
-> dall'UNICO predicato `can_see_live` via RPC (kickati/rimossi/bloccati/
-> non-amici → 403 `forbidden`); **il mint È il join**: upsert `live_viewers`
-> con rientro (`left_at` azzerato, `joined_at` del primo ingresso — il
-> rientro post-kick muore nel predicato); un host attivo che minta CHIUDE la
-> propria riga viewer (contatori onesti); `canPublishData` solo a chi
-> pubblica. **`live-kick`** (verify_jwt=true) — solo host principale,
-> `{live_id, user_id, scope: viewer|cohost}`: **DB PRIMA** (upsert
-> `kicked_at`/`kicked_by`, kick preventivo consentito; co-host → `removed`,
-> non rientra) **media DOPO** (`RoomServiceClient.removeParticipant`
-> best-effort, esito in `media_removed` — se fallisce il predicato ha già
-> chiuso, retry idempotente). **`livekit-webhook`** (verify_jwt=false, firma
-> **WebhookReceiver** con la STESSA API key/secret del mint — l'auth è di
-> LiveKit, non x-cron-secret): `participant_left` → riconcilia lo spettatore
-> caduto (`left_at`, kickati intatti) e il co-host attivo (`left`), host
-> principale MAI toccato; `room_finished` → end server-side idempotente via
-> UPDATE di stato (macchina a stati unico arbitro, after-trigger Echo mappa
-> 3h + premio Aura da soli, NESSUN fan-out: snapshot-as-truth); ignora le
-> stanze non-`live_*` (le rooms audio sono `televo_*`). **`moderate-text`
-> v3**: +`live`/`live_comment` E fix di un **bug latente M6** — il client
-> inviava `target_type='drop_comment'` da sempre ma l'array dei target non lo
-> ammetteva (400 silenzioso inghiottito dal fire-and-forget): ora ammesso.
-> `config.toml`: registrate `live-kick` (true) e `livekit-webhook` (false).
-> **Test locali 14/14** (Deno, SDK reale livekit-server-sdk@2: round-trip
-> firma webhook — valida accettata, body manomesso e chiave sbagliata
-> rifiutati, `identity`/`room.name` intatti; grant token host vs spettatore
-> subscribe-only, TTL 1h) + `deno check` pulito su tutte e 4. **DEPLOY VIA
-> CLI RIUSCITO** (login owner del 2026-07-12): le 4 di LM4 **+ TUTTA la coda
-> deploy-owner** (`gdpr-export` v5, `send-push` v2, `storage-cleanup`) — 13
-> funzioni ACTIVE, flag verify_jwt verificati con `functions list`, smoke sul
-> webhook deployato (risponde 500 `livekit_not_configured`: degrado atteso
-> finché mancano le env). ⏳ **Azioni owner rimaste (pre-lancio, NON
-> bloccanti per LM5)**: secrets Edge `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`/
-> `LIVEKIT_WS_URL` + configurare l'URL del webhook nella dashboard LiveKit
-> Cloud (`https://mmunnybytyfybncohkky.supabase.co/functions/v1/livekit-webhook`)
-> — senza webhook il sistema resta corretto (reti cron LM3), solo più lento a
-> chiudere. Prossimo: **LM5** (mobile: fondamenta LiveKit) su comando PO.)
 
 ---
 
@@ -899,9 +912,37 @@ pattern drop_comments per i commenti realtime. Nuove Edge: `live-kick`,
   puliti; expo-doctor 18/18. ⏳ Azione owner: **NUOVA Dev Build EAS** (i
   nativi LiveKit/WebRTC non sono nella build attuale) per la verifica
   on-device del Done-when (video locale + eventi inbox su 2 device).
-- ⬜ **LM6–LM8 mobile** (composer+schermo live host/spettatore → home feed
-  striscia+verticale → badge mappa + MANUAL-TESTING + chiusura). UNA
-  milestone alla volta su comando PO.
+- ✅ **LM6 fatto** (2026-07-12): mobile — composer + schermo live. Voce
+  "Live" attiva nel MenuCrea (campo `route` in `createTypes.ts`; rotte
+  `/live/nuovo` e `/live/[id]`, entrambe lazy dietro guard Expo Go —
+  `PannelloDevBuild` condiviso); push `live_started`/`live_cohost_invite` →
+  schermo live (`rottaPerNotifica`). Composer camera-first (§3): permessi
+  all'ingresso + openSettings (CM7); preview dalla traccia locale
+  `createLocalVideoTrack` (flip user/environment, renderer `VideoView`:
+  l'unico che accetta tracce non pubblicate); titolo 1–80; chip
+  `ComposerToggles` (Co-Live fino a 3 amici, commenti, mappa opt-in,
+  visibilità, notifica L-4); `live_already_active` → RIENTRO nella live
+  attiva; hint mappa §12.12; la preview si ferma PRIMA del replace (un
+  proprietario per risorsa). Schermo live host+spettatore su
+  **`useLiveSession`** (Room end-to-end: mint=join → publish se canPublish;
+  griglia 1/2/2×2; pausa = **unpublish reale** e ripresa nel rispetto dei
+  toggle; revalidation 60s + delta inbox + eventi Room, Disconnected →
+  revalida e riconnette con MINT NUOVO §12.13, `PARTICIPANT_REMOVED` → stato
+  neutro; auto-pausa su background con auto-ripresa solo-se-automatica
+  §12.2; back host intercettato via beforeRemove con conferma; prompt
+  live-vuota 3 min QA-6; spettatori dagli eventi participant LiveKit, numero
+  al SOLO host) + **`useLiveComments`** (postgres_changes via nuova
+  `lib/live-realtime.ts`, insert con eco dedupata, moderate-text
+  fire-and-forget, fade SOLO visivo 10s dall'arrivo, errori trigger inline;
+  segnala live/commento con REPORT_REASONS). `CoHostSheet` 2 modalità
+  (selezione nel composer / gestione in live col tetto 4 da `live_hosts` via
+  RLS) + banner "Accetta invito" → riconnessione con canPublish;
+  `ListaSpettatori` con kick (conferma; DB prima, media dopo).
+  `/live/test` e `LiveTestSurface` RIMOSSI (sostituiti). tsc/eslint puliti.
+  ⏳ Done-when on-device (2 device, §18/LM6) alla nuova Dev Build EAS
+  (azione owner già tracciata in LM5).
+- ⬜ **LM7–LM8 mobile** (home feed striscia+verticale → badge mappa +
+  MANUAL-TESTING + chiusura). UNA milestone alla volta su comando PO.
 - **Verifica:** criteri per milestone e Definition of Done in `docs/live/live.md`
   (§18–§20); QA aperte §22 (cap 8h, pausa 30 min, preview muta, soglie Aura).
 

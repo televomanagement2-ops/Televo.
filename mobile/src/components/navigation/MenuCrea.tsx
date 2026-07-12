@@ -22,11 +22,16 @@ export function MenuCrea() {
   const close = useCreaMenuStore((s) => s.close);
 
   const scegli = (o: CreateType) => {
-    if (!o.enabled || !o.dropTipo) return;
+    if (!o.enabled || (!o.dropTipo && !o.route)) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     close();
-    // Chiude il menu poi apre il composer col formato preselezionato (S2).
-    router.push({ pathname: '/drop/nuovo', params: { tipo: o.dropTipo } });
+    // Chiude il menu poi apre la destinazione: composer drop col formato
+    // preselezionato (S2) oppure la rotta della voce (es. composer live, M12).
+    if (o.dropTipo) {
+      router.push({ pathname: '/drop/nuovo', params: { tipo: o.dropTipo } });
+    } else if (o.route) {
+      router.push(o.route);
+    }
   };
 
   if (!visible) return null;

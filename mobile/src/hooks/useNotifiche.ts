@@ -77,6 +77,15 @@ function rottaPerNotifica(data: Record<string, unknown>): string | null {
   if (data.type === 'friend_request' || data.type === 'friend_accepted') {
     return ROUTES.amici;
   }
+  // M12 (LM6): "amico in diretta" / invito co-host → schermo live (payload
+  // {live_id, host_id} da create_live/live_invite_cohost). Se nel frattempo la
+  // live è finita, lo schermo mostra lo stato pulito "live terminata".
+  if (
+    (data.type === 'live_started' || data.type === 'live_cohost_invite') &&
+    typeof data.live_id === 'string'
+  ) {
+    return dynamicRoutes.live(data.live_id);
+  }
   // prop / achievement: la tab Notifiche arriva con M8.
   return null;
 }

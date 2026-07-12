@@ -1,5 +1,5 @@
 // =============================================================================
-// map-realtime.ts — inbox privata realtime della Mappa della Città (M7 / MM7).
+// map-realtime.ts — inbox privata realtime per-utente (M7 / MM7, estesa M12).
 // =============================================================================
 // Modello "inbox" (map.md §13.3): UNA sola sottoscrizione per utente al topic
 // PRIVATO `map:u:{uid}`. Il fan-out è SERVER-SIDE (realtime.send da RPC/trigger,
@@ -13,12 +13,20 @@
 // auth.uid(): nessuno può sottoscrivere l'inbox altrui. Il client Realtime deve
 // avere il JWT PRIMA del join → `setAuth()` (vedi sotto).
 //
+// M12 (LM5): il prefisso `map:` è storico — il canale è di fatto l'INBOX PRIVATA
+// per-utente del progetto (live.md §0.4/§15.4) e la Live vi aggiunge i suoi tre
+// eventi (`live_fanout`, LM2) sull'UNICO canale, senza topic nuovi: stessa
+// policy, stessa subscription, un solo join.
+//
 // Lo SNAPSHOT resta la verità (map.md §13.3): questi delta sono aggiornamenti
 // incrementali. Un delta di un amico non ancora noto (payload SENZA identità) fa
 // scattare un refetch di arricchimento nell'hook.
 
 import { supabase } from '@/lib/supabase';
 import type {
+  LiveEndedPayload,
+  LiveStartedPayload,
+  LiveStatusPayload,
   MapEventEndedPayload,
   MapEventStartedPayload,
   MapPresencePayload,
@@ -34,6 +42,12 @@ export interface MapInboxHandlers {
   onEventStarted?: (e: MapEventStartedPayload) => void;
   /** Fine evento: `removed=true` → rimozione (niente Echo); `removed=false` → Echo. */
   onEventEnded?: (e: MapEventEndedPayload) => void;
+  /** M12: un amico ha avviato una live (payload CON identità host). */
+  onLiveStarted?: (p: LiveStartedPayload) => void;
+  /** M12: transizione live↔paused di una live già nota. */
+  onLiveStatus?: (p: LiveStatusPayload) => void;
+  /** M12: live finita → sparisce da striscia e feed (nessun archivio). */
+  onLiveEnded?: (p: LiveEndedPayload) => void;
 }
 
 /**
@@ -56,6 +70,15 @@ export function subscribeMapInbox(uid: string, handlers: MapInboxHandlers): () =
     )
     .on('broadcast', { event: 'event_ended' }, (msg) =>
       handlers.onEventEnded?.(msg.payload as MapEventEndedPayload),
+    )
+    .on('broadcast', { event: 'live_started' }, (msg) =>
+      handlers.onLiveStarted?.(msg.payload as LiveStartedPayload),
+    )
+    .on('broadcast', { event: 'live_status' }, (msg) =>
+      handlers.onLiveStatus?.(msg.payload as LiveStatusPayload),
+    )
+    .on('broadcast', { event: 'live_ended' }, (msg) =>
+      handlers.onLiveEnded?.(msg.payload as LiveEndedPayload),
     );
 
   // Il canale privato richiede il JWT sul client Realtime prima del join.

@@ -4,7 +4,55 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-12 (**M12 Live: LM4 FATTO — Edge LiveKit,
+> **Ultimo aggiornamento:** 2026-07-12 sera (**M12 Live: LM5 FATTO — Mobile:
+> fondamenta LiveKit.** Nessuna migrazione (59 invariate), nessuna Edge nuova.
+> **SDK installato con matrice versioni verificata PRIMA dell'install**
+> (rischio R-1): `@livekit/react-native@2.11.1` +
+> `@livekit/react-native-webrtc@144.1.1` + `livekit-client@2.20.1` (peer) +
+> `@livekit/react-native-expo-plugin@1.0.2` +
+> `@config-plugins/react-native-webrtc@13.0.0` — la **13** è la major per
+> Expo ^54 (la latest 15 richiede Expo 56); pin ESATTI in package.json.
+> `app.json`: entrambi i config plugin registrati; permessi camera/mic
+> aggiornati per citare la Live su TUTTI i writer (infoPlist +
+> expo-image-picker + webrtc plugin — l'introspezione `expo config --type
+> introspect` ha mostrato che l'opzione camera di expo-image-picker VINCEVA
+> sull'infoPlist: ora le stringhe coincidono ovunque). **Strato dati
+> completo**: `lib/livekit.ts` = bootstrap nativo (guard Expo Go
+> `liveKitDisponibile` + `registerGlobals()` via import dinamico idempotente:
+> in Expo Go il modulo nativo non viene MAI valutato, pattern MapCanvas);
+> `lib/live.ts` = wrapper delle 10 RPC (create/pause/resume/end,
+> invite/accept/remove co-host, leave best-effort fire-and-forget,
+> lives_feed/live_detail) + Edge `fetchTokenLive` (IL MINT È IL JOIN: ogni
+> reconnect ripassa dal controllo completo visibilità/kick) e `kickDaLive`
+> (DB prima, media dopo), con gli errori Edge normalizzati a Error(<codice>)
+> dal body `{error}`; `liveErrorMessage` in `lib/errors.ts` (codici FEDELI ai
+> raise dei trigger LM0: `live_not_visible` ≠ `not_visible`, `no_invite`);
+> tipi raw+payload a mano in `types/supabase.ts` (LivesFeedRaw, LiveDetailRaw
+> — contatori opzionali: arrivano SOLO all'host —, LiveStarted/LiveStatus/
+> LiveEndedPayload, CreateLiveResult). **liveStore** (Zustand): dizionario
+> delle live attive per id + ORDINE del server (snapshot-as-truth: idrataFeed
+> rimpiazza tutto e ricalibra il clock; `live_started` upsert in testa CON
+> identità host — a differenza dei delta mappa niente refetch di
+> arricchimento; `live_status` patcha, `live_ended` RIMUOVE: le live finite
+> spariscono, nessun archivio) + `clockOffsetMs` condiviso (pattern M7 §8).
+> **Inbox estesa** (`map-realtime.ts`): i 3 eventi live sullo STESSO canale
+> privato `map:u:{uid}` (nessun topic nuovo — live.md §15.4), handler
+> opzionali accanto a quelli mappa, un solo join. **Schermo di prova
+> TEMPORANEO `/live/test`** (dev-only: prod → redirect, Expo Go → pannello
+> "serve la Dev Build", superficie caricata lazy): crea una live con
+> notify_mode='none' (la prova NON spamma gli amici) → token → Room.connect →
+> video locale in VideoTrack; bonifica automatica della live orfana di un
+> giro crashato; elenco "amici in live" alimentato dai delta inbox →
+> liveStore (la gamba realtime si prova con un secondo device amico). Sarà
+> sostituito dagli schermi veri in LM6. `tsc --noEmit` ed `eslint` PULITI;
+> `expo-doctor` 18/18. ⏳ **Azione owner (BLOCCANTE per la verifica on-device
+> e per LM6)**: nuova **Dev Build EAS** — i nativi LiveKit/WebRTC NON sono
+> nella build attuale (`eas build --profile development --platform android`)
+> — poi su device: `/live/test` connette e mostra il video locale, eventi
+> inbox su 2 device; restano le azioni LM4 (secrets `LIVEKIT_*` + webhook
+> dashboard). Prossimo: **LM6** (composer + schermo live) su comando PO.)
+>
+> **Aggiornamento precedente:** 2026-07-12 (**M12 Live: LM4 FATTO — Edge LiveKit,
 > DEPLOYATE + coda owner SVUOTATA.** Nessuna migrazione (59 invariate,
 > `migration list` allineato locale=remoto). **`livekit-token` v2** — UN punto
 > di mint per i due domini (L-2), body `{room_id}` XOR `{live_id}`; ramo live:
@@ -47,36 +95,6 @@
 > Cloud (`https://mmunnybytyfybncohkky.supabase.co/functions/v1/livekit-webhook`)
 > — senza webhook il sistema resta corretto (reti cron LM3), solo più lento a
 > chiudere. Prossimo: **LM5** (mobile: fondamenta LiveKit) su comando PO.)
->
-> **Aggiornamento precedente:** 2026-07-11 notte (**M12 Live: LM3 FATTO** — lifecycle
-> & GDPR: **59 migrazioni** (59 = `live_lifecycle` via pooler; entrambe le
-> funzioni ridefinite in UNA transazione — vincolo MM1: il cron a 5 min non
-> vede mai uno stato intermedio). **`expire_content` v7** (corpo v6 VERBATIM +
-> blocchi live in coda): force-end con cap durata **8h** (QA-1), auto-end
-> della pausa dimenticata a **30 min** (QA-2), force-end delle live il cui
-> host non passa più `is_active_user()` (ban/mute, latenza ≤5 min, §11) — il
-> force-end passa dall'UPDATE di stato, così la macchina a stati resta l'unico
-> arbitro e gli after-trigger di dominio (Echo mappa 3h, premio Aura se
-> qualificata) girano da soli; purge commenti/spettatori a **24h** dalla fine
-> (finestra di moderazione: gli excerpt segnalati sopravvivono in
-> moderation_queue), minimizzazione righe `lives` a **30 giorni** (nessun
-> archivio), cintura difensiva mappa (evento `live_broadcast` aperto su live
-> non più in corso → Echo **3h**, specchio della cintura rooms).
-> **`process_account_deletion` v7** (verbatim+add): END + DELETE delle live
-> proprie (macchina a stati rispettata; il premio Aura è un no-op — emit_aura
-> salta i profili cancellati) + rimozione di ogni traccia su live ALTRUI
-> (commenti/spettatore/co-host). **`gdpr-export` v5** in repo (art. 15:
-> sezioni lives/live_comments/live_viewers/live_hosts). NESSUN job cron
-> nuovo. pgTAP **537/537** SUL REMOTO (+10 LM3) + smoke funzionale **18/18**
-> rolled-back (cap 8h, pausa 31 min, host mutato, purge 24h con riga lives
-> che resta, minimizzazione 31 gg con cascade live_hosts, cintura mappa
-> ≈ +3h, GDPR delete con live attiva terminata+cancellata e live altrui
-> indisturbata); cron `expire-content` verde post-apply (job_run_details).
-> Nessun tipo TS da toccare (zero superfici client nuove). ⚠️ Coda deploy
-> owner: `gdpr-export` passa a **v5** (supera la v4 in coda — si deploya una
-> volta sola l'ultima). Prossimo: **LM4** (Edge LiveKit: ramo live in
-> `livekit-token`, `live-kick`, `livekit-webhook`, `moderate-text`) su
-> comando PO.)
 
 ---
 
@@ -148,9 +166,10 @@ moderazione + safety · economia Vibes (simbolica attiva, Stripe inerte) · GDPR
 
 ### 1.2 Frontend — 🟢 Avvio + Auth/Onboarding completi
 
-App in `mobile/`. Stack: Expo SDK 55 · React Native 0.84 (New Architecture) ·
+App in `mobile/`. Stack: Expo SDK 54 · React Native 0.81 (New Architecture) ·
 TypeScript strict · Expo Router · NativeWind v4 · Zustand · TanStack Query ·
-Reanimated v4 · LiveKit · **MapLibre** (`@maplibre/maplibre-react-native`, mappa M7 —
+Reanimated v4 · **LiveKit** (`@livekit/react-native` + webrtc, Live M12 —
+richiede Dev Build EAS) · **MapLibre** (`@maplibre/maplibre-react-native`, mappa M7 —
 richiede Dev Build EAS) · **Skia** (`@shopify/react-native-skia`, aure mappa MM8) ·
 **supercluster** (clustering mappa). Navigazione **file-based**.
 
@@ -856,9 +875,33 @@ pattern drop_comments per i commenti realtime. Nuove Edge: `live-kick`,
   nello stesso round. ⏳ Azioni owner pre-lancio: secrets `LIVEKIT_*` +
   webhook URL in dashboard LiveKit Cloud (senza, il lifecycle resta corretto
   via reti cron LM3 — solo più lento).
-- ⬜ **LM5–LM8 mobile** (SDK+strato dati → composer+schermo live
-  host/spettatore → home feed striscia+verticale → badge mappa +
-  MANUAL-TESTING + chiusura). UNA milestone alla volta su comando PO.
+- ✅ **LM5 fatto** (2026-07-12): mobile — fondamenta LiveKit. SDK con pin
+  ESATTI e matrice verificata PRIMA dell'install (R-1):
+  `@livekit/react-native@2.11.1`, `@livekit/react-native-webrtc@144.1.1`,
+  `livekit-client@2.20.1`, `@livekit/react-native-expo-plugin@1.0.2`,
+  `@config-plugins/react-native-webrtc@13.0.0` (major per Expo ^54; la 15
+  richiede Expo 56). `app.json`: 2 config plugin + permessi camera/mic che
+  citano la Live, allineati su TUTTI i writer (l'opzione camera di
+  expo-image-picker vinceva sull'infoPlist — scoperto e verificato con
+  `expo config --type introspect`). Strato dati completo: `lib/livekit.ts`
+  (guard Expo Go `liveKitDisponibile` + `registerGlobals()` lazy/idempotente
+  — il nativo MAI valutato in Expo Go, pattern MapCanvas); `lib/live.ts`
+  (10 wrapper RPC + `fetchTokenLive` mint=join + `kickDaLive`, errori Edge
+  normalizzati a Error(<codice>)); `liveErrorMessage` (codici fedeli ai
+  trigger LM0); tipi raw/payload TS a mano; `liveStore` Zustand
+  (dizionario+ordine del server, snapshot-as-truth, `live_ended` = rimozione:
+  nessun archivio; clock calibrato condiviso); inbox `map-realtime.ts` estesa
+  con `live_started`/`live_status`/`live_ended` sullo STESSO canale privato
+  (nessun topic nuovo, live.md §15.4). Schermo di prova TEMPORANEO
+  `/live/test` (dev-only + lazy: crea live con notify='none' → token →
+  Room.connect → video locale; bonifica live orfana; lista "amici in live"
+  dai delta inbox→store) — sostituito dagli schermi veri in LM6. tsc/eslint
+  puliti; expo-doctor 18/18. ⏳ Azione owner: **NUOVA Dev Build EAS** (i
+  nativi LiveKit/WebRTC non sono nella build attuale) per la verifica
+  on-device del Done-when (video locale + eventi inbox su 2 device).
+- ⬜ **LM6–LM8 mobile** (composer+schermo live host/spettatore → home feed
+  striscia+verticale → badge mappa + MANUAL-TESTING + chiusura). UNA
+  milestone alla volta su comando PO.
 - **Verifica:** criteri per milestone e Definition of Done in `docs/live/live.md`
   (§18–§20); QA aperte §22 (cap 8h, pausa 30 min, preview muta, soglie Aura).
 

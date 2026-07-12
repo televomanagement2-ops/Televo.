@@ -191,6 +191,118 @@ export interface MapEventEndedPayload {
   visibility_expires_at?: string;
 }
 
+// =============================================================================
+// M12 (LM5) — Live: shape GREZZE di lives_feed / live_detail e payload dei
+// delta live_* sull'inbox privata (live_fanout, LM2). Fedeli ai payload di
+// 20260711130000_live_social.sql. Timestamp UTC come stringhe ISO; il client
+// li normalizza a epoch-ms e calibra il clock su `server_now` (liveStore,
+// stesso pattern del clock mappa M7 §8).
+// =============================================================================
+
+/** Identità dell'host denormalizzata nei payload live (feed, detail, live_started). */
+export interface LiveHostIdentityRaw {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  aura_score: number | null;
+  aura_color: string | null;
+}
+
+/** Una live nel feed Home (lives_feed): SOLO live di amici (la propria è
+ *  esclusa), stato live/paused, MAI contatori (anti-vanity R-04: viewer_count
+ *  ordina server-side senza essere esposto). */
+export interface LiveFeedItemRaw {
+  live_id: string;
+  title: string;
+  status: LiveStatus; // nel feed mai 'ended' (solo live attive)
+  visibility: LiveVisibility;
+  comments_enabled: boolean;
+  started_at: string;
+  paused_at: string | null;
+  is_top_friend: boolean; // l'host è nella cerchia del VIEWER (ordinamento)
+  host: LiveHostIdentityRaw;
+}
+
+/** Ritorno di lives_feed(): la porta di lettura della Home live (striscia + feed). */
+export interface LivesFeedRaw {
+  server_now: string;
+  lives: LiveFeedItemRaw[];
+}
+
+/** Un host ATTIVO in live_detail (host principale primo, poi i co-host). */
+export interface LiveDetailHostRaw {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  aura_color: string | null;
+  role: LiveHostRole;
+  joined_at: string | null;
+}
+
+/** Ritorno di live_detail(): dettaglio + revalidation 60s (live.md §5 — su
+ *  errore `not_visible`/stato `ended` il client si disconnette). viewer_count/
+ *  peak_viewers arrivano SOLO all'host principale (anti-vanity R-04). */
+export interface LiveDetailRaw {
+  server_now: string;
+  live: {
+    live_id: string;
+    title: string;
+    status: LiveStatus;
+    visibility: LiveVisibility;
+    comments_enabled: boolean;
+    show_on_map: boolean;
+    started_at: string;
+    paused_at: string | null;
+    ended_at: string | null;
+  };
+  hosts: LiveDetailHostRaw[];
+  me: {
+    is_host: boolean;
+    is_cohost: boolean;
+    can_comment: boolean;
+  };
+  viewer_count?: number;
+  peak_viewers?: number;
+}
+
+// --- Payload dei delta live sull'inbox privata `map:u:{uid}` ------------------
+// (live_fanout, LM2). A differenza dei delta mappa, `live_started` PORTA
+// l'identità dell'host (denormalizzata al momento dell'invio): nessun refetch
+// di arricchimento. live_status/live_ended patchano la live già nota per id;
+// se non è nota, lo snapshot (lives_feed) resta la verità e riconcilia.
+
+/** `live_started`: un amico ha avviato una live visibile a me. */
+export interface LiveStartedPayload {
+  live_id: string;
+  title: string;
+  visibility: LiveVisibility;
+  status: 'live';
+  started_at: string;
+  host: LiveHostIdentityRaw;
+}
+
+/** `live_status`: transizione live↔paused (la fine ha il suo evento dedicato). */
+export interface LiveStatusPayload {
+  live_id: string;
+  status: LiveStatus;
+}
+
+/** `live_ended`: la live è finita → sparisce da striscia e feed (nessun archivio). */
+export interface LiveEndedPayload {
+  live_id: string;
+}
+
+/** Ritorno di create_live: la stanza LiveKit la decide il server (mai il
+ *  client); `map_attached` dice la VERITÀ sull'attach best-effort della mappa
+ *  (live.md §12.12: se false con show_on_map, il client mostra l'hint). */
+export interface CreateLiveResult {
+  live_id: string;
+  livekit_room_name: string;
+  map_attached: boolean;
+}
+
 // Autore embeddato nelle RPC di lettura dei drop (drops_feed/drop_detail).
 export interface DropAuthor {
   id: string;

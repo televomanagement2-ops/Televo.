@@ -17,8 +17,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "app.televo.mobile",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Televo usa il microfono per le Stanze Live e i messaggi vocali.",
-        "NSCameraUsageDescription": "Televo usa la fotocamera per scattare foto da inviare in chat."
+        "NSMicrophoneUsageDescription": "Televo usa il microfono per le Live, le Stanze Live e i messaggi vocali.",
+        "NSCameraUsageDescription": "Televo usa la fotocamera per le Live e per scattare foto da inviare in chat."
       }
     },
     "android": {
@@ -53,7 +53,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Televo usa le tue foto per l'immagine del profilo e per inviarle in chat.",
-          "cameraPermission": "Televo usa la fotocamera per scattare foto da inviare in chat."
+          "cameraPermission": "Televo usa la fotocamera per le Live e per scattare foto da inviare in chat."
         }
       ],
       [
@@ -77,6 +77,14 @@
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false,
           "isAndroidForegroundServiceEnabled": false
+        }
+      ],
+      "@livekit/react-native-expo-plugin",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Televo usa la fotocamera per le Live e per scattare foto da inviare in chat.",
+          "microphonePermission": "Televo usa il microfono per le Live, le Stanze Live e i messaggi vocali."
         }
       ]
     ],

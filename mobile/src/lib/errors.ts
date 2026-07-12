@@ -156,6 +156,56 @@ export function mapErrorMessage(error: unknown): string {
   return MAP_MESSAGES[code] ?? 'Qualcosa è andato storto. Riprova.';
 }
 
+// =============================================================================
+// Live (M12) — codici sollevati dalle RPC live_* (LM0–LM2), dai trigger dei
+// commenti e dalle Edge livekit-token / live-kick (normalizzati a
+// Error(<codice>) in lib/live.ts). Copy dedicata al dominio "diretta".
+// =============================================================================
+const LIVE_MESSAGES: Record<string, string> = {
+  not_authenticated: 'Sessione scaduta, riprova ad accedere.',
+  user_not_active: 'Il tuo account non può andare in diretta in questo momento.',
+  // Avvio (create_live)
+  invalid_title: 'Dai un titolo alla live (max 80 caratteri).',
+  live_already_active: 'Hai già una live in corso: terminala prima di avviarne un’altra.',
+  // Stato (pause/resume/end)
+  live_not_found: 'Questa live non esiste più.',
+  not_live_host: 'Solo chi ha avviato la live può farlo.',
+  live_already_ended: 'La live è già terminata.',
+  invalid_transition: 'Azione non valida per lo stato della live.',
+  // Visibilità — neutro: non rivela blocchi o kick. `not_visible` lo solleva
+  // live_detail (revalidation), `live_not_visible` il trigger dei commenti.
+  not_visible: 'Questa live non è più disponibile.',
+  live_not_visible: 'Questa live non è più disponibile.',
+  // Co-host (invite/accept/remove)
+  invalid_target: 'Utente non valido.',
+  target_not_active: 'Questo utente non può partecipare ora.',
+  not_friends: 'Puoi invitare solo i tuoi amici.',
+  cohost_cap_reached: 'La live è al completo (massimo 4 host).',
+  cohost_removed: 'Questo utente è stato rimosso dalla live.',
+  no_invite: 'Non hai un invito per questa live.',
+  not_cohost: 'Questo utente non è un co-host della live.',
+  // Commenti (trigger live_comments, LM0 — usati dallo schermo in LM6)
+  comments_disabled: 'I commenti sono spenti per questa live.',
+  live_not_commentable: 'Si commenta solo mentre la live è in onda.',
+  empty_comment: 'Scrivi qualcosa prima di commentare.',
+  comment_too_long: 'Il commento è troppo lungo (max 200 caratteri).',
+  rate_limited: 'Stai commentando troppo velocemente. Aspetta qualche secondo.',
+  // Edge (livekit-token / live-kick)
+  live_not_joinable: 'La live è terminata.',
+  forbidden: 'Questa live non è più disponibile.',
+  kick_failed: 'Non è stato possibile rimuovere l’utente. Riprova.',
+  invalid_scope: 'Azione non riconosciuta.',
+  livekit_not_configured: 'Le Live non sono ancora attive su questo server.',
+  join_failed: 'Non è stato possibile entrare nella live. Riprova.',
+  edge_error: 'Qualcosa è andato storto. Riprova.',
+};
+
+/** Messaggio utente in italiano per un errore del dominio Live (fallback generico). */
+export function liveErrorMessage(error: unknown): string {
+  const code = authErrorCode(error);
+  return LIVE_MESSAGES[code] ?? 'Qualcosa è andato storto. Riprova.';
+}
+
 /**
  * Variante per l'insert diretta in `props`: la violazione dell'indice unico
  * (giver, recipient, tratto, contenuto) arriva come codice SQL 23505, non come

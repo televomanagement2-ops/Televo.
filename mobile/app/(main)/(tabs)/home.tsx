@@ -4,23 +4,28 @@
 // =============================================================================
 // "Discover" (default) = il mix di TUTTO: drop, live, mappa, aura, sport. Per ora
 // i contenuti sono SEGNAPOSTO (card grandi con media grigio, dati statici in
-// constants/feedItems.ts) — i dati reali si collegano nei round successivi. Le
-// altre categorie (Live/Map/Aura backend reale; Sport senza backend) mostrano
+// constants/feedItems.ts) — i dati reali si collegano nei round successivi.
+// Drops (M6), Map (M7) e Live (M12) sono REALI; Aura e Sport mostrano
 // "Prossimamente" finché non vengono collegate. NB: niente "Reels" (rimosso).
 
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { HomeHeader } from '@/components/navigation/HomeHeader';
 import { CategoryBar } from '@/components/feed/CategoryBar';
 import { FeedCard } from '@/components/feed/FeedCard';
-import { FeedLiveCard } from '@/components/feed/FeedLiveCard';
 import { ComingSoon } from '@/components/feed/ComingSoon';
 import { DropFeed } from '@/components/drops/DropFeed';
 import { MapCanvas } from '@/components/mappa/MapCanvas';
+import { PannelloDevBuild } from '@/components/live/PannelloDevBuild';
+import { liveKitDisponibile } from '@/lib/livekit';
 import { FEED_ITEMS } from '@/constants/feedItems';
 import { DEFAULT_FEED_CATEGORY, type FeedCategoryKey } from '@/constants/feed';
 import { colors, spacing } from '@/constants/theme';
+
+// Il feed live importa i moduli nativi LiveKit: caricato PIGRAMENTE dietro il
+// guard Expo Go (pattern /live/[id], §12.16) — in Expo Go non viene mai valutato.
+const LiveFeed = lazy(() => import('@/components/live/LiveFeed'));
 
 export default function Home() {
   const [category, setCategory] = useState<FeedCategoryKey>(DEFAULT_FEED_CATEGORY);
@@ -29,13 +34,21 @@ export default function Home() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <HomeHeader />
       <CategoryBar selected={category} onSelect={setCategory} />
-      {/* Drops (S1) e Map (M7): resi a tutta altezza FUORI dalla ScrollView. La
-          lista virtualizzata dei drop e il pan/zoom della mappa non convivono con
-          uno scroll sullo stesso asse (gesture in conflitto). */}
+      {/* Drops (S1), Map (M7) e Live (M12/LM7): resi a tutta altezza FUORI dalla
+          ScrollView. Lista virtualizzata, pan/zoom della mappa e pager verticale
+          delle live non convivono con uno scroll sullo stesso asse. */}
       {category === 'drops' ? (
         <DropFeed />
       ) : category === 'map' ? (
         <MapCanvas />
+      ) : category === 'live' ? (
+        liveKitDisponibile ? (
+          <Suspense fallback={<View style={styles.flex} />}>
+            <LiveFeed />
+          </Suspense>
+        ) : (
+          <PannelloDevBuild />
+        )
       ) : (
         <ScrollView
           style={styles.flex}
@@ -54,27 +67,19 @@ export default function Home() {
 function FeedBody({ category }: { category: FeedCategoryKey }) {
   switch (category) {
     case 'discover':
-      // Mix di tutto: card placeholder differenziate per tipo + la card LIVE.
+      // Mix di tutto: card placeholder differenziate per tipo.
       return (
         <View style={styles.feed}>
           {FEED_ITEMS.map((item) => (
             <FeedCard key={item.id} item={item} />
           ))}
-          <FeedLiveCard />
         </View>
       );
     case 'drops':
     case 'map':
+    case 'live':
       // Resi a tutta altezza fuori dalla ScrollView (vedi sopra): qui no-op.
       return null;
-    case 'live':
-      return (
-        <ComingSoon
-          icon="radio-outline"
-          title="Stanze Live in arrivo"
-          subtitle="Qui vedrai chi è live ora. La voce, in tempo reale: la prova che dietro c'è una persona vera."
-        />
-      );
     case 'aura':
       return (
         <ComingSoon

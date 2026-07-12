@@ -3,10 +3,11 @@
 // =============================================================================
 // La Home ha una barra di categorie: "Discover" (mix di tutto, default) + le
 // verticali. ATTENZIONE allo stato `backed`: nel backend esistono dati SOLO per
-// drops/stanze live/mappa/aura. NON esiste "sport" (nessuna tabella dedicata):
+// drops/live/mappa/aura. NON esiste "sport" (nessuna tabella dedicata):
 // resta visibile ma in stato "Prossimamente" finché non avrà un backend.
-// `discover/live/map/aura` avranno dati reali (collegati nei round M3/M4/M7);
-// "discover" mostra già un mix di card placeholder (vedi constants/feedItems.ts).
+// Drops (M6), Map (M7) e Live (M12/LM7) sono COLLEGATE ai dati reali; "aura"
+// arriverà in un round successivo; "discover" mostra ancora un mix di card
+// placeholder (vedi constants/feedItems.ts).
 // NB: "Reels" è stato RIMOSSO — il concept dell'app non lo contempla.
 
 export type FeedCategoryKey = 'discover' | 'drops' | 'live' | 'map' | 'aura' | 'sport';

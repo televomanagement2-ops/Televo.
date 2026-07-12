@@ -1,10 +1,62 @@
 # Televo — Roadmap & Stato del Progetto
 
+> DA RILAVORARE IN FUTURO: LIMITE LIVES_FEED() A ~150 AMICI SENZA PAGINAZIONE (LIVE.MD §15.2) — VA RIVISTO PRIMA DI SCALARE OLTRE IL LANCIO A TERNI.
+> DA RILAVORARE IN FUTURO: TRIGGER `SYNC_LIVE_VIEWER_COUNT()` (20260709120100_LIVE_FOUNDATION.SQL) FA UN `COUNT(*)` COMPLETO SU `LIVE_VIEWERS` A OGNI JOIN/LEAVE/KICK invece di essere incrementale — CON MOLTI SPETTATORI CONCORRENTI SULLA STESSA LIVE DIVENTA UN COLLO DI BOTTIGLIA (LOCK CONTENTION SULLA RIGA `LIVES`), DA RIVEDERE VERSO UN CONTATORE INCREMENTALE PRIMA DI SCALARE OLTRE TERNI.
+
 > Documento di verità sullo stato di Televo. Backend **live**; frontend in
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-12 notte (**M12 Live: LM6 FATTO — Mobile:
+> **Ultimo aggiornamento:** 2026-07-12 notte (**M12 Live: LM7 FATTO — Mobile:
+> home feed (striscia + feed verticale).** Nessuna migrazione (59 invariate),
+> nessuna Edge toccata: solo `mobile/`. La **categoria `live` della Home è
+> REALE** (via il ComingSoon): ramo full-height FUORI dalla ScrollView
+> (pattern DropFeed/Map), caricato **lazy dietro il guard Expo Go**
+> (`PannelloDevBuild`, §12.16). **`useLivesFeed`** (pattern useMappa): lo
+> snapshot `lives_feed` è la VERITÀ (idrata `liveStore` e ricalibra il clock),
+> i delta inbox patchano senza polling (`live_started` con identità → upsert
+> in testa; `live_status` di live IGNOTA → refetch di arricchimento debounced;
+> `live_ended` → rimozione, nessun archivio); refetch a focus/foreground/
+> riconnessione + reconcile 60s in foreground (l'ORDINE — spettatori reali e
+> Aura — non viaggia come delta). **`map-realtime.ts` è diventato un
+> MULTIPLEXER** (fix di un bug latente scoperto in ricognizione): realtime-js
+> 2.108 RIUSA l'istanza di canale per topic identico e `removeChannel` la
+> smonta per TUTTI — da LM7 Home live e `/live/[id]` coesistono (push sullo
+> stack) e la prima superficie a smontare avrebbe spento l'inbox delle altre.
+> Ora: UN canale reale per uid + registro di handler-set (dispatch a tutti),
+> spegnimento con grazia 1,5s (le transizioni feed→schermo→back riusano il
+> canale vivo), accensioni serializzate sull'await dello smontaggio precedente
+> + guardia generazionale (la ricreazione ravvicinata dello stesso topic non
+> riusa mai un'istanza morente). API invariata: useMappa/useLiveSession
+> intatti. **`LiveStrip`** (§7A): avatar + anello rosso pulsante
+> (`colors.danger`, `motion.pulse`) + etichetta LIVE/PAUSA, tap → apre la
+> live. **`LiveFeedPage`** (§7B, budget R-3 = requisito di accettazione): ogni
+> preview è una connessione LiveKit SUBSCRIBE-ONLY della SOLA pagina visibile
+> (FlatList `pagingEnabled` + viewability 60% → al più UNA pagina attiva),
+> attacco **debounced 350ms** (lo swipe veloce non minta: il mint È il join),
+> **disconnessione immediata** a scroll/blur/background (il gate è
+> `focus && foreground && visibile`), audio SEMPRE muto (QA-3: `setVolume(0)`
+> anche sui participant futuri; NIENTE AudioSession, non va contesa con lo
+> schermo live), **nessuna connessione in `paused`** (tracce unpublished =
+> minuti per zero pixel: velo "Live in pausa" senza stanza), video del SOLO
+> host principale (adaptiveStream scarica solo la traccia renderizzata),
+> codici "live sparita" dal mint (`live_not_joinable`/`forbidden`/…) →
+> rimozione immediata dallo store; tap → `/live/[id]` con la preview staccata
+> PRIMA del push e `live_leave` SALTATA in quel caso (il mint dello schermo
+> rientra subito; negli altri distacchi leave best-effort, il webhook
+> riconcilia). **`LiveFeed`**: stati onesti (spinner / StatoErrore / vuoto
+> "Nessun amico è in live ora" con CTA "Avvia una live" — mai riempitivi),
+> guard anti-flash all'idratazione da cache, `maintainVisibleContentPosition`
+> (una live prepesa via delta NON sposta la pagina che stai guardando),
+> finestre minime (initialNumToRender 1 / windowSize 3). **`FeedLiveCard`
+> placeholder RIMOSSA** (home discover + `FEED_LIVE` da feedItems). `tsc
+> --noEmit` ed `eslint` PULITI. ⏳ Done-when on-device (2 device, §18/LM7:
+> striscia+feed senza refresh via realtime, UNA sola connessione per volta
+> sulla dashboard LiveKit, fine live → sparisce, vuoto corretto) alla Dev
+> Build EAS (azione owner già tracciata in LM5). Prossimo: **LM8** (badge
+> mappa + MANUAL-TESTING + chiusura modulo) su comando PO.)
+>
+> **Aggiornamento precedente:** 2026-07-12 notte (**M12 Live: LM6 FATTO — Mobile:
 > composer + schermo live (host e spettatore).** Nessuna migrazione (59
 > invariate), nessuna Edge toccata: solo `mobile/`. **Voce "Live" ATTIVA nel
 > MenuCrea** (sostituisce il placeholder "Stanza Live"; `createTypes.ts` con
@@ -60,54 +112,6 @@
 > Done-when (§18/LM6, 2 device) quando la **Dev Build EAS nuova** è pronta
 > (azione owner già tracciata in LM5). Prossimo: **LM7** (home feed:
 > striscia + verticale) su comando PO.)
->
-> **Aggiornamento precedente:** 2026-07-12 sera (**M12 Live: LM5 FATTO — Mobile:
-> fondamenta LiveKit.** Nessuna migrazione (59 invariate), nessuna Edge nuova.
-> **SDK installato con matrice versioni verificata PRIMA dell'install**
-> (rischio R-1): `@livekit/react-native@2.11.1` +
-> `@livekit/react-native-webrtc@144.1.1` + `livekit-client@2.20.1` (peer) +
-> `@livekit/react-native-expo-plugin@1.0.2` +
-> `@config-plugins/react-native-webrtc@13.0.0` — la **13** è la major per
-> Expo ^54 (la latest 15 richiede Expo 56); pin ESATTI in package.json.
-> `app.json`: entrambi i config plugin registrati; permessi camera/mic
-> aggiornati per citare la Live su TUTTI i writer (infoPlist +
-> expo-image-picker + webrtc plugin — l'introspezione `expo config --type
-> introspect` ha mostrato che l'opzione camera di expo-image-picker VINCEVA
-> sull'infoPlist: ora le stringhe coincidono ovunque). **Strato dati
-> completo**: `lib/livekit.ts` = bootstrap nativo (guard Expo Go
-> `liveKitDisponibile` + `registerGlobals()` via import dinamico idempotente:
-> in Expo Go il modulo nativo non viene MAI valutato, pattern MapCanvas);
-> `lib/live.ts` = wrapper delle 10 RPC (create/pause/resume/end,
-> invite/accept/remove co-host, leave best-effort fire-and-forget,
-> lives_feed/live_detail) + Edge `fetchTokenLive` (IL MINT È IL JOIN: ogni
-> reconnect ripassa dal controllo completo visibilità/kick) e `kickDaLive`
-> (DB prima, media dopo), con gli errori Edge normalizzati a Error(<codice>)
-> dal body `{error}`; `liveErrorMessage` in `lib/errors.ts` (codici FEDELI ai
-> raise dei trigger LM0: `live_not_visible` ≠ `not_visible`, `no_invite`);
-> tipi raw+payload a mano in `types/supabase.ts` (LivesFeedRaw, LiveDetailRaw
-> — contatori opzionali: arrivano SOLO all'host —, LiveStarted/LiveStatus/
-> LiveEndedPayload, CreateLiveResult). **liveStore** (Zustand): dizionario
-> delle live attive per id + ORDINE del server (snapshot-as-truth: idrataFeed
-> rimpiazza tutto e ricalibra il clock; `live_started` upsert in testa CON
-> identità host — a differenza dei delta mappa niente refetch di
-> arricchimento; `live_status` patcha, `live_ended` RIMUOVE: le live finite
-> spariscono, nessun archivio) + `clockOffsetMs` condiviso (pattern M7 §8).
-> **Inbox estesa** (`map-realtime.ts`): i 3 eventi live sullo STESSO canale
-> privato `map:u:{uid}` (nessun topic nuovo — live.md §15.4), handler
-> opzionali accanto a quelli mappa, un solo join. **Schermo di prova
-> TEMPORANEO `/live/test`** (dev-only: prod → redirect, Expo Go → pannello
-> "serve la Dev Build", superficie caricata lazy): crea una live con
-> notify_mode='none' (la prova NON spamma gli amici) → token → Room.connect →
-> video locale in VideoTrack; bonifica automatica della live orfana di un
-> giro crashato; elenco "amici in live" alimentato dai delta inbox →
-> liveStore (la gamba realtime si prova con un secondo device amico). Sarà
-> sostituito dagli schermi veri in LM6. `tsc --noEmit` ed `eslint` PULITI;
-> `expo-doctor` 18/18. ⏳ **Azione owner (BLOCCANTE per la verifica on-device
-> e per LM6)**: nuova **Dev Build EAS** — i nativi LiveKit/WebRTC NON sono
-> nella build attuale (`eas build --profile development --platform android`)
-> — poi su device: `/live/test` connette e mostra il video locale, eventi
-> inbox su 2 device; restano le azioni LM4 (secrets `LIVEKIT_*` + webhook
-> dashboard). Prossimo: **LM6** (composer + schermo live) su comando PO.)
 
 ---
 
@@ -941,8 +945,24 @@ pattern drop_comments per i commenti realtime. Nuove Edge: `live-kick`,
   `/live/test` e `LiveTestSurface` RIMOSSI (sostituiti). tsc/eslint puliti.
   ⏳ Done-when on-device (2 device, §18/LM6) alla nuova Dev Build EAS
   (azione owner già tracciata in LM5).
-- ⬜ **LM7–LM8 mobile** (home feed striscia+verticale → badge mappa +
-  MANUAL-TESTING + chiusura). UNA milestone alla volta su comando PO.
+- ✅ **LM7 fatto** (2026-07-12): mobile — home feed. Categoria `live` della
+  Home REALE (full-height, lazy dietro guard Expo Go): `LiveStrip` (anello
+  rosso pulsante + LIVE/PAUSA, tap → live) + feed verticale `pagingEnabled`
+  (`LiveFeed`/`LiveFeedPage`) con preview LiveKit SUBSCRIBE-ONLY della SOLA
+  pagina visibile (viewability 60%, attacco debounced 350ms, disconnect a
+  scroll/blur/background, audio sempre muto QA-3, nessuna connessione in
+  `paused` — budget R-3 come requisito), video del solo host principale,
+  tap → `/live/[id]` con preview staccata PRIMA del push (leave saltata: il
+  mint dello schermo rientra). `useLivesFeed` (snapshot `lives_feed` = verità
+  + delta inbox = patch + reconcile 60s in foreground). `map-realtime.ts` →
+  **multiplexer** (un canale reale per uid, registro handler, grazia 1,5s,
+  accensioni serializzate): fix del bug latente removeChannel-condiviso ora
+  che più superfici coesistono sull'inbox. Stato vuoto onesto con CTA;
+  `FeedLiveCard` placeholder e `FEED_LIVE` RIMOSSE. tsc/eslint puliti.
+  ⏳ Done-when on-device (2 device, §18/LM7: realtime senza refresh, UNA
+  connessione per volta su dashboard LiveKit) alla nuova Dev Build EAS.
+- ⬜ **LM8 mobile** (badge mappa: anello rosso + callout su M7 →
+  MANUAL-TESTING + chiusura modulo). UNA milestone alla volta su comando PO.
 - **Verifica:** criteri per milestone e Definition of Done in `docs/live/live.md`
   (§18–§20); QA aperte §22 (cap 8h, pausa 30 min, preview muta, soglie Aura).
 

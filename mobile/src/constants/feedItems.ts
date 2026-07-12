@@ -120,22 +120,3 @@ export const FEED_ITEMS: readonly FeedItem[] = [
     pages: 5,
   },
 ];
-
-/** La card "LIVE" in fondo al feed (forma a sé: stanza in corso, non un drop). */
-export interface FeedLiveItem {
-  id: string;
-  title: string;
-  verified: boolean;
-  avatarUrl?: string | null;
-  place: string;
-  /** spettatori già formattati, es. "12.3K" */
-  watching: string;
-}
-
-export const FEED_LIVE: FeedLiveItem = {
-  id: 'live-1',
-  title: 'LunaPark Festival',
-  verified: true,
-  place: 'Milano, Italia',
-  watching: '12.3K',
-};

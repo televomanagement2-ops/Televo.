@@ -351,7 +351,7 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
 
 // --- Pezzi di presentazione -----------------------------------------------------
 
-/** Badge LIVE rosso col puntino pulsante (estetica FeedLiveCard approvata). */
+/** Badge LIVE rosso col puntino pulsante (estetica LIVE rossa approvata). */
 function BadgeLive({ inPausa }: { inPausa: boolean }) {
   const alone = useSharedValue(1);
   useEffect(() => {

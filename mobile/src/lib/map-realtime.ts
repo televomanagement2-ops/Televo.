@@ -18,11 +18,22 @@
 // eventi (`live_fanout`, LM2) sull'UNICO canale, senza topic nuovi: stessa
 // policy, stessa subscription, un solo join.
 //
+// M12 (LM7) — MULTIPLEXER. Da LM7 più superfici vivono INSIEME sullo stesso
+// topic: il feed live della Home resta montato sotto lo stack quando si apre
+// `/live/[id]` (e idem la mappa). realtime-js 2.108 RIUSA l'istanza di canale
+// per topic identico e `removeChannel` la smonta per TUTTI: senza questo strato
+// la prima superficie che smonta spegnerebbe l'inbox delle altre in silenzio.
+// Quindi: UN canale reale per uid + REGISTRO di handler-set; ogni consumatore
+// registra/deregistra i propri handler, il canale nasce col primo e muore
+// (con una piccola grazia) quando il registro si svuota. L'API pubblica è
+// invariata: `subscribeMapInbox(uid, handlers) → cleanup`.
+//
 // Lo SNAPSHOT resta la verità (map.md §13.3): questi delta sono aggiornamenti
 // incrementali. Un delta di un amico non ancora noto (payload SENZA identità) fa
 // scattare un refetch di arricchimento nell'hook.
 
 import { supabase } from '@/lib/supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import type {
   LiveEndedPayload,
   LiveStartedPayload,
@@ -50,36 +61,87 @@ export interface MapInboxHandlers {
   onLiveEnded?: (p: LiveEndedPayload) => void;
 }
 
-/**
- * Sottoscrive l'inbox privata dell'utente. Sicura in un useEffect: usare la
- * funzione di cleanup restituita come teardown (chiude il canale all'unmount della
- * mappa — la sottoscrizione vive SOLO mentre la mappa è montata, map.md §13.3).
- */
-export function subscribeMapInbox(uid: string, handlers: MapInboxHandlers): () => void {
-  const channel = supabase.channel(`map:u:${uid}`, { config: { private: true } });
+// -----------------------------------------------------------------------------
+// Stato del multiplexer (modulo = singleton)
+// -----------------------------------------------------------------------------
 
-  channel
-    .on('broadcast', { event: 'presence' }, (msg) =>
-      handlers.onPresence?.(msg.payload as MapPresencePayload),
-    )
+/** Handler-set dei consumatori vivi: ogni evento viene smistato a TUTTI. */
+const registro = new Set<MapInboxHandlers>();
+let canale: RealtimeChannel | null = null;
+/** uid a cui il canale (attivo o prenotato) appartiene; null = spento. */
+let canaleUid: string | null = null;
+/** Smontaggio del canale precedente in corso: le accensioni lo ATTENDONO
+ *  (rimuovere e ricreare lo stesso topic ha una finestra async in realtime-js:
+ *  `channel(topic)` riuserebbe l'istanza morente ancora nella lista client). */
+let smontaggio: Promise<unknown> | null = null;
+/** Invalida le accensioni in volo quando lo stato cambia sotto di loro. */
+let generazione = 0;
+let timerSpegnimento: ReturnType<typeof setTimeout> | null = null;
+
+/** Grazia prima dello smontaggio reale quando il registro si svuota: copre le
+ *  transizioni tra superfici (feed → schermo live → back) senza churn di
+ *  join/leave e rende rarissima la ricreazione ravvicinata dello stesso topic. */
+const SPEGNIMENTO_GRACE_MS = 1500;
+
+function annullaTimerSpegnimento() {
+  if (timerSpegnimento) {
+    clearTimeout(timerSpegnimento);
+    timerSpegnimento = null;
+  }
+}
+
+/** Smista un evento a tutti gli handler-set registrati IN QUESTO momento:
+ *  chi si aggiunge dopo il join riceve i delta successivi, chi si toglie
+ *  smette subito (il registro è letto a ogni dispatch, mai fotografato). */
+function dispatch(consegna: (h: MapInboxHandlers) => void) {
+  for (const h of registro) consegna(h);
+}
+
+/** Spegne il canale ADESSO (cambio utente o registro rimasto vuoto). */
+function spegni() {
+  generazione += 1;
+  annullaTimerSpegnimento();
+  canaleUid = null;
+  if (canale) {
+    const ch = canale;
+    canale = null;
+    smontaggio = supabase.removeChannel(ch).catch(() => {});
+  }
+}
+
+/** Crea, collega e sottoscrive il canale per `uid` (dopo aver atteso l'eventuale
+ *  smontaggio del predecessore). Abortisce se nel frattempo lo stato è cambiato. */
+async function accendi(uid: string, gen: number) {
+  try {
+    await smontaggio;
+  } catch {
+    // lo smontaggio fallito non blocca l'accensione
+  }
+  if (gen !== generazione || canaleUid !== uid || registro.size === 0) return;
+
+  const ch = supabase.channel(`map:u:${uid}`, { config: { private: true } });
+  ch.on('broadcast', { event: 'presence' }, (msg) =>
+    dispatch((h) => h.onPresence?.(msg.payload as MapPresencePayload)),
+  )
     .on('broadcast', { event: 'presence_removed' }, (msg) =>
-      handlers.onPresenceRemoved?.(msg.payload as MapPresenceRemovedPayload),
+      dispatch((h) => h.onPresenceRemoved?.(msg.payload as MapPresenceRemovedPayload)),
     )
     .on('broadcast', { event: 'event_started' }, (msg) =>
-      handlers.onEventStarted?.(msg.payload as MapEventStartedPayload),
+      dispatch((h) => h.onEventStarted?.(msg.payload as MapEventStartedPayload)),
     )
     .on('broadcast', { event: 'event_ended' }, (msg) =>
-      handlers.onEventEnded?.(msg.payload as MapEventEndedPayload),
+      dispatch((h) => h.onEventEnded?.(msg.payload as MapEventEndedPayload)),
     )
     .on('broadcast', { event: 'live_started' }, (msg) =>
-      handlers.onLiveStarted?.(msg.payload as LiveStartedPayload),
+      dispatch((h) => h.onLiveStarted?.(msg.payload as LiveStartedPayload)),
     )
     .on('broadcast', { event: 'live_status' }, (msg) =>
-      handlers.onLiveStatus?.(msg.payload as LiveStatusPayload),
+      dispatch((h) => h.onLiveStatus?.(msg.payload as LiveStatusPayload)),
     )
     .on('broadcast', { event: 'live_ended' }, (msg) =>
-      handlers.onLiveEnded?.(msg.payload as LiveEndedPayload),
+      dispatch((h) => h.onLiveEnded?.(msg.payload as LiveEndedPayload)),
     );
+  canale = ch;
 
   // Il canale privato richiede il JWT sul client Realtime prima del join.
   // `setAuth()` senza argomenti usa il token della sessione corrente. Best-effort:
@@ -88,9 +150,45 @@ export function subscribeMapInbox(uid: string, handlers: MapInboxHandlers): () =
   void supabase.realtime
     .setAuth()
     .catch(() => {})
-    .finally(() => channel.subscribe());
+    .finally(() => {
+      // Spento mentre si attendeva il setAuth: non joinare un canale morto.
+      if (gen === generazione && canale === ch) ch.subscribe();
+    });
+}
+
+/**
+ * Registra un consumatore dell'inbox privata. Sicura in un useEffect: usare la
+ * funzione restituita come teardown. Più superfici possono registrarsi INSIEME
+ * (Home live + schermo live + mappa): il canale reale è uno solo e resta vivo
+ * finché almeno un consumatore è registrato.
+ */
+export function subscribeMapInbox(uid: string, handlers: MapInboxHandlers): () => void {
+  // Cambio utente (logout/login): l'inbox è per-uid, il canale vecchio muore
+  // subito e il registro riparte (gli eventuali cleanup dei vecchi consumatori
+  // diventano no-op innocui: rimuovono handler che non ci sono più).
+  if (canaleUid && canaleUid !== uid) {
+    registro.clear();
+    spegni();
+  }
+
+  annullaTimerSpegnimento();
+  registro.add(handlers);
+
+  if (!canaleUid) {
+    canaleUid = uid;
+    generazione += 1;
+    void accendi(uid, generazione);
+  }
 
   return () => {
-    void supabase.removeChannel(channel);
+    registro.delete(handlers);
+    if (registro.size > 0) return;
+    // Ultimo consumatore: spegnimento con grazia (una nuova superficie che
+    // monta subito dopo — es. back dallo schermo live — riusa il canale vivo).
+    annullaTimerSpegnimento();
+    timerSpegnimento = setTimeout(() => {
+      timerSpegnimento = null;
+      if (registro.size === 0) spegni();
+    }, SPEGNIMENTO_GRACE_MS);
   };
 }

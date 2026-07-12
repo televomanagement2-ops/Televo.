@@ -11,10 +11,12 @@ import { Suspense, lazy } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { PannelloDevBuild } from '@/components/live/PannelloDevBuild';
-import { liveKitDisponibile } from '@/lib/livekit';
+import { dopoBootstrapLiveKit, liveKitDisponibile } from '@/lib/livekit';
 import { colors } from '@/constants/theme';
 
-const LiveSurface = lazy(() => import('@/components/live/LiveSurface'));
+// Bootstrap prima del chunk: livekit-client tocca DOMException alla
+// valutazione del modulo (vincolo 4 di lib/livekit.ts).
+const LiveSurface = lazy(dopoBootstrapLiveKit(() => import('@/components/live/LiveSurface')));
 
 export default function LiveScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();

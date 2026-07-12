@@ -9,12 +9,15 @@
 import { Suspense, lazy } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { PannelloDevBuild } from '@/components/live/PannelloDevBuild';
-import { liveKitDisponibile } from '@/lib/livekit';
+import { dopoBootstrapLiveKit, liveKitDisponibile } from '@/lib/livekit';
 import { colors } from '@/constants/theme';
 
-// Import pigro: la factory gira solo al primo render della superficie,
-// che in Expo Go non avviene mai (si torna prima).
-const LiveComposerSurface = lazy(() => import('@/components/live/LiveComposerSurface'));
+// Import pigro: la factory gira solo al primo render della superficie, che in
+// Expo Go non avviene mai (si torna prima). Il bootstrap DEVE precedere il
+// chunk: livekit-client tocca DOMException alla valutazione del modulo.
+const LiveComposerSurface = lazy(
+  dopoBootstrapLiveKit(() => import('@/components/live/LiveComposerSurface')),
+);
 
 export default function LiveNuovoScreen() {
   if (!liveKitDisponibile) return <PannelloDevBuild />;

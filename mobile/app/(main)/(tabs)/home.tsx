@@ -18,14 +18,16 @@ import { ComingSoon } from '@/components/feed/ComingSoon';
 import { DropFeed } from '@/components/drops/DropFeed';
 import { MapCanvas } from '@/components/mappa/MapCanvas';
 import { PannelloDevBuild } from '@/components/live/PannelloDevBuild';
-import { liveKitDisponibile } from '@/lib/livekit';
+import { dopoBootstrapLiveKit, liveKitDisponibile } from '@/lib/livekit';
 import { FEED_ITEMS } from '@/constants/feedItems';
 import { DEFAULT_FEED_CATEGORY, type FeedCategoryKey } from '@/constants/feed';
 import { colors, spacing } from '@/constants/theme';
 
 // Il feed live importa i moduli nativi LiveKit: caricato PIGRAMENTE dietro il
-// guard Expo Go (pattern /live/[id], §12.16) — in Expo Go non viene mai valutato.
-const LiveFeed = lazy(() => import('@/components/live/LiveFeed'));
+// guard Expo Go (pattern /live/[id], §12.16) — in Expo Go non viene mai
+// valutato — e SOLO dopo il bootstrap (livekit-client tocca DOMException alla
+// valutazione del modulo, vincolo 4 di lib/livekit.ts).
+const LiveFeed = lazy(dopoBootstrapLiveKit(() => import('@/components/live/LiveFeed')));
 
 export default function Home() {
   const [category, setCategory] = useState<FeedCategoryKey>(DEFAULT_FEED_CATEGORY);

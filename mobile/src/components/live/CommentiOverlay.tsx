@@ -1,24 +1,25 @@
 // =============================================================================
-// CommentiOverlay — colonna commenti effimeri in basso a sinistra (M12 / LM6).
+// CommentiOverlay — lista commenti a scorrimento in basso a sinistra (M12/LM6).
 // =============================================================================
-// I commenti appaiono e dopo alcuni secondi SFUMANO per non sporcare lo schermo
-// (live.md §6). Il fade è SOLO visivo: la riga resta a DB per la finestra di
-// moderazione (purge server-side a 24h dalla fine). La finestra di scadenza
-// parte dall'ARRIVO sul device (mount della riga), non da created_at: niente
-// dipendenza dal clock del telefono.
+// FlatList `inverted` con viewport ad altezza cap (~7 righe): il più nuovo
+// entra in basso, il più vecchio ESCE SCORRENDO quando ne arriva uno nuovo —
+// niente sparizione a tempo. I vecchi restano raggiungibili scrollando, fino
+// al tetto in memoria di useLive (50). La riga resta a DB per la finestra di
+// moderazione (purge server-side a 24h dalla fine). Il fading edge in cima è
+// solo polish visivo (dissolvenza dei più vecchi), non logica.
 // Long-press su un commento ALTRUI → segnalazione (il parent apre il menu).
 
-import { memo, useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
+import { memo, useMemo } from 'react';
+import { FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Avatar } from '@/components/ui/Avatar';
 import type { CommentoLive } from '@/hooks/useLive';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 
-/** Quanti commenti al massimo restano a schermo contemporaneamente. */
-const MAX_VISIBILI = 4;
-/** Dopo quanto un commento sfuma (dall'arrivo sul device). */
-const VISIBILE_MS = 10_000;
+/** Quota di schermo occupabile dalla lista (~7 righe visibili). */
+const QUOTA_ALTEZZA = 0.38;
+/** Ampiezza della dissolvenza dei commenti più vecchi in cima. */
+const FADE_CIMA = 56;
 
 interface Props {
   commenti: CommentoLive[];
@@ -27,50 +28,37 @@ interface Props {
 }
 
 export function CommentiOverlay({ commenti, onSegnala }: Props) {
-  // Id già sfumati: filtrati via (il fade è irreversibile, come su TikTok).
-  const [scaduti, setScaduti] = useState<ReadonlySet<string>>(() => new Set());
+  const { height: altezzaSchermo } = useWindowDimensions();
 
-  const segnaScaduto = useCallback((id: string) => {
-    setScaduti((prev) => {
-      if (prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-  }, []);
-
-  const visibili = commenti.filter((c) => !scaduti.has(c.id)).slice(-MAX_VISIBILI);
-  if (visibili.length === 0) return null;
+  // La lista inverted vuole il più nuovo a indice 0 (= in basso, offset 0):
+  // useLive accoda i nuovi in fondo, quindi si rovescia una volta per render.
+  const dati = useMemo(() => [...commenti].reverse(), [commenti]);
+  if (dati.length === 0) return null;
 
   return (
-    <View style={styles.colonna} pointerEvents="box-none">
-      {visibili.map((c) => (
-        <RigaCommento key={c.id} commento={c} onScaduto={segnaScaduto} onSegnala={onSegnala} />
-      ))}
-    </View>
+    <FlatList
+      data={dati}
+      keyExtractor={(c) => c.id}
+      renderItem={({ item }) => <RigaCommento commento={item} onSegnala={onSegnala} />}
+      inverted
+      style={[styles.lista, { maxHeight: Math.round(altezzaSchermo * QUOTA_ALTEZZA) }]}
+      contentContainerStyle={styles.contenuto}
+      showsVerticalScrollIndicator={false}
+      fadingEdgeLength={FADE_CIMA}
+      keyboardShouldPersistTaps="handled"
+    />
   );
 }
 
 const RigaCommento = memo(function RigaCommento({
   commento,
-  onScaduto,
   onSegnala,
 }: {
   commento: CommentoLive;
-  onScaduto: (id: string) => void;
   onSegnala?: (commento: CommentoLive) => void;
 }) {
-  useEffect(() => {
-    const t = setTimeout(() => onScaduto(commento.id), VISIBILE_MS);
-    return () => clearTimeout(t);
-  }, [commento.id, onScaduto]);
-
   return (
-    <Animated.View
-      entering={FadeInDown.duration(220)}
-      exiting={FadeOut.duration(600)}
-      layout={LinearTransition.duration(180)}
-    >
+    <Animated.View entering={FadeInDown.duration(220)}>
       <Pressable
         style={styles.riga}
         onLongPress={commento.mio || !onSegnala ? undefined : () => onSegnala(commento)}
@@ -89,7 +77,8 @@ const RigaCommento = memo(function RigaCommento({
 });
 
 const styles = StyleSheet.create({
-  colonna: { gap: spacing.xs, maxWidth: '80%' },
+  lista: { flexGrow: 0, maxWidth: '80%' },
+  contenuto: { gap: spacing.xs },
   riga: {
     flexDirection: 'row',
     alignItems: 'flex-start',

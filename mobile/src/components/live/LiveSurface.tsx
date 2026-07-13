@@ -24,7 +24,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { StatoErrore } from '@/components/ui/StatoErrore';
 import { CommentiOverlay } from '@/components/live/CommentiOverlay';
-import { CommentInput } from '@/components/live/CommentInput';
+import { CommentComposer, CommentInput } from '@/components/live/CommentInput';
 import { CoHostSheet } from '@/components/live/CoHostSheet';
 import { ListaSpettatori } from '@/components/live/ListaSpettatori';
 import { StatoPausa } from '@/components/live/StatoPausa';
@@ -69,6 +69,7 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
   const [sheetSpettatori, setSheetSpettatori] = useState(false);
   const [invitoNascosto, setInvitoNascosto] = useState(false);
   const [inAccettazione, setInAccettazione] = useState(false);
+  const [composerAperto, setComposerAperto] = useState(false);
 
   const identitaNote = useMemo(
     () =>
@@ -285,7 +286,7 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
         <View style={styles.piede} pointerEvents="box-none">
           <View style={styles.colonnaCommenti} pointerEvents="box-none">
             <CommentiOverlay commenti={commenti} onSegnala={segnalaCommento} />
-            {api.possoCommentare ? <CommentInput onInvia={invia} /> : null}
+            {api.possoCommentare ? <CommentInput onApri={() => setComposerAperto(true)} /> : null}
           </View>
 
           <View style={styles.colonnaControlli}>
@@ -344,6 +345,12 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
             onKick={api.kickSpettatore}
           />
         </>
+      ) : null}
+
+      {/* Composer commenti: layer assoluto sopra i controlli, montato solo
+          quando serve (la tastiera è gestita lì con useAnimatedKeyboard). */}
+      {composerAperto && api.possoCommentare ? (
+        <CommentComposer onInvia={invia} onChiudi={() => setComposerAperto(false)} />
       ) : null}
     </View>
   );

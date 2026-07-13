@@ -7,15 +7,25 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P8 FATTO —
+> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P9 FATTO —
+> live UX: tastiera + overlay commenti (sintomo 5 al completo).** SOLO mobile,
+> nessuna migrazione: `CommentInput` senza Modal (il composer è un layer
+> assoluto alla radice di LiveSurface, barra incollata alla tastiera via
+> `useAnimatedKeyboard` — identico iOS/Android, back hardware chiude il
+> composer e non lo schermo); `CommentiOverlay` da colonna-a-tempo a **FlatList
+> `inverted` con cap ~7 righe visibili** (via il timeout 10s: i vecchi escono
+> scorrendo e restano raggiungibili fino al cap 50 in memoria; fading edge in
+> cima come polish). tsc+eslint verdi. ⏳ done-when on-device (Android fisico:
+> tastiera mai sopra l'input; 10 commenti rapidi → ~7 visibili). Prossimi:
+> P10 (tab Notifiche), P11 (polish+docs). Dettagli nella sezione M13).
+> Precedente: 2026-07-13 notte (**M13 — Hardening: P8 FATTO —
 > con P5/P6/P7 chiude il blocco sessioni+scala backend del round.**
 > `lives_feed` paginata keyset a due blocchi (AH-2) con cursore derivato dal
 > payload (R-04 intatta), migrazione 64 live, load-more nel client, pgTAP
 > 567/567 + smoke 6/6 sul remoto. ENTRAMBI i warning di scala in testa alla
 > roadmap sono chiusi (P7+P8). ⚠️ Coda deploy OWNER invariata: `login-alert`
 > (P6) e `send-push` v3 (P4) — serve `supabase login` con l'account Televo.
-> Prossimi: P9 (live UX), P10 (tab Notifiche), P11 (polish+docs) su comando
-> PO. Dettagli nella sezione M13).
+> Dettagli nella sezione M13).
 > Precedente: 2026-07-13 notte (**M13 — Hardening: P7 FATTO** —
 > contatore spettatori Live incrementale: migrazione 63 live (funzione a
 > DELTA sotto row-lock + 3 trigger WHEN + indice parziale + `expire_content`
@@ -1182,8 +1192,22 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
   smoke pooler **6/6** (23 live: top block in testa, recenza, walk completo
   senza duplicati/salti, cap 20, confine top→non-top, R-04; rolled back).
   Chiude il warning `lives_feed` in testa alla roadmap
-- **P9** live UX: tastiera commenti senza Modal (`useAnimatedKeyboard`) +
-  overlay ~7 commenti a scorrimento
+- ✅ **P9 FATTO** (2026-07-13) live UX (§4, sintomo 5): SOLO mobile.
+  `CommentInput` **senza Modal** — pillola e composer separati: il composer è
+  un layer assoluto montato alla RADICE di LiveSurface (sopra i controlli,
+  solo quando aperto), backdrop che chiude, barra input traslata con
+  **`useAnimatedKeyboard`** (`translateY(-height)`: esplicito e identico su
+  iOS/Android, niente `behavior` ambiguo dentro Modal trasparente), back
+  hardware Android → chiude il composer e NON lo schermo live
+  (`BackHandler`), padding bottom safe-area, BlurView/invio/errore inline
+  invariati. `CommentiOverlay` da colonna-a-tempo (4 righe, fade a 10s) a
+  **FlatList `inverted`** con viewport cap **38% dello schermo ≈ 7 righe**:
+  il più nuovo entra in basso (offset 0 = auto-scroll), il più vecchio esce
+  SCORRENDO e resta raggiungibile fino al cap 50 in memoria (`useLive`
+  invariato); via il timeout; `fadingEdgeLength` come dissolvenza dei più
+  vecchi in cima (polish, zero dipendenze nuove). tsc+eslint verdi.
+  ⏳ done-when on-device (Android fisico, Dev Build): tastiera mai sopra
+  l'input; 10 commenti rapidi → ~7 visibili a scorrimento
 - **P10** tab Notifiche reale (ledger, mark-all-read, deep link, badge)
 - **P11** performance (seed clearedAt, prefetch su press, pre-warm chunk
   LiveKit, spinner nei fallback Suspense) + pulizia docs

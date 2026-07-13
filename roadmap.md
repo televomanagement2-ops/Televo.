@@ -7,7 +7,19 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P4 FATTO** —
+> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P5 FATTO** —
+> sessioni multi-device (audit §5.1, sintomo 6). SOLO mobile, nessuna
+> migrazione: `signOut` passa a **scope 'local'** (il default 'global' di
+> supabase-js revoca i refresh token di TUTTI i device — era il "login su B
+> sgancia A") + flag di modulo `logoutVolontario` consumato da
+> `useAuthListener`: il SIGNED_OUT **subìto** (revoca/scadenza della sessione)
+> mostra il dialog dark "Sessione scaduta — Accedi di nuovo per continuare."
+> (solo se c'era una sessione dentro; il redirect resta allo store), il logout
+> volontario resta silenzioso. `rimuoviTokenPush` al logout invariato.
+> tsc+eslint verdi. ⏳ done-when on-device (login/logout incrociati su 2
+> device) + check owner dashboard "Authentication → Sessions" senza
+> enforcement single-session (da P0). Prossimo P6).
+> Precedente: 2026-07-13 notte (**M13 — Hardening: P4 FATTO** —
 > push server: receipt Expo + osservabilità. Migrazione
 > `20260713120000_push_receipts` **LIVE sul remoto** (via CLI `db push`, 60ª):
 > due tabelle di SISTEMA `push_tickets`/`push_health` (RLS attiva, **ZERO
@@ -1090,7 +1102,10 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
   marker nel catalogo, tabelle vuote a baseline). ⚠️ **Azione OWNER**: `supabase
   functions deploy send-push` (finché non deployata resta la v2; il sistema è
   coerente PRIMA del deploy — dispatch invariato, tabelle vuote, R-4).
-- **P5** sessioni multi-device: `signOut scope local` + SIGNED_OUT con grazia
+- ✅ **P5 FATTO** (2026-07-13) sessioni multi-device: `signOut({scope:'local'})`
+  in `lib/auth.ts` (il 'global' di default revocava TUTTI i device) + flag
+  `logoutVolontario` consumato in `useAuthListener` → SIGNED_OUT subìto =
+  dialog "Sessione scaduta" (mai kick silenzioso), logout volontario invariato
 - **P6** notifica "nuovo accesso" (`new_login` + Edge `login-alert`, città da
   IP best-effort AH-3, soppressione own-device) — deploy owner
 - **P7** `sync_live_viewer_count` incrementale a delta + riconciliazione in

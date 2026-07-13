@@ -285,9 +285,33 @@ export async function verifyPhoneOtp(phoneE164: string, token: string): Promise<
 }
 
 // --- Logout ------------------------------------------------------------------
+// M13/P5 (audit §5.1): scope 'local' — il logout chiude SOLO la sessione di
+// questo device. Il default di supabase-js è 'global' e revoca i refresh token
+// di TUTTI i device dell'utente: era la causa del sintomo "il login sul secondo
+// telefono sgancia il primo". Il flag di modulo permette a useAuthListener di
+// distinguere il SIGNED_OUT scelto dall'utente dalla revoca SUBITA (sessione
+// scaduta/revocata altrove → dialog, non kick silenzioso).
+
+let logoutVolontario = false;
+
+/**
+ * True se il SIGNED_OUT in corso nasce da un signOut esplicito di questo
+ * device. Si consuma alla lettura (il prossimo SIGNED_OUT riparte da false).
+ */
+export function consumaLogoutVolontario(): boolean {
+  const volontario = logoutVolontario;
+  logoutVolontario = false;
+  return volontario;
+}
 
 export async function signOut(): Promise<void> {
-  await supabase.auth.signOut();
+  logoutVolontario = true;
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch (e) {
+    logoutVolontario = false;
+    throw e;
+  }
   // Google disattivato in questa build: nessuna sessione nativa da chiudere.
 }
 

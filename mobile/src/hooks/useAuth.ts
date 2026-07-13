@@ -13,7 +13,8 @@ import { useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
-import { fetchMyProfile, signOut as doSignOut } from '@/lib/auth';
+import { consumaLogoutVolontario, fetchMyProfile, signOut as doSignOut } from '@/lib/auth';
+import { avvisa } from '@/lib/dialoghi';
 import { rimuoviTokenPush } from '@/lib/expo-push';
 import { rimuoviCachePersistita } from '@/lib/persistenza';
 import { queryClient } from '@/lib/queryClient';
@@ -74,7 +75,18 @@ export function useAuthListener(): void {
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       // P2: prima di aggiornare lo store, al logout si azzerano i dati locali
       // (la pulizia è sincrona e locale: nessuna chiamata Supabase nel lock).
-      if (event === 'SIGNED_OUT') pulisciDatiAccount();
+      if (event === 'SIGNED_OUT') {
+        // P5: la revoca SUBITA (refresh token revocato/scaduto, ban) non è più
+        // un kick silenzioso: il redirect a /welcome lo fa già lo store, qui
+        // si spiega cosa è successo. Il dialog appare solo se c'ERA una
+        // sessione (mai su eventi spuri senza utente dentro).
+        const volontario = consumaLogoutVolontario();
+        const aveaSessione = !!useAuthStore.getState().session;
+        pulisciDatiAccount();
+        if (!volontario && aveaSessione) {
+          avvisa('Sessione scaduta', 'Accedi di nuovo per continuare.');
+        }
+      }
       setSession(session);
       void loadProfile(session?.user.id);
     });

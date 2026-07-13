@@ -14,8 +14,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { useMyProfile } from '@/hooks/useProfilo';
 import { useCondivisionePosizione } from '@/hooks/useCondivisionePosizione';
 import { useSafeZones, type SafeZone } from '@/hooks/useSafeZones';
@@ -23,11 +22,15 @@ import { sessioneAttiva } from '@/store/mapStore';
 import { residuoCompatto } from '@/lib/datetime';
 import { avvisa, conferma } from '@/lib/dialoghi';
 import { mapErrorMessage } from '@/lib/errors';
+import { statoSchermo } from '@/lib/query-ui';
+import { useOnline } from '@/lib/rete';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 
 export default function ImpostazioniPosizione() {
   const router = useRouter();
   const profilo = useMyProfile();
+  const online = useOnline();
+  const stato = statoSchermo(profilo, online);
   const { sessione, impostaMaster, spegni } = useCondivisionePosizione();
   const safeZones = useSafeZones();
 
@@ -92,12 +95,13 @@ export default function ImpostazioniPosizione() {
         <Text style={styles.title}>Posizione e mappa</Text>
       </View>
 
-      {profilo.isLoading ? (
-        <LoadingSpinner label="Carico le impostazioni…" style={styles.flex} />
-      ) : profilo.isError ? (
-        <StatoErrore
+      {stato !== 'dati' ? (
+        <VistaStato
+          stato={stato}
           messaggio="Non riesco a caricare le impostazioni."
+          etichettaCaricamento="Carico le impostazioni…"
           onRetry={() => void profilo.refetch()}
+          style={styles.flex}
         />
       ) : (
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>

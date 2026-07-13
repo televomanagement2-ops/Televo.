@@ -15,6 +15,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
+import { initRete } from '@/lib/rete';
 import { DialogHost } from '@/components/ui/DialogHost';
 import { useAuthListener } from '@/hooks/useAuth';
 import { useOnboardingStore } from '@/store/onboardingStore';
@@ -22,6 +23,11 @@ import { colors } from '@/constants/theme';
 
 // Teniamo lo splash nativo finché il primo frame non è pronto (niente flash bianco).
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+// M13/P1: cabliamo NetInfo → onlineManager PRIMA che il tree renderizzi (e quindi
+// prima di ogni query). Così una query lanciata offline resta in pausa invece di
+// fallire subito. Idempotente: la ri-chiamata in useChatRuntime resta innocua.
+initRete();
 
 /** Estrae un eventuale codice invito da un deep link (televo://invito/CODICE). */
 function captureInviteFromUrl(url: string | null) {

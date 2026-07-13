@@ -984,8 +984,18 @@ solo tecnica e UX, non design; verticali non costruite ESCLUSE (M9/M10/M11/M4
 frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
 - ✅ **P0 FATTO** (2026-07-13) diagnosi live push+sessioni (read-only, nessun
   codice) — **esito in coda alla lista**
-- **P1** rete al boot (`initRete`) + QueryClient maturo + pattern SWR
-  (`statoSchermo`: dati cache sempre, spinner solo senza dati, stato offline)
+- ✅ **P1 FATTO** (2026-07-13) rete al boot (`initRete` a livello modulo in
+  `app/_layout.tsx`, prima di ogni query) + QueryClient maturo (retry 2 +
+  backoff 1s/2s cap 5s, `gcTime` 48h prerequisito P2, `refetchOnReconnect
+  'always'`) + pattern SWR: nuovo `src/lib/query-ui.ts` (`statoSchermo` =
+  dati cache sempre → spinner solo senza dati → **offline dedicato** →
+  errore) reso da `src/components/ui/VistaStato.tsx`; `StatoErrore` variante
+  `offline`. Applicato ai **15 screen query-driven** (hub messaggi, chat,
+  DropFeed, LiveFeed, drop/[id], salvati, ricordi, cerca, importante×2,
+  impostazioni chat, contatti, info gruppo, nuovo-gruppo, inoltra, posizione).
+  **LiveSurface e MapSurface NON toccati** (dati realtime non-cache: state
+  machine live / banner mappa §9 — fuori dal pattern SWR). tsc+eslint verdi.
+  **⏳ resta verifica on-device (aereo-mode a freddo).**
 - **P2** persistenza cache MMKV (chat offline scorribile WhatsApp-like, AH-5)
   + outbox su disco (AH-4)
 - **P3** push client: pre-prompt permesso alla shell + rotazione token +

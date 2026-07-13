@@ -14,12 +14,13 @@ import { router } from 'expo-router';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { useRemoveSave, useSavedDrops } from '@/hooks/useDrops';
 import { signedUrlDropFoto } from '@/lib/drops';
 import { avvisa, mostraMenu } from '@/lib/dialoghi';
 import { dropErrorMessage } from '@/lib/errors';
+import { statoSchermo } from '@/lib/query-ui';
+import { useOnline } from '@/lib/rete';
 import { tempoRimanente } from '@/lib/datetime';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
@@ -27,6 +28,7 @@ import type { DropType, SavedDropRow } from '@/types/supabase';
 
 export default function Salvati() {
   const q = useSavedDrops();
+  const online = useOnline();
   const { mutate: removeSave } = useRemoveSave();
   const rows = q.data ?? [];
 
@@ -57,11 +59,18 @@ export default function Salvati() {
     [apri, rimuovi],
   );
 
+  const stato = statoSchermo(q, online);
   let content: React.ReactNode;
-  if (q.isLoading) {
-    content = <LoadingSpinner label="Carico i salvati…" style={styles.flex} />;
-  } else if (q.isError) {
-    content = <StatoErrore messaggio={dropErrorMessage(q.error)} onRetry={() => void q.refetch()} />;
+  if (stato !== 'dati') {
+    content = (
+      <VistaStato
+        stato={stato}
+        messaggio={dropErrorMessage(q.error)}
+        etichettaCaricamento="Carico i salvati…"
+        onRetry={() => void q.refetch()}
+        style={styles.flex}
+      />
+    );
   } else {
     content = (
       <FlatList

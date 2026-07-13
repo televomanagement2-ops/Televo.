@@ -26,7 +26,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { Composer } from '@/components/chat/Composer';
 import { DropHero } from '@/components/drops/DropHero';
 import { StatistichePrivate } from '@/components/drops/StatistichePrivate';
@@ -47,6 +47,7 @@ import { reportDrop, reportDropComment } from '@/lib/drops';
 import { mostraMenuDrop } from '@/components/drops/MenuDrop';
 import { avvisa, mostraMenu, type VoceMenu } from '@/lib/dialoghi';
 import { useOnline } from '@/lib/rete';
+import { statoSchermo } from '@/lib/query-ui';
 import { avviaRegistrazione, fermaRegistrazione, richiediPermessoMic } from '@/lib/audio';
 import { dropErrorMessage } from '@/lib/errors';
 import { useDropStore } from '@/store/dropStore';
@@ -430,12 +431,17 @@ export default function DropDetail() {
     <Header onBack={chiudi} />
   );
 
+  const stato = statoSchermo(detailQ, online);
   let content: React.ReactNode;
-  if (detailQ.isLoading) {
-    content = <LoadingSpinner label="Carico il drop…" style={styles.flex} />;
-  } else if (detailQ.isError) {
+  if (stato !== 'dati') {
     content = (
-      <StatoErrore messaggio={dropErrorMessage(detailQ.error)} onRetry={() => void detailQ.refetch()} />
+      <VistaStato
+        stato={stato}
+        messaggio={dropErrorMessage(detailQ.error)}
+        etichettaCaricamento="Carico il drop…"
+        onRetry={() => void detailQ.refetch()}
+        style={styles.flex}
+      />
     );
   } else if (!drop) {
     content = <NonDisponibile />;

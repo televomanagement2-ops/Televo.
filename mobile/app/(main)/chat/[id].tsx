@@ -33,7 +33,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { MessaggioRow } from '@/components/chat/MessaggioRow';
 import { DataSeparatore } from '@/components/chat/DataSeparatore';
 import { Composer } from '@/components/chat/Composer';
@@ -66,6 +66,7 @@ import { giveMessageProp, previewText, reportMessage } from '@/lib/chat';
 import { dropKeys, fetchDropDetail } from '@/lib/drops';
 import { avvisa, conferma, mostraMenu, type VoceMenu } from '@/lib/dialoghi';
 import { useOnline } from '@/lib/rete';
+import { statoSchermo } from '@/lib/query-ui';
 import {
   avviaRegistrazione,
   fermaRegistrazione,
@@ -118,6 +119,22 @@ export default function Chat() {
   // clearedAt: undefined finché l'header non è pronto → query messaggi spenta
   // (così "Cancella cronologia" filtra DENTRO la chat, senza flash dei vecchi).
   const messagesQ = useMessages(convId, header.data ? header.data.myClearedAt ?? null : undefined);
+
+  // Stato d'ingresso SWR (P1): i messaggi (gated sull'header) sono il dato che
+  // conta; header e messaggi entrano nella pausa offline e negli errori. Query
+  // sintetica → helper condiviso, mai ragionamento a mano (trappola isPending).
+  const statoChat = statoSchermo(
+    {
+      data: messagesQ.data,
+      isPending: header.isPending || messagesQ.isPending,
+      isError: header.isError || messagesQ.isError,
+      fetchStatus:
+        header.fetchStatus === 'paused' || messagesQ.fetchStatus === 'paused'
+          ? 'paused'
+          : messagesQ.fetchStatus,
+    },
+    online,
+  );
   const del = useDeleteMessage(convId);
   const editMut = useEditMessage(convId);
   const markRead = useMarkRead(convId);
@@ -989,15 +1006,16 @@ export default function Chat() {
         behavior="padding"
         keyboardVerticalOffset={0}
       >
-        {header.isLoading || messagesQ.isPending ? (
-          <LoadingSpinner label="Carico la conversazione…" style={styles.flex} />
-        ) : header.isError || messagesQ.isError ? (
-          <StatoErrore
+        {statoChat !== 'dati' ? (
+          <VistaStato
+            stato={statoChat}
             messaggio="Non riesco a caricare la conversazione."
+            etichettaCaricamento="Carico la conversazione…"
             onRetry={() => {
               void header.refetch();
               void messagesQ.refetch();
             }}
+            style={styles.flex}
           />
         ) : !header.data ? (
           <View style={styles.center}>

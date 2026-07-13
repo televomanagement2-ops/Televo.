@@ -13,17 +13,19 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { RicordiGrid, RicordoView } from '@/components/drops/RicordiGrid';
 import { useDeleteDrop, useMemories } from '@/hooks/useDrops';
 import { avvisa } from '@/lib/dialoghi';
 import { dropErrorMessage } from '@/lib/errors';
+import { statoSchermo } from '@/lib/query-ui';
+import { useOnline } from '@/lib/rete';
 import { colors, fontFamily, fontSize, spacing } from '@/constants/theme';
 import type { MemoryRow } from '@/types/supabase';
 
 export default function Ricordi() {
   const q = useMemories();
+  const online = useOnline();
   const { mutate: deleteDrop } = useDeleteDrop();
   const [selected, setSelected] = useState<MemoryRow | null>(null);
 
@@ -36,11 +38,18 @@ export default function Ricordi() {
     });
   };
 
+  const stato = statoSchermo(q, online);
   let content: React.ReactNode;
-  if (q.isLoading) {
-    content = <LoadingSpinner label="Carico i ricordi…" style={styles.flex} />;
-  } else if (q.isError) {
-    content = <StatoErrore messaggio={dropErrorMessage(q.error)} onRetry={() => void q.refetch()} />;
+  if (stato !== 'dati') {
+    content = (
+      <VistaStato
+        stato={stato}
+        messaggio={dropErrorMessage(q.error)}
+        etichettaCaricamento="Carico i ricordi…"
+        onRetry={() => void q.refetch()}
+        style={styles.flex}
+      />
+    );
   } else {
     content = (
       <RicordiGrid

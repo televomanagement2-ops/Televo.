@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { useAmici, useApriDm, useAzioniAmicizia, usePendingRequests } from '@/hooks/useAmici';
 import {
   useAttivaContatti,
@@ -30,6 +30,8 @@ import {
 import { richiediPermessoRubrica } from '@/lib/contatti';
 import { avvisa, conferma } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
+import { statoSchermo } from '@/lib/query-ui';
+import { useOnline } from '@/lib/rete';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 
@@ -44,6 +46,7 @@ export default function Contatti() {
   const pending = usePendingRequests();
   const azioni = useAzioniAmicizia();
   const apriDm = useApriDm();
+  const online = useOnline();
 
   const [permessoNegato, setPermessoNegato] = useState(false);
   const onErr = (e: unknown) => avvisa('Ops', chatErrorMessage(e));
@@ -106,14 +109,16 @@ export default function Contatti() {
   const aggiungi = (userId: string) => azioni.richiedi.mutate(userId, { onError: onErr });
 
   // --- Corpo in base allo stato ------------------------------------------------
+  const statoConsenso = statoSchermo(consenso, online);
   let corpo: React.ReactElement;
-  if (consenso.isLoading) {
-    corpo = <LoadingSpinner label="Controllo il consenso…" style={styles.flex} />;
-  } else if (consenso.isError) {
+  if (statoConsenso !== 'dati') {
     corpo = (
-      <StatoErrore
+      <VistaStato
+        stato={statoConsenso}
         messaggio="Non riesco a controllare il consenso."
+        etichettaCaricamento="Controllo il consenso…"
         onRetry={() => void consenso.refetch()}
+        style={styles.flex}
       />
     );
   } else if (consenso.data !== true) {

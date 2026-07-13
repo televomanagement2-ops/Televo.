@@ -27,8 +27,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { StreakBadge } from '@/components/chat/StreakBadge';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { useAuth } from '@/hooks/useAuth';
 import { useAmici, useAzioniAmicizia, useRelazione } from '@/hooks/useAmici';
 import {
@@ -42,6 +41,8 @@ import {
 import { uploadGroupAvatar } from '@/lib/chat';
 import { avvisa, conferma } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
+import { statoSchermo } from '@/lib/query-ui';
+import { useOnline } from '@/lib/rete';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 import type { ConversationMemberCard } from '@/lib/chat';
@@ -55,6 +56,8 @@ export default function ChatInfo() {
   const uid = session?.user.id;
 
   const header = useConversationHeader(convId);
+  const online = useOnline();
+  const stato = statoSchermo(header, online);
   const data = header.data;
   const isGroup = (data?.type ?? 'dm') !== 'dm';
 
@@ -202,12 +205,13 @@ export default function ChatInfo() {
         <View style={styles.headerSpacer} />
       </View>
 
-      {header.isLoading ? (
-        <LoadingSpinner label="Carico le informazioni…" style={styles.flex} />
-      ) : header.isError ? (
-        <StatoErrore
+      {stato !== 'dati' ? (
+        <VistaStato
+          stato={stato}
           messaggio="Non riesco a caricare le informazioni."
+          etichettaCaricamento="Carico le informazioni…"
           onRetry={() => void header.refetch()}
+          style={styles.flex}
         />
       ) : !data ? (
         <View style={styles.center}>

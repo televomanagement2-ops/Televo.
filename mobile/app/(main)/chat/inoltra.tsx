@@ -21,11 +21,13 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '@/components/ui/Avatar';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { useConversations, useForwardDropRef, useForwardMessages } from '@/hooks/useChat';
 import { useChatStore } from '@/store/chatStore';
 import { avvisa } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
+import { statoSchermo } from '@/lib/query-ui';
+import { useOnline } from '@/lib/rete';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 import type { ConversationPreview } from '@/types';
@@ -38,6 +40,8 @@ export default function Inoltra() {
   const forwardDropRef = useChatStore((s) => s.forwardDropRef);
   const setForwardDropRef = useChatStore((s) => s.setForwardDropRef);
   const conversazioni = useConversations('active');
+  const online = useOnline();
+  const stato = statoSchermo(conversazioni, online);
   const forward = useForwardMessages();
   const forwardDrop = useForwardDropRef();
   const isPending = forward.isPending || forwardDrop.isPending;
@@ -101,14 +105,16 @@ export default function Inoltra() {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.sectionTitle}>Scegli dove inoltrare</Text>
         <View style={styles.group}>
-          {conversazioni.isLoading ? (
-            <View style={styles.stateBox}>
-              <ActivityIndicator color={colors.muted} />
-            </View>
-          ) : conversazioni.isError ? (
-            <StatoErrore
+          {stato !== 'dati' ? (
+            <VistaStato
+              stato={stato}
               messaggio="Non riesco a caricare le conversazioni."
               onRetry={() => void conversazioni.refetch()}
+              caricamento={
+                <View style={styles.stateBox}>
+                  <ActivityIndicator color={colors.muted} />
+                </View>
+              }
             />
           ) : (conversazioni.data?.length ?? 0) === 0 ? (
             <View style={styles.stateBox}>

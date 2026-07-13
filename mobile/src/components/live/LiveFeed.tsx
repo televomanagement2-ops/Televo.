@@ -28,17 +28,20 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { LiveFeedPage } from '@/components/live/LiveFeedPage';
 import { LiveStrip } from '@/components/live/LiveStrip';
 import { useLivesFeed } from '@/hooks/useLivesFeed';
 import { liveErrorMessage } from '@/lib/errors';
+import { statoSchermo } from '@/lib/query-ui';
+import { useOnline } from '@/lib/rete';
 import { ROUTES, dynamicRoutes } from '@/constants/routes';
 import { livesOrdinate, useLiveStore, type LiveAmico } from '@/store/liveStore';
 import { colors, fontFamily, fontSize, spacing } from '@/constants/theme';
 
 export default function LiveFeed() {
   const { query, appActive } = useLivesFeed();
+  const online = useOnline();
 
   // L'ordine è del server (Top Friends → spettatori reali → Aura host, §7B);
   // i delta prependono le novità, lo snapshot riconcilia.
@@ -95,16 +98,20 @@ export default function LiveFeed() {
 
   // Al remount con cache calda lo store viene idratato in un effect: per un
   // frame items è vuoto ma la query ha live → spinner, MAI il vuoto sbagliato.
+  // L'idratazione vive DENTRO lo stato 'dati' (la query ha già i dati).
+  const stato = statoSchermo(query, online);
   const inIdratazione = items.length === 0 && (query.data?.lives.length ?? 0) > 0;
-  if (query.isLoading || inIdratazione) {
+  if (stato === 'caricamento' || inIdratazione) {
     return (
       <View style={styles.centrato}>
         <ActivityIndicator color={colors.accent} size="large" />
       </View>
     );
   }
-  if (query.isError) {
-    return <StatoErrore messaggio={liveErrorMessage(query.error)} onRetry={() => void refetch()} />;
+  if (stato === 'offline' || stato === 'errore') {
+    return (
+      <VistaStato stato={stato} messaggio={liveErrorMessage(query.error)} onRetry={() => void refetch()} />
+    );
   }
   if (items.length === 0) {
     return (

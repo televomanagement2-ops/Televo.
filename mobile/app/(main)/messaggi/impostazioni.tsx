@@ -14,13 +14,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { useMyProfile, useUpdateProfile } from '@/hooks/useProfilo';
 import { useAzioniAmicizia, useBloccati } from '@/hooks/useAmici';
 import { presenzaPrefix } from '@/hooks/usePresenza';
 import { avvisa, conferma } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
+import { statoSchermo } from '@/lib/query-ui';
+import { useOnline } from '@/lib/rete';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 import type { ProfileCard } from '@/types';
@@ -31,6 +32,8 @@ export default function ImpostazioniChat() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const profilo = useMyProfile();
+  const online = useOnline();
+  const stato = statoSchermo(profilo, online);
   const update = useUpdateProfile();
   const bloccati = useBloccati();
   const azioni = useAzioniAmicizia();
@@ -85,12 +88,13 @@ export default function ImpostazioniChat() {
         <Text style={styles.title}>Impostazioni chat</Text>
       </View>
 
-      {profilo.isLoading ? (
-        <LoadingSpinner label="Carico le impostazioni…" style={styles.flex} />
-      ) : profilo.isError ? (
-        <StatoErrore
+      {stato !== 'dati' ? (
+        <VistaStato
+          stato={stato}
           messaggio="Non riesco a caricare le impostazioni."
+          etichettaCaricamento="Carico le impostazioni…"
           onRetry={() => void profilo.refetch()}
+          style={styles.flex}
         />
       ) : (
         <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>

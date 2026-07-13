@@ -29,13 +29,15 @@ import { DropCardOutbox } from './DropCardOutbox';
 import { DropSkeleton } from './DropSkeleton';
 import { SeiInPari } from './SeiInPari';
 import { mostraMenuDrop } from './MenuDrop';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { avvisa } from '@/lib/dialoghi';
 import { avviaRegistrazione, fermaRegistrazione, richiediPermessoMic } from '@/lib/audio';
 import { enqueueAudioComment } from '@/lib/drops-comments-outbox';
 import { reportDrop } from '@/lib/drops';
 import { useCreaMenuStore } from '@/store/creaMenuStore';
 import { dropErrorMessage } from '@/lib/errors';
+import { statoSchermo } from '@/lib/query-ui';
+import { useOnline } from '@/lib/rete';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 import type { DropFeedRow, DropReactionTrait } from '@/types/supabase';
@@ -55,6 +57,7 @@ export function DropFeed() {
   const queryClient = useQueryClient();
 
   const feed = useDropsFeed();
+  const online = useOnline();
   const { items: outbox, retry, remove } = useDropOutboxCards();
 
   const { mutate: likeMutate } = useToggleLike();
@@ -238,10 +241,17 @@ export function DropFeed() {
     [uid, onOpen, onLike, onSave, onReaction, onMenu, retry, remove, startVoiceReaction, stopVoiceReaction],
   );
 
-  // --- Stati di ingresso -----------------------------------------------------
-  if (feed.isLoading) return <DropSkeleton />;
-  if (feed.isError) {
-    return <StatoErrore messaggio={dropErrorMessage(feed.error)} onRetry={() => feed.refetch()} />;
+  // --- Stati di ingresso (SWR, P1): skeleton in caricamento, offline dedicato --
+  const stato = statoSchermo(feed, online);
+  if (stato !== 'dati') {
+    return (
+      <VistaStato
+        stato={stato}
+        messaggio={dropErrorMessage(feed.error)}
+        caricamento={<DropSkeleton />}
+        onRetry={() => void feed.refetch()}
+      />
+    );
   }
 
   return (

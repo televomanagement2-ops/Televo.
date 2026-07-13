@@ -11,8 +11,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { ConversazioneRow } from '@/components/chat/ConversazioneRow';
 import {
   useConversationOrg,
@@ -24,6 +23,7 @@ import { usePushBanner } from '@/hooks/useNotifiche';
 import { dynamicRoutes, ROUTES } from '@/constants/routes';
 import { avvisa, conferma, mostraMenu, type VoceMenu } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
+import { statoSchermo } from '@/lib/query-ui';
 import { useOnline } from '@/lib/rete';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 import type { ConversationPreview } from '@/types';
@@ -41,6 +41,7 @@ export default function Messages() {
   const conversazioni = useConversations();
   const { refetch } = conversazioni;
   const online = useOnline();
+  const stato = statoSchermo(conversazioni, online);
   // Permesso push contestuale (CM6, RC-13): il banner compare al primo ingresso
   // nell'hub finché il permesso di sistema non è mai stato chiesto.
   const pushBanner = usePushBanner();
@@ -79,8 +80,9 @@ export default function Messages() {
         </View>
       </View>
 
-      {/* Banner offline (CM2, RC-02). */}
-      {!online ? (
+      {/* Banner offline (CM2, RC-02): solo con dati in cache, così non duplica lo
+          stato offline a schermo pieno quando NON c'è nulla da mostrare (P1). */}
+      {!online && conversazioni.data !== undefined ? (
         <View style={styles.offlineBar}>
           <Ionicons name="cloud-offline-outline" size={14} color={colors.muted} />
           <Text style={styles.offlineText}>Sei offline</Text>
@@ -107,10 +109,14 @@ export default function Messages() {
         </View>
       ) : null}
 
-      {conversazioni.isLoading ? (
-        <LoadingSpinner label="Carico le chat…" style={styles.flex} />
-      ) : conversazioni.isError ? (
-        <StatoErrore messaggio="Non riesco a caricare le chat." onRetry={() => void refetch()} />
+      {stato !== 'dati' ? (
+        <VistaStato
+          stato={stato}
+          messaggio="Non riesco a caricare le chat."
+          etichettaCaricamento="Carico le chat…"
+          onRetry={() => void refetch()}
+          style={styles.flex}
+        />
       ) : (conversazioni.data?.length ?? 0) === 0 ? (
         <View style={styles.center}>
           <Ionicons name="chatbubbles-outline" size={44} color={colors.faint} />

@@ -22,10 +22,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { Avatar } from '@/components/ui/Avatar';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { useAuth } from '@/hooks/useAuth';
 import { useSearchMessages } from '@/hooks/useChat';
 import { searchProfiles } from '@/lib/social';
+import { useOnline } from '@/lib/rete';
 import { dayLabel } from '@/lib/datetime';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
@@ -35,6 +36,7 @@ export default function Cerca() {
   const router = useRouter();
   const { session } = useAuth();
   const uid = session?.user.id;
+  const online = useOnline();
 
   const [term, setTerm] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -54,16 +56,15 @@ export default function Cerca() {
   // Ricerca messaggi GLOBALE (p_conv null).
   const messaggi = useSearchMessages(attiva ? debounced : '', null);
 
+  const senzaDati = (persone.data?.length ?? 0) === 0 && (messaggi.data?.length ?? 0) === 0;
   const loading = attiva && (persone.isFetching || messaggi.isFetching);
   // Errore (CM8, SRS §14): se ENTRAMBE le ricerche falliscono non c'è nulla da
   // mostrare → StatoErrore con retry; un fallimento parziale mostra l'altra metà.
   const errore = attiva && !loading && persone.isError && messaggi.isError;
-  const vuoto =
-    attiva &&
-    !loading &&
-    !errore &&
-    (persone.data?.length ?? 0) === 0 &&
-    (messaggi.data?.length ?? 0) === 0;
+  // Offline (P1): le query sono in pausa, non in errore → senza questo ramo si
+  // mostrerebbe "nessun risultato" fuorviante. La ricerca è per natura online.
+  const offline = attiva && !loading && !errore && !online && senzaDati;
+  const vuoto = attiva && !loading && !errore && !offline && senzaDati;
 
   const apriMessaggio = (r: MessageSearchResult) => {
     router.push({
@@ -114,8 +115,17 @@ export default function Cerca() {
           <View style={styles.stateBox}>
             <ActivityIndicator color={colors.muted} />
           </View>
+        ) : offline ? (
+          <VistaStato
+            stato="offline"
+            onRetry={() => {
+              void persone.refetch();
+              void messaggi.refetch();
+            }}
+          />
         ) : errore ? (
-          <StatoErrore
+          <VistaStato
+            stato="errore"
             messaggio="Non riesco a cercare in questo momento."
             onRetry={() => {
               void persone.refetch();

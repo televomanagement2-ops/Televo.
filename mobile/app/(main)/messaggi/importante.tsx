@@ -10,8 +10,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/ui/Card';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { StatoErrore } from '@/components/ui/StatoErrore';
+import { VistaStato } from '@/components/ui/VistaStato';
 import { ConversazioneRow } from '@/components/chat/ConversazioneRow';
 import {
   useConversationOrg,
@@ -23,6 +22,8 @@ import { previewText } from '@/lib/chat';
 import { hubTimestamp } from '@/lib/datetime';
 import { avvisa, mostraMenu } from '@/lib/dialoghi';
 import { chatErrorMessage } from '@/lib/errors';
+import { statoSchermo } from '@/lib/query-ui';
+import { useOnline } from '@/lib/rete';
 import { dynamicRoutes } from '@/constants/routes';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
 import type { ConversationPreview, SavedMessage } from '@/types';
@@ -78,11 +79,20 @@ export default function Importante() {
 function SalvatiList() {
   const router = useRouter();
   const saved = useSavedMessages();
+  const online = useOnline();
   const { unsave } = useSaveMessage();
 
-  if (saved.isLoading) return <LoadingSpinner label="Carico i salvati…" style={styles.flex} />;
-  if (saved.isError) {
-    return <StatoErrore messaggio="Non riesco a caricare i salvati." onRetry={() => void saved.refetch()} />;
+  const stato = statoSchermo(saved, online);
+  if (stato !== 'dati') {
+    return (
+      <VistaStato
+        stato={stato}
+        messaggio="Non riesco a caricare i salvati."
+        etichettaCaricamento="Carico i salvati…"
+        onRetry={() => void saved.refetch()}
+        style={styles.flex}
+      />
+    );
   }
   if ((saved.data?.length ?? 0) === 0) {
     return <Vuoto icon="bookmark-outline" text="Nessun messaggio salvato. Tienine da parte uno con un tocco lungo." />;
@@ -139,10 +149,19 @@ function ConversazioniList({
   onOpen: (id: string) => void;
 }) {
   const list = useConversations(view);
+  const online = useOnline();
 
-  if (list.isLoading) return <LoadingSpinner label="Carico…" style={styles.flex} />;
-  if (list.isError) {
-    return <StatoErrore messaggio="Non riesco a caricare." onRetry={() => void list.refetch()} />;
+  const stato = statoSchermo(list, online);
+  if (stato !== 'dati') {
+    return (
+      <VistaStato
+        stato={stato}
+        messaggio="Non riesco a caricare."
+        etichettaCaricamento="Carico…"
+        onRetry={() => void list.refetch()}
+        style={styles.flex}
+      />
+    );
   }
   if ((list.data?.length ?? 0) === 0) {
     return (

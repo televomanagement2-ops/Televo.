@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(559);
+select plan(564);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -1408,14 +1408,26 @@ select ok((select prosrc like '%cohost_cap_reached%' and prosrc like '%invited%'
   'live_hosts_cap: tetto 4 su invited+active');
 
 -- Sync contatori spettatori (privati: mai nel grant select del client).
+-- M13/P7: aggiornamento a DELTA sotto row-lock, tre trigger mirati con WHEN
+-- sulla stessa funzione (l'update che non tocca left_at/kicked_at non la invoca).
 select ok((select exists (select 1 from pg_trigger
-    where tgrelid = 'public.live_viewers'::regclass and tgname = 'live_viewers_count_trg')),
-  'trigger live_viewers_count_trg presente su live_viewers');
-select ok((select prosrc like '%peak_viewers%' and prosrc like '%greatest%'
+    where tgrelid = 'public.live_viewers'::regclass and tgname = 'live_viewers_count_ins_trg')),
+  'trigger live_viewers_count_ins_trg presente su live_viewers (insert spettatore dentro)');
+select ok((select exists (select 1 from pg_trigger
+    where tgrelid = 'public.live_viewers'::regclass and tgname = 'live_viewers_count_upd_trg')),
+  'trigger live_viewers_count_upd_trg presente su live_viewers (transizioni left/kick)');
+select ok((select exists (select 1 from pg_trigger
+    where tgrelid = 'public.live_viewers'::regclass and tgname = 'live_viewers_count_del_trg')),
+  'trigger live_viewers_count_del_trg presente su live_viewers (delete/purge)');
+select ok((select prosrc like '%v_delta%' and prosrc like '%greatest(0%'
              and prosrc like '%kicked_at is null%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'sync_live_viewer_count'),
-  'sync_live_viewer_count: conta gli spettatori ATTIVI e aggiorna il picco');
+  'sync_live_viewer_count: delta atomico, contatore mai negativo, solo spettatori dentro');
+select ok((select prosrc like '%peak_viewers%' and prosrc like '%greatest%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'sync_live_viewer_count'),
+  'sync_live_viewer_count: peak_viewers monotòno (solo in salita)');
 
 -- Guardie commenti: stato live + toggle + visibilità + rate-limit 5/30s.
 select ok((select exists (select 1 from pg_trigger
@@ -1967,6 +1979,28 @@ select ok((select prosrc like '%enqueue_notification%' and prosrc like '%new_log
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'enqueue_login_alert'),
   'enqueue_login_alert: accoda new_login via enqueue_notification (zero pezzi nuovi a valle)');
+
+-- =============================================================================
+-- M13 · Scala backend (P7) — contatore spettatori a delta + riconciliazione
+-- =============================================================================
+-- docs/audit/AUDIT-HARDENING.md §6.2. I tre trigger mirati e il corpo a delta
+-- sono verificati sopra (blocco LM0 riscritto in P7). Qui: l'indice parziale e
+-- la rete anti-drift in expire_content v8 (corpo v7 conservato: le guardie LM3
+-- restano la rete anti-regressione). Le prove FUNZIONALI (join/leave/kick/
+-- purge, no-op del re-mint, drift sanato) sono nello smoke via pooler.
+
+-- Indice parziale sugli spettatori DENTRO (riconciliazione e path attivi).
+select ok((select exists (select 1 from pg_indexes
+    where schemaname = 'public' and tablename = 'live_viewers'
+      and indexname = 'live_viewers_active_idx')),
+  'indice parziale live_viewers_active_idx presente (spettatori dentro)');
+
+-- expire_content v8: riconciliazione del contatore per le sole live attive.
+select ok((select prosrc like '%viewer_count%' and prosrc like '%is distinct from%'
+             and prosrc like '%(''live'', ''paused'')%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v8: riconciliazione anti-drift di viewer_count (heal ≤5 min, live attive)');
 
 select * from finish();
 rollback;

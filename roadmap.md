@@ -1,13 +1,20 @@
 # Televo — Roadmap & Stato del Progetto
 
 > DA RILAVORARE IN FUTURO: LIMITE LIVES_FEED() A ~150 AMICI SENZA PAGINAZIONE (LIVE.MD §15.2) — VA RIVISTO PRIMA DI SCALARE OLTRE IL LANCIO A TERNI. → **Pianificato in M13, punto P8** (`docs/audit/AUDIT-HARDENING.md` §6.1, decisione PO AH-2).
-> DA RILAVORARE IN FUTURO: TRIGGER `SYNC_LIVE_VIEWER_COUNT()` (20260709120100_LIVE_FOUNDATION.SQL) FA UN `COUNT(*)` COMPLETO SU `LIVE_VIEWERS` A OGNI JOIN/LEAVE/KICK invece di essere incrementale — CON MOLTI SPETTATORI CONCORRENTI SULLA STESSA LIVE DIVENTA UN COLLO DI BOTTIGLIA (LOCK CONTENTION SULLA RIGA `LIVES`), DA RIVEDERE VERSO UN CONTATORE INCREMENTALE PRIMA DI SCALARE OLTRE TERNI. → **Pianificato in M13, punto P7** (`docs/audit/AUDIT-HARDENING.md` §6.2).
+> ✅ RISOLTO (2026-07-13, M13/P7): `sync_live_viewer_count()` è ora **incrementale a delta** (tre trigger mirati con WHEN + riconciliazione anti-drift in `expire_content` v8) — migrazione `20260713140000` LIVE. Il collo di bottiglia da ricalcolo per-evento su `live_viewers` non esiste più.
 
 > Documento di verità sullo stato di Televo. Backend **live**; frontend in
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P6 FATTO** —
+> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P7 FATTO** —
+> contatore spettatori Live incrementale: migrazione 63 live (funzione a
+> DELTA sotto row-lock + 3 trigger WHEN + indice parziale + `expire_content`
+> v8 = v7 verbatim + riconciliazione anti-drift ≤5 min). pgTAP 564/564 +
+> smoke 6/6 sul remoto. Chiuso il warning di scala in testa alla roadmap.
+> Nessuna Edge toccata, nessun cambio client (la semantica esterna del
+> contatore è identica). Prossimo P8. Dettagli nella sezione M13).
+> Precedente: 2026-07-13 notte (**M13 — Hardening: P6 FATTO** —
 > notifica "nuovo accesso" end-to-end: migrazioni 61–62 live (enum
 > `new_login` + RPC `enqueue_login_alert` solo-service_role con dedup 1h),
 > nuova Edge `login-alert` (città dall'IP best-effort ipwho.is, IP MAI
@@ -1133,8 +1140,18 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
   pgTAP **559/559 sul remoto** (+7) + smoke funzionale pooler 4/4
   (accodamento, dedup, no-city, invalid_input; rolled back). ⚠️ deploy Edge
   `login-alert` in coda owner (vedi sotto)
-- **P7** `sync_live_viewer_count` incrementale a delta + riconciliazione in
-  `expire_content` v8 (chiude il warning in testa)
+- ✅ **P7 FATTO** (2026-07-13) `sync_live_viewer_count` incrementale (§6.2):
+  migrazione 63 `live_viewer_count_incrementale` **LIVE** via CLI `db push` —
+  funzione a **delta** (attivo(NEW)−attivo(OLD) sommato sotto il row-lock di
+  `lives`: atomico sotto concorrenza, `greatest(0,…)` anti-negativo,
+  `peak_viewers` monotòno, live 'ended' congelate), **tre trigger con WHEN**
+  (insert attivo / transizione left-kick / delete: il re-upsert del mint token
+  non invoca più la funzione), indice parziale `live_viewers_active_idx`,
+  `expire_content` **v8 = v7 VERBATIM + riconciliazione anti-drift** in coda
+  (heal ≤5 min per le sole live attive via cron esistente). pgTAP **564/564
+  sul remoto** (+5) + smoke pooler **6/6** (join/leave/rientro/kick/kick
+  preventivo/re-mint no-op/drift 99→sanato/purge su ended congelata; rolled
+  back). Chiude il warning `sync_live_viewer_count` in testa alla roadmap
 - **P8** `lives_feed` paginata keyset Top Friends + recenza (AH-2, R-04
   intatta; chiude l'altro warning)
 - **P9** live UX: tastiera commenti senza Modal (`useAnimatedKeyboard`) +

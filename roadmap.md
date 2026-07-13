@@ -982,7 +982,8 @@ P0–P11; decisioni PO AH-1..AH-5). Nato dall'audit manuale del PO su device
 (2026-07-13): porta **ciò che esiste** alla maturità Telegram/Instagram —
 solo tecnica e UX, non design; verticali non costruite ESCLUSE (M9/M10/M11/M4
 frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
-- **P0** diagnosi live push+sessioni (pooler + dashboard, read-only)
+- ✅ **P0 FATTO** (2026-07-13) diagnosi live push+sessioni (read-only, nessun
+  codice) — **esito in coda alla lista**
 - **P1** rete al boot (`initRete`) + QueryClient maturo + pattern SWR
   (`statoSchermo`: dati cache sempre, spinner solo senza dati, stato offline)
 - **P2** persistenza cache MMKV (chat offline scorribile WhatsApp-like, AH-5)
@@ -1003,7 +1004,55 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
 - **P10** tab Notifiche reale (ledger, mark-all-read, deep link, badge)
 - **P11** performance (seed clearedAt, prefetch su press, pre-warm chunk
   LiveKit, spinner nei fallback Suspense) + pulizia docs
-- **Verifica:** Definition of Done in `docs/audit/AUDIT-HARDENING.md` §15;
+
+> **✅ Esito diagnosi P0 (2026-07-13, via pooler read-only + CLI `functions
+> list`).** Verificati i 5 punti §12/P0 + contesto. Numeri reali sul remoto:
+> - **Q1 Vault**: i 3 segreti push (`edge_base_url`, `service_role_key`,
+>   `cron_secret`) **PRESENTI** (aggiornati 2026-07-02) → `dispatch_push()` NON
+>   è il no-op silenzioso. Breakpoint #2 **ESCLUSO**.
+> - **Q2 arretrato**: `public.notifications` = **74 totali, 74 pushate, 0 non
+>   pushate**. La pipeline server marca TUTTO come `pushed_at`.
+> - **Q3 devices**: `public.devices` ha **UNA SOLA riga** (android, user
+>   `9ce3126d…`, `last_seen 2026-07-04` → **9 giorni stale**). L'audit PO è del
+>   **2026-07-13 su device reale**: quel device **NON è registrato**. →
+>   **breakpoint #1 (permesso mai chiesto / token mai registrato lato client)
+>   = ROOT CAUSE PRIMARIA CONFERMATA**.
+> - **Q4 cron**: `dispatch-push-minutely` **attivo** (`* * * * *`), ultimi 20
+>   run **tutti `succeeded`** (pg_net 0.20.3, pg_cron 1.6.4). Breakpoint #5
+>   **ESCLUSO**.
+> - **Q5 `net._http_response`**: ultime risposte **tutte 200** (nessun 401/5xx
+>   → breakpoint #3 e #7 **ESCLUSI**). Segnale chiave: `sent < processed`
+>   ricorrente (es. `processed:3, sent:1, marked:3`) = notifiche **marcate
+>   pushed ma NON inviate** perché i destinatari **non hanno device** (silent
+>   drop send-push §3.1). Ultima chiamata HTTP 2026-07-12 16:40 (dopo:
+>   0 notifiche da spingere → nessun POST, coerente).
+> - **Edge `send-push`**: **ACTIVE**, versione repo corrente deployata
+>   2026-07-12 (`verify_jwt=false`); **NON legge le receipt Expo** (confermato
+>   in sorgente: zero `getReceipts`). Breakpoint #6 **ESCLUSO**. Breakpoint #4
+>   (credenziali FCM v1/APNs del progetto EAS `4087043e…`) **NON determinabile
+>   via pooler e INVISIBILE per costruzione** finché le receipt non si leggono
+>   → è esattamente ciò che **P4** rende osservabile.
+>
+> **Conclusione priorità**: server-side la pipeline è **sana** (Vault, cron,
+> Edge, HTTP tutti verdi, arretrato 0). Il difetto "non arriva nulla" nasce
+> **lato client**: senza token registrati nessuna consegna è possibile. →
+> **P3 = FIX DELLA ROOT CAUSE (priorità massima)**; **P4 = hardening +
+> abilitatore di diagnosi** per il breakpoint #4 (receipt/credenziali, oggi
+> ciechi) — necessario ma secondario a P3.
+>
+> **⏳ Restano 2 check OWNER (dashboard, non ispezionabili via pooler)**:
+> 1. **EAS `4087043e-ef5a-4d73-907d-f98615c28f94`**: credenziali push presenti?
+>    (FCM v1 service account Android + APNs key iOS). Senza → i ticket Expo
+>    tornano `InvalidCredentials`, oggi invisibili (P4 li renderà osservabili).
+> 2. **Authentication → Sessions: single-session OFF** (ipotesi alternativa al
+>    sintomo 6). La causa client del multi-device — `signOut()` con scope
+>    `global` di default — è **già verificata in codice** (audit §5.1), quindi
+>    P5 procede a prescindere; il check owner serve solo a escludere un
+>    enforcement server.
+>
+> **Sintomo 6 (multi-device)**: nessuna query DB lo dimostra (è comportamento
+> client); causa già mappata → P5/P6 invariati.
+> - **Verifica:** Definition of Done in `docs/audit/AUDIT-HARDENING.md` §15;
   un punto alla volta su comando esplicito del PO, un commit per punto.
 
 ### ♻️ Trasversale (continuo)

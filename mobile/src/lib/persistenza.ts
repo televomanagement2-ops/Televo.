@@ -104,27 +104,37 @@ function persistibile(query: Query): boolean {
 // --- Trim dei messaggi nel serialize --------------------------------------------
 
 const PAGINE_MESSAGGI_PERSISTITE = 2; // ~80 messaggi per conversazione
+const PAGINE_NOTIFICHE_PERSISTITE = 1; // prima pagina del ledger (§2.2, P10)
+
+/** Quante pagine della query infinita vanno su disco (0 = non è una infinita da trimmare). */
+function pagineDaPersistere(key: readonly unknown[]): number {
+  const [dominio, secondo, terzo] = key;
+  if (dominio === 'chat' && secondo === 'messages') return PAGINE_MESSAGGI_PERSISTITE;
+  if (dominio === 'notifiche' && terzo === 'list') return PAGINE_NOTIFICHE_PERSISTITE;
+  return 0;
+}
 
 /**
- * Serialize del persister con trim: delle query infinite dei messaggi vanno su
- * disco solo le prime pagine (le più recenti). Il paging oltre il trim riparte
- * dal server via getNextPageParam — nessuna incoerenza al restore.
+ * Serialize del persister con trim: delle query infinite (messaggi, ledger
+ * notifiche) vanno su disco solo le prime pagine (le più recenti). Il paging
+ * oltre il trim riparte dal server via getNextPageParam — nessuna incoerenza
+ * al restore.
  */
 function serializeConTrim(client: PersistedClient): string {
   const queries = client.clientState.queries.map((q) => {
-    const [dominio, secondo] = q.queryKey as readonly unknown[];
-    if (dominio !== 'chat' || secondo !== 'messages') return q;
+    const cap = pagineDaPersistere(q.queryKey as readonly unknown[]);
+    if (cap === 0) return q;
     const data = q.state.data as
       | { pages?: unknown[]; pageParams?: unknown[] }
       | undefined;
-    if (!data?.pages || data.pages.length <= PAGINE_MESSAGGI_PERSISTITE) return q;
+    if (!data?.pages || data.pages.length <= cap) return q;
     return {
       ...q,
       state: {
         ...q.state,
         data: {
-          pages: data.pages.slice(0, PAGINE_MESSAGGI_PERSISTITE),
-          pageParams: data.pageParams?.slice(0, PAGINE_MESSAGGI_PERSISTITE),
+          pages: data.pages.slice(0, cap),
+          pageParams: data.pageParams?.slice(0, cap),
         },
       },
     };

@@ -39,6 +39,8 @@ export type NotificationType =
   | 'message'
   | 'prop'
   | 'achievement'
+  | 'aura_upgrade' // Aura v3: crescita significativa (>= +5%)
+  | 'aura_downgrade' // Aura v3: calo da penalità (mai da sola inattività)
   | 'drop_comment' // M6: commento/reply su un mio drop
   | 'drop_prompt' // DM7: "tema del giorno" (§16.2, notifica broadcast dosata)
   | 'live_started' // M12: un amico ha avviato una live (default TUTTI, L-4)

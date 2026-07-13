@@ -7,7 +7,23 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P9 FATTO —
+> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P10 FATTO —
+> tab Notifiche REALE (AH-1: assorbe il residuo M8).** SOLO mobile, nessuna
+> migrazione (il backend era già pronto: RLS owner-only + grant per-colonna
+> `read_at`): `(tabs)/notifiche.tsx` via il ComingSoon → lista del ledger
+> (tutti i tipi TRANNE `message`) con stati P1, pull-to-refresh, load-more
+> keyset composito (created_at,id — l'enqueue condivide il now() di
+> transazione), **mark-all-read all'apertura** (dopo il refetch: badge azzerato
+> ottimisticamente, i dot delle novità restano visibili in questa visita);
+> nuovo `useNotificheTab` (list/unread/segna-tutte-lette), `NotificaRow`
+> (icona per tipo, tratto prop tradotto IT, tempo relativo, dot), rotta
+> condivisa estratta in `lib/notifiche-rotte.ts` (+ prop/achievement/aura_* —
+> achievement→profilo: la vista dedicata non esiste); badge tab Notifiche in
+> BottomBar; badge icona app = unread chat + unread notifiche; push in
+> foreground → invalidazione ledger; whitelist P2 = prima pagina; tipi TS
+> +aura_upgrade/aura_downgrade (erano nel DB, mancavano a mano). tsc+eslint
+> verdi. Prossimo: P11 (polish+docs). Dettagli nella sezione M13).
+> Precedente: 2026-07-13 notte (**M13 — Hardening: P9 FATTO —
 > live UX: tastiera + overlay commenti (sintomo 5 al completo).** SOLO mobile,
 > nessuna migrazione: `CommentInput` senza Modal (il composer è un layer
 > assoluto alla radice di LiveSurface, barra incollata alla tastiera via
@@ -1208,7 +1224,32 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
   vecchi in cima (polish, zero dipendenze nuove). tsc+eslint verdi.
   ⏳ done-when on-device (Android fisico, Dev Build): tastiera mai sopra
   l'input; 10 commenti rapidi → ~7 visibili a scorrimento
-- **P10** tab Notifiche reale (ledger, mark-all-read, deep link, badge)
+- ✅ **P10 FATTO** (2026-07-13) tab Notifiche reale (§7, AH-1): SOLO mobile,
+  NESSUNA migrazione (RLS `notifications_select_own`/`update_own` + grant
+  per-colonna `read_at` erano già live). `useNotificheTab` = infinite query
+  keyset COMPOSITO su (created_at desc, id desc) — l'enqueue usa il now() di
+  transazione, righe accodate insieme collidono sul timestamp; valori quotati
+  nella `.or()` PostgREST — pagina 30, `.neq('type','message')` (i DM vivono
+  nell'hub); `useNotificheUnread` = head count non-message (null = non
+  caricato, mai azzerare il badge); `useSegnaTutteLette` = UN UPDATE su TUTTE
+  le non lette incluse le `message` (coerenza col `badge` della Edge), badge
+  azzerato OTTIMISTICO, lista in cache NON invalidata (i dot delle novità
+  restano visibili nella visita, niente flash — semantica §7). Schermata:
+  stati P1 (`statoSchermo`+VistaStato), banner offline, pull-to-refresh,
+  load-more, vuoto onesto; mark-all al focus DOPO il refetch. `NotificaRow`
+  (era 0 byte): icona per tipo, body dei `prop` tradotto con
+  `AURA_TRAIT_LABEL`, `tempoRelativo`, dot unread. `lib/notifiche-rotte.ts` =
+  estrazione di `rottaPerNotifica` da useNotifiche (stesso shape
+  `{type,...payload}` per push e righe ledger) estesa a
+  prop/aura_upgrade/aura_downgrade→`/profilo/aura` e achievement→`/profilo`
+  (la vista dedicata `/profilo/achievement` NON esiste come schermata).
+  BottomBar: badge tab Notifiche accanto a quello Messaggi. Badge icona app =
+  unread chat + unread notifiche (divergenza col `badge` Edge annotata,
+  riallineabile in P4). Push in foreground → invalidazione `['notifiche',uid]`
+  in usePushRuntime. Whitelist P2: trim del ledger alla PRIMA pagina nel
+  serialize. Tipi TS: +`aura_upgrade`/`aura_downgrade` (nel DB da Aura v3,
+  mancavano nei tipi a mano). tsc+eslint verdi. ⏳ done-when on-device: deep
+  link per tipo, badge coerenti, offline = ultima lista nota (P2)
 - **P11** performance (seed clearedAt, prefetch su press, pre-warm chunk
   LiveKit, spinner nei fallback Suspense) + pulizia docs
 

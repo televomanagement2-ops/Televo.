@@ -14,11 +14,13 @@
 //   SECONDARIO (resta per chi sceglie "Non ora" al pre-prompt).
 
 import { useCallback, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useUnreadTotale } from '@/hooks/useChat';
+import { notificheKeys, useNotificheUnread } from '@/hooks/useNotificheTab';
 import {
   aggiornaBadgeApp,
   installNotificationHandler,
@@ -28,7 +30,7 @@ import {
   type PermessoPush,
 } from '@/lib/expo-push';
 import { conferma } from '@/lib/dialoghi';
-import { dynamicRoutes, ROUTES } from '@/constants/routes';
+import { rottaPerNotifica } from '@/lib/notifiche-rotte';
 
 // --- Runtime push (handler + token + badge + pre-prompt P3) ---------------------
 
@@ -51,7 +53,9 @@ const PREPROMPT_RITARDO_MS = 2000;
 export function usePushRuntime(): void {
   const { session } = useAuth();
   const uid = session?.user.id;
-  const unread = useUnreadTotale();
+  const queryClient = useQueryClient();
+  const unreadChat = useUnreadTotale();
+  const unreadNotifiche = useNotificheUnread();
 
   useEffect(() => {
     if (!uid) return;
@@ -105,12 +109,26 @@ export function usePushRuntime(): void {
     return () => clearTimeout(timer);
   }, [uid]);
 
-  // Badge icona app: null = lista conversazioni non ancora caricata → non
-  // azzerare un badge magari giusto; si aggiorna al primo dato reale.
+  // P10: una push arrivata in FOREGROUND aggiorna subito ledger e badge della
+  // tab Notifiche (in background ci pensano il refetch al focus e il campo
+  // badge della Edge).
   useEffect(() => {
-    if (!uid || unread == null) return;
-    void aggiornaBadgeApp(unread);
-  }, [uid, unread]);
+    if (!uid) return;
+    const sub = Notifications.addNotificationReceivedListener(() => {
+      void queryClient.invalidateQueries({ queryKey: notificheKeys.radice(uid) });
+    });
+    return () => sub.remove();
+  }, [uid, queryClient]);
+
+  // Badge icona app = unread chat + unread notifiche (§7/§8.5). null = fonte
+  // non ancora caricata → non azzerare un badge magari giusto; si aggiorna al
+  // primo dato reale di ENTRAMBE. Nota: la Edge send-push calcola il proprio
+  // `badge` come unread del SOLO ledger (message incluse) — divergenza
+  // annotata, riallineabile lato Edge (P4).
+  useEffect(() => {
+    if (!uid || unreadChat == null || unreadNotifiche == null) return;
+    void aggiornaBadgeApp(unreadChat + unreadNotifiche);
+  }, [uid, unreadChat, unreadNotifiche]);
 }
 
 // --- Tap sulla notifica → deep link -------------------------------------------
@@ -120,41 +138,8 @@ export function usePushRuntime(): void {
 // riavvio successivo — senza dedup si riaprirebbe la chat dal nulla.
 const ULTIMO_TAP_KEY = 'televo.push.ultimo_tap';
 
-/** Rotta di destinazione per il payload della push (null = basta aprire l'app). */
-function rottaPerNotifica(data: Record<string, unknown>): string | null {
-  if (data.type === 'message' && typeof data.conversation_id === 'string') {
-    return dynamicRoutes.chat(data.conversation_id);
-  }
-  // M6/DM5: commento/reply su un mio drop → dettaglio S3 (payload {drop_id, comment_id}).
-  if (data.type === 'drop_comment' && typeof data.drop_id === 'string') {
-    return dynamicRoutes.drop(data.drop_id);
-  }
-  // DM7 (§16.2): "tema del giorno" → composer (S2), che mostra il tema in banner.
-  if (data.type === 'drop_prompt') {
-    return ROUTES.dropNuovo;
-  }
-  if (data.type === 'friend_request' || data.type === 'friend_accepted') {
-    return ROUTES.amici;
-  }
-  // M12 (LM6): "amico in diretta" / invito co-host → schermo live (payload
-  // {live_id, host_id} da create_live/live_invite_cohost). Se nel frattempo la
-  // live è finita, lo schermo mostra lo stato pulito "live terminata".
-  if (
-    (data.type === 'live_started' || data.type === 'live_cohost_invite') &&
-    typeof data.live_id === 'string'
-  ) {
-    return dynamicRoutes.live(data.live_id);
-  }
-  // M13/P6: "nuovo accesso al tuo account" → tab Notifiche della bottombar
-  // (per ora placeholder: diventa la lista reale in P10; il deep link è già
-  // quello giusto). Il banner sul device che ha appena fatto login è soppresso
-  // a monte da installNotificationHandler.
-  if (data.type === 'new_login') {
-    return ROUTES.notifiche;
-  }
-  // prop / achievement: la tab Notifiche arriva con P10.
-  return null;
-}
+// P10: la mappa type→rotta vive in lib/notifiche-rotte.ts, condivisa con le
+// righe della tab Notifiche (stesso shape: { type, ...payload }).
 
 export function useNotificaTap(): void {
   const router = useRouter();

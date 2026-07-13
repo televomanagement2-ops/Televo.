@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useUnreadTotale } from '@/hooks/useChat';
+import { useNotificheUnread } from '@/hooks/useNotificheTab';
 import { useCreaMenuStore } from '@/store/creaMenuStore';
 import { colors, fontFamily, radius, spacing } from '@/constants/theme';
 
@@ -33,6 +34,9 @@ export function BottomBar({ state, navigation }: BottomTabBarProps) {
   // app (CM6) — stessa query dell'hub (cache condivisa, aggiornata live dal
   // canale realtime globale in ChatRuntime).
   const unread = useUnreadTotale() ?? 0;
+  // Badge tab Notifiche (P10, §7): unread del ledger SENZA le 'message' —
+  // stessa query della tab (si azzera col mark-all all'apertura).
+  const unreadNotifiche = useNotificheUnread() ?? 0;
 
   const go = (routeKey: string, name: string, focused: boolean) => {
     Haptics.selectionAsync().catch(() => {});
@@ -70,7 +74,9 @@ export function BottomBar({ state, navigation }: BottomTabBarProps) {
           const meta = ICONS[route.name];
           if (!meta) return <View key={route.key} style={styles.slot} />;
 
-          const mostraBadge = route.name === 'messages' && unread > 0;
+          const contatore =
+            route.name === 'messages' ? unread : route.name === 'notifiche' ? unreadNotifiche : 0;
+          const mostraBadge = contatore > 0;
 
           return (
             <Pressable
@@ -87,7 +93,7 @@ export function BottomBar({ state, navigation }: BottomTabBarProps) {
                 />
                 {mostraBadge ? (
                   <View style={styles.badge}>
-                    <Text style={styles.badgeText}>{unread > 99 ? '99+' : unread}</Text>
+                    <Text style={styles.badgeText}>{contatore > 99 ? '99+' : contatore}</Text>
                   </View>
                 ) : null}
               </View>

@@ -13,13 +13,17 @@
 
 import { QueryClient } from '@tanstack/react-query';
 
+// 48h: condivisa col persister P2 (maxAge = gcTime, MAI maxAge > gcTime:
+// l'eviction in memoria svuoterebbe lo stato deidratato su disco).
+export const GC_TIME_MS = 48 * 60 * 60 * 1000;
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
       // La cache sopravvive 48h in memoria: base dello stale-while-revalidate e
       // vincolo della persistenza P2 (gcTime ≥ maxAge del persister).
-      gcTime: 48 * 60 * 60 * 1000,
+      gcTime: GC_TIME_MS,
       retry: 2,
       // Backoff esponenziale 1s → 2s, con tetto a 5s (attemptIndex 0-based).
       retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),

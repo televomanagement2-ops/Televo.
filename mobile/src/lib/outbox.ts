@@ -11,6 +11,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 import { onlineManager } from '@tanstack/react-query';
+import { getInfoAsync } from 'expo-file-system/legacy';
 import { moderaMessaggio, sendAudioMessage, sendMediaMessage, sendTextMessage } from '@/lib/chat';
 import { conversationsPrefix, upsertMessage } from '@/lib/chat-cache';
 import { uploadVocale } from '@/lib/audio';
@@ -47,6 +48,21 @@ export async function attemptSend(
   if (!item || inVolo.has(tempId)) return;
   inVolo.add(tempId);
   try {
+    // M13/P2 (AH-4): l'outbox sopravvive al riavvio, ma i file locali di vocali
+    // e foto (cache di registratore/fotocamera) possono non esserci più. Si
+    // verifica PRIMA dell'upload: assente → failed esplicito con la UI di
+    // retry/elimina esistente — mai un messaggio fantasma.
+    const uriLocale =
+      item.type === 'audio' ? item.audioLocalUri : item.type === 'media' ? item.mediaLocalUri : null;
+    if (uriLocale) {
+      const info = await getInfoAsync(uriLocale).catch(() => null);
+      if (!info?.exists) {
+        useChatStore
+          .getState()
+          .outboxMarkFailed(tempId, 'Il file non è più su questo dispositivo. Elimina il messaggio.');
+        return;
+      }
+    }
     // Vocali e foto: upload PRIMA dell'insert (caso limite 7 SRS §15 — mai un
     // messaggio senza file dietro). Un retry dopo insert fallito ricarica il
     // file: l'eventuale orfano nel bucket è in carico alla pulizia CM8.

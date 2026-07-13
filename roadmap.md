@@ -996,8 +996,36 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
   **LiveSurface e MapSurface NON toccati** (dati realtime non-cache: state
   machine live / banner mappa §9 — fuori dal pattern SWR). tsc+eslint verdi.
   **⏳ resta verifica on-device (aereo-mode a freddo).**
-- **P2** persistenza cache MMKV (chat offline scorribile WhatsApp-like, AH-5)
-  + outbox su disco (AH-4)
+- ✅ **P2 FATTO** (2026-07-13) persistenza cache offline + outbox su disco
+  (AH-4/AH-5). Deps: **`react-native-mmkv@^3.3.3`** (TurboModule sincrono —
+  scelta deliberata: NIENTE v4/Nitro, che avrebbe trascinato la dipendenza
+  nativa extra `react-native-nitro-modules`; ⚠️ modulo nativo NUOVO →
+  **serve una nuova Dev Build EAS**) + `@tanstack/react-query-persist-client`
+  e `query-sync-storage-persister` 5.101.2 (stessa minor della react-query in
+  uso) + `expo-file-system` esplicitata (~19.0.23, era solo transitiva).
+  Nuovo **`src/lib/persistenza.ts`**: MMKV dietro guard Expo Go (require+new
+  in try/catch → in Go tutto degrada senza persistenza, pattern LiveKit);
+  **whitelist stretta** = hub/header/messaggi/reazioni chat, profilo, drops
+  feed, amici list, `notifiche` (pronta per P10) — MAI live feed/mappa/search/
+  receipts/presence/composer-block e mai chiavi `anon`; **trim messaggi alle
+  prime 2 pagine** (~80 msg) nel serialize; `buster` `v1:<versione app>`;
+  `maxAge` = **`GC_TIME_MS`** (48h, ora esportata da queryClient: maxAge =
+  gcTime, vincolo P1→P2). Root layout → **`PersistQueryClientProvider`**
+  (persister SINCRONO: restore al boot senza flash di vuoto; `persistOptions`
+  a identità di modulo) con fallback al provider semplice in Expo Go.
+  **Outbox su disco (AH-4)**: `chatStore` con zustand/persist su MMKV
+  (partialize SOLO `outbox`+`drafts`: replyTo/editing/forward restano
+  effimeri — contengono MessageRow stantii a un riavvio); al flush di
+  vocali/foto **verifica `getInfoAsync` del file locale PRIMA dell'upload**
+  (assente → `failed` "Il file non è più su questo dispositivo", UI
+  retry/elimina esistente, nessun messaggio fantasma); **flush a FREDDO** in
+  `useChatRuntime` (prima l'unico trigger era la transizione offline→online,
+  che a freddo non avviene). **Privacy**: su `SIGNED_OUT` (volontario o
+  revoca) → reset+clearStorage di chatStore, removeClient del persister,
+  `queryClient.clear()` — zero residui cross-account. tsc+eslint verdi,
+  bundle Metro (`expo export` android) OK. ⏳ resta la verifica on-device
+  (aereo-mode a freddo: hub+chat scorribili, outbox che riparte al riavvio,
+  cambio account senza residui) alla prossima **Dev Build EAS**.
 - **P3** push client: pre-prompt permesso alla shell + rotazione token +
   icona notifica
 - **P4** push server: receipt Expo (`push_tickets`/`push_health`), pruning

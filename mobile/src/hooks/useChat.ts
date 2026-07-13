@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  onlineManager,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -678,6 +679,10 @@ export function useChatRuntime() {
 
   useEffect(() => {
     if (!uid) return;
+    // M13/P2 (AH-4): l'outbox sopravvive al riavvio (chatStore persistito) →
+    // al mount della shell, se c'è rete, il flush riparte subito: prima l'unico
+    // trigger era la TRANSIZIONE offline→online, che a freddo non avviene.
+    if (onlineManager.isOnline()) void flushOutbox(queryClient, uid);
     return onRiconnessione(() => {
       void flushOutbox(queryClient, uid);
     });

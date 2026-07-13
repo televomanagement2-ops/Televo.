@@ -12,8 +12,24 @@
 import { useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
+import { useChatStore } from '@/store/chatStore';
 import { fetchMyProfile, signOut as doSignOut } from '@/lib/auth';
 import { rimuoviTokenPush } from '@/lib/expo-push';
+import { rimuoviCachePersistita } from '@/lib/persistenza';
+import { queryClient } from '@/lib/queryClient';
+
+/**
+ * M13/P2: i dati locali di un account NON sopravvivono al cambio utente
+ * (vincolo privacy §2.2) — cache query persistita, cache in memoria e
+ * outbox/bozze su disco se ne vanno col logout. Agganciata all'evento
+ * SIGNED_OUT: copre sia il logout volontario sia la revoca della sessione.
+ */
+function pulisciDatiAccount(): void {
+  useChatStore.getState().reset();
+  useChatStore.persist.clearStorage();
+  rimuoviCachePersistita();
+  queryClient.clear();
+}
 
 export function useAuthListener(): void {
   const setSession = useAuthStore((s) => s.setSession);
@@ -55,7 +71,10 @@ export function useAuthListener(): void {
       if (active) setInitializing(false);
     });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      // P2: prima di aggiornare lo store, al logout si azzerano i dati locali
+      // (la pulizia è sincrona e locale: nessuna chiamata Supabase nel lock).
+      if (event === 'SIGNED_OUT') pulisciDatiAccount();
       setSession(session);
       void loadProfile(session?.user.id);
     });

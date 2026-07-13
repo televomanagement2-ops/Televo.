@@ -14,7 +14,9 @@ import { useFonts } from 'expo-font';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { queryClient } from '@/lib/queryClient';
+import { persistOptions } from '@/lib/persistenza';
 import { initRete } from '@/lib/rete';
 import { DialogHost } from '@/components/ui/DialogHost';
 import { useAuthListener } from '@/hooks/useAuth';
@@ -63,21 +65,41 @@ export default function RootLayout() {
   // Non montiamo nulla finché i font non sono caricati: lo splash nativo resta su.
   if (!fontsLoaded) return null;
 
+  const contenuto = (
+    <>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'fade',
+          contentStyle: { backgroundColor: colors.base },
+        }}
+      />
+      {/* Host unico dei popup dark (CM6.5): menu, conferme e avvisi. */}
+      <DialogHost />
+    </>
+  );
+
+  // M13/P2: con MMKV disponibile (Dev Build) la cache query viene ripristinata
+  // dal disco al boot (persister sincrono: niente flash di vuoto) e persistita
+  // in whitelist (lib/persistenza). In Expo Go persistOptions è null → provider
+  // semplice, comportamento identico a prima.
+  if (persistOptions) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
+            {contenuto}
+          </PersistQueryClientProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    );
+  }
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <StatusBar style="light" />
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              animation: 'fade',
-              contentStyle: { backgroundColor: colors.base },
-            }}
-          />
-          {/* Host unico dei popup dark (CM6.5): menu, conferme e avvisi. */}
-          <DialogHost />
-        </QueryClientProvider>
+        <QueryClientProvider client={queryClient}>{contenuto}</QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

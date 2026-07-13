@@ -7,7 +7,15 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-13 (**M13 — Hardening: audit tecnico/UX
+> **Ultimo aggiornamento:** 2026-07-13 sera (**M13 — Hardening: P2 e P3
+> FATTI** — P2 = persistenza cache offline MMKV + outbox su disco (AH-4/AH-5,
+> chat offline WhatsApp-like); P3 = push client: pre-prompt permesso alla
+> shell = **fix della root cause diagnosticata in P0**, rotazione token,
+> icona notifica brand. Dettagli nella sezione M13. ⚠️ P2/P3 richiedono una
+> **NUOVA Dev Build EAS**: `react-native-mmkv` è un modulo nativo nuovo e
+> l'icona notifica entra col prebuild. P0–P3 completi; prossimo P4 su comando
+> PO).
+> Precedente: 2026-07-13 (**M13 — Hardening: audit tecnico/UX
 > completo su sintomi PO + 3 indagini; spec+piano ufficiale scritti in
 > `docs/audit/AUDIT-HARDENING.md`** — Parte I mappatura con file:riga, Parte II
 > roadmap P0–P11, decisioni PO AH-1..AH-5. Nessun codice toccato: i punti si
@@ -1026,8 +1034,25 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
   bundle Metro (`expo export` android) OK. ⏳ resta la verifica on-device
   (aereo-mode a freddo: hub+chat scorribili, outbox che riparte al riavvio,
   cambio account senza residui) alla prossima **Dev Build EAS**.
-- **P3** push client: pre-prompt permesso alla shell + rotazione token +
-  icona notifica
+- ✅ **P3 FATTO** (2026-07-13) push client — **FIX DELLA ROOT CAUSE P0**:
+  **pre-prompt del permesso nella shell autenticata** (`usePushRuntime`, ~2s
+  dal primo frame, UNA volta per installazione via flag SecureStore
+  `televo.push.preprompt_mostrato`; dialog dark `conferma()` "Attiva le
+  notifiche" → su "Attiva" parte il prompt OS via
+  `richiediPermessoERegistra`; su 'denied' mai più ri-chiesto; banner hub S1
+  = percorso secondario; verificato che l'onboarding NON chiede mai il
+  permesso → il pre-prompt è il percorso primario, ChatRuntime monta solo
+  post-onboarding quindi mai durante il wizard);
+  **`addPushTokenListener`** → ri-registrazione automatica del token Expo
+  alla rotazione FCM/APNs (prima il device tornava irraggiungibile fino al
+  riavvio); **app.json**: icona notifica Android monocromatica 96×96
+  (`notification-icon.png`, anello brand bianco su trasparente — placeholder
+  generato, sostituibile dal designer) + `color` **viola brand `#a855f7`**
+  (era il blu `#3b82f6` fuori brand, chiude H8; l'icona entra nella build
+  alla stessa Dev Build EAS di P2). tsc+eslint verdi. ⏳ done-when device:
+  fresh install → pre-prompt → prompt OS → riga in `devices` (pooler) → push
+  reale (quest'ultima dipende dal check owner credenziali FCM v1/APNs su EAS,
+  vedi P0).
 - **P4** push server: receipt Expo (`push_tickets`/`push_health`), pruning
   `DeviceNotRegistered`, `dispatch_push` osservabile — deploy owner
 - **P5** sessioni multi-device: `signOut scope local` + SIGNED_OUT con grazia

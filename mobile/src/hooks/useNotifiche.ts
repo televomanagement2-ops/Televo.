@@ -1,14 +1,17 @@
 // =============================================================================
-// useNotifiche — servizi push della shell autenticata (CM6, RC-13).
+// useNotifiche — servizi push della shell autenticata (CM6, RC-13; M13/P3).
 // =============================================================================
 // Tre hook:
 // - usePushRuntime (ChatRuntime): handler foreground + registrazione token se
-//   il permesso è GIÀ concesso (la richiesta è contestuale, nel banner S1) +
-//   badge icona = somma unread (stessa fonte del badge tab, §8.5).
+//   il permesso è GIÀ concesso + PRE-PROMPT del permesso al primo ingresso
+//   nella shell (P3: è il percorso PRIMARIO — l'onboarding non chiede mai il
+//   permesso) + ri-registrazione alla rotazione del token + badge icona =
+//   somma unread (stessa fonte del badge tab, §8.5).
 // - useNotificaTap (ChatRuntime): tap su una push → navigazione alla schermata
 //   giusta, cold start incluso. Vive nella shell autenticata di proposito:
 //   monta solo quando auth e navigazione sono pronte (niente race al boot).
-// - usePushBanner (hub S1): stato e azioni del banner "Attiva le notifiche".
+// - usePushBanner (hub S1): banner "Attiva le notifiche" — da P3 è il percorso
+//   SECONDARIO (resta per chi sceglie "Non ora" al pre-prompt).
 
 import { useCallback, useEffect, useState } from 'react';
 import * as Notifications from 'expo-notifications';
@@ -24,14 +27,26 @@ import {
   statoPermessoPush,
   type PermessoPush,
 } from '@/lib/expo-push';
+import { conferma } from '@/lib/dialoghi';
 import { dynamicRoutes, ROUTES } from '@/constants/routes';
 
-// --- Runtime push (handler + token + badge) -----------------------------------
+// --- Runtime push (handler + token + badge + pre-prompt P3) ---------------------
+
+// Flag persistente "pre-prompt già mostrato": UNA volta nella vita
+// dell'installazione, qualunque sia stata la scelta (AUDIT-HARDENING §3.3).
+const PREPROMPT_KEY = 'televo.push.preprompt_mostrato';
+
+// Respiro dopo il primo frame della shell: il pre-prompt non deve coprire
+// l'atterraggio in Home (né competere con lo slot-dialogo al mount).
+const PREPROMPT_RITARDO_MS = 2000;
 
 /**
- * Da montare UNA volta nella shell autenticata (ChatRuntime). Non chiede mai il
- * permesso: se è già concesso ri-registra il token a ogni avvio (rotazione del
- * token, `last_seen` fresco e riassegnazione dopo un cambio account).
+ * Da montare UNA volta nella shell autenticata (ChatRuntime, che monta SOLO
+ * post-onboarding). Se il permesso è già concesso ri-registra il token a ogni
+ * avvio (last_seen fresco, riassegnazione dopo cambio account); se non è mai
+ * stato chiesto, mostra il pre-prompt (P3). Il prompt OS si può chiedere UNA
+ * sola volta: il pre-prompt lo protegge (il dialog di sistema parte solo su
+ * "Attiva"); su 'denied' non si ri-chiede MAI (si rispetta la scelta).
  */
 export function usePushRuntime(): void {
   const { session } = useAuth();
@@ -44,6 +59,50 @@ export function usePushRuntime(): void {
     void (async () => {
       if ((await statoPermessoPush()) === 'granted') await registraTokenPush();
     })();
+  }, [uid]);
+
+  // P3: FCM/APNs possono ruotare il token in qualunque momento a app viva —
+  // senza ri-registrazione il device torna irraggiungibile fino al prossimo
+  // avvio. L'evento porta il token NATIVO: si ricava e registra quello Expo.
+  useEffect(() => {
+    if (!uid) return;
+    const sub = Notifications.addPushTokenListener(() => {
+      void (async () => {
+        if ((await statoPermessoPush()) === 'granted') await registraTokenPush();
+      })();
+    });
+    return () => sub.remove();
+  }, [uid]);
+
+  // P3: pre-prompt del permesso, ~2s dopo il primo frame della shell. È il fix
+  // della root cause di P0 (il permesso era chiesto SOLO dal banner chiudibile
+  // dell'hub Messaggi → devices vuota → nessuna push, di nessun tipo).
+  useEffect(() => {
+    if (!uid) return;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          // Solo se il prompt OS non è mai stato deciso e mai proposto da noi.
+          if ((await statoPermessoPush()) !== 'undetermined') return;
+          if (await SecureStore.getItemAsync(PREPROMPT_KEY)) return;
+          await SecureStore.setItemAsync(PREPROMPT_KEY, '1');
+          conferma({
+            titolo: 'Attiva le notifiche',
+            messaggio:
+              'Ti avvisiamo per i messaggi, gli amici in live e le richieste di amicizia.',
+            confermaLabel: 'Attiva',
+            annullaLabel: 'Non ora',
+            onConferma: () => {
+              void richiediPermessoERegistra();
+            },
+          });
+        } catch {
+          // SecureStore indisponibile: nessun prompt ora, si ritenta a un
+          // prossimo avvio (il banner dell'hub resta comunque disponibile).
+        }
+      })();
+    }, PREPROMPT_RITARDO_MS);
+    return () => clearTimeout(timer);
   }, [uid]);
 
   // Badge icona app: null = lista conversazioni non ancora caricata → non

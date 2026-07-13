@@ -1,13 +1,18 @@
 # Televo — Roadmap & Stato del Progetto
 
-> DA RILAVORARE IN FUTURO: LIMITE LIVES_FEED() A ~150 AMICI SENZA PAGINAZIONE (LIVE.MD §15.2) — VA RIVISTO PRIMA DI SCALARE OLTRE IL LANCIO A TERNI.
-> DA RILAVORARE IN FUTURO: TRIGGER `SYNC_LIVE_VIEWER_COUNT()` (20260709120100_LIVE_FOUNDATION.SQL) FA UN `COUNT(*)` COMPLETO SU `LIVE_VIEWERS` A OGNI JOIN/LEAVE/KICK invece di essere incrementale — CON MOLTI SPETTATORI CONCORRENTI SULLA STESSA LIVE DIVENTA UN COLLO DI BOTTIGLIA (LOCK CONTENTION SULLA RIGA `LIVES`), DA RIVEDERE VERSO UN CONTATORE INCREMENTALE PRIMA DI SCALARE OLTRE TERNI.
+> DA RILAVORARE IN FUTURO: LIMITE LIVES_FEED() A ~150 AMICI SENZA PAGINAZIONE (LIVE.MD §15.2) — VA RIVISTO PRIMA DI SCALARE OLTRE IL LANCIO A TERNI. → **Pianificato in M13, punto P8** (`docs/audit/AUDIT-HARDENING.md` §6.1, decisione PO AH-2).
+> DA RILAVORARE IN FUTURO: TRIGGER `SYNC_LIVE_VIEWER_COUNT()` (20260709120100_LIVE_FOUNDATION.SQL) FA UN `COUNT(*)` COMPLETO SU `LIVE_VIEWERS` A OGNI JOIN/LEAVE/KICK invece di essere incrementale — CON MOLTI SPETTATORI CONCORRENTI SULLA STESSA LIVE DIVENTA UN COLLO DI BOTTIGLIA (LOCK CONTENTION SULLA RIGA `LIVES`), DA RIVEDERE VERSO UN CONTATORE INCREMENTALE PRIMA DI SCALARE OLTRE TERNI. → **Pianificato in M13, punto P7** (`docs/audit/AUDIT-HARDENING.md` §6.2).
 
 > Documento di verità sullo stato di Televo. Backend **live**; frontend in
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-12 notte (**M12 Live: LM8 FATTO — Mobile:
+> **Ultimo aggiornamento:** 2026-07-13 (**M13 — Hardening: audit tecnico/UX
+> completo su sintomi PO + 3 indagini; spec+piano ufficiale scritti in
+> `docs/audit/AUDIT-HARDENING.md`** — Parte I mappatura con file:riga, Parte II
+> roadmap P0–P11, decisioni PO AH-1..AH-5. Nessun codice toccato: i punti si
+> implementano UNO alla volta su comando esplicito del PO).
+> Precedente: 2026-07-12 notte (**M12 Live: LM8 FATTO — Mobile:
 > badge mappa + chiusura modulo. IL MODULO LIVE (LM0–LM8) È COMPLETO lato
 > sviluppo.** Nessuna migrazione (59 invariate), nessuna Edge toccata: solo
 > `mobile/` + documenti. **Badge LIVE sulla mappa** (live.md §8, backend LM1
@@ -711,6 +716,10 @@ MM1).
   FATTI in CM6 (chat). Restano: `(tabs)/notifiche.tsx` (tab in-app su
   `notifications` + `read_at`), `NotificaRow`, deep link per prop/achievement,
   pruning token `DeviceNotRegistered` lato Edge.
+- ⏭️ **Il residuo M8 è ASSORBITO da M13** (decisione PO AH-1): tab in-app +
+  NotificaRow + deep link → P10; pruning `DeviceNotRegistered` via receipt
+  Expo + osservabilità → P4; permesso push alla shell → P3
+  (`docs/audit/AUDIT-HARDENING.md`).
 - **Verifica:** push ricevuta (Edge `send-push` già deployata).
 
 ### 💎 M9 — Economia Vibes (simbolica)
@@ -966,6 +975,36 @@ pattern drop_comments per i commenti realtime. Nuove Edge: `live-kick`,
   `docs/live/MANUAL-TESTING.md` su 2 device.
 - **Verifica:** criteri per milestone e Definition of Done in `docs/live/live.md`
   (§18–§20); QA aperte §22 (cap 8h, pausa 30 min, preview muta, soglie Aura).
+
+### 🔧 M13 — Hardening tecnico/UX ("app matura") — 📋 PIANIFICATO (2026-07-13)
+Spec+piano ufficiale: **`docs/audit/AUDIT-HARDENING.md`** (Rev. 1, punti
+P0–P11; decisioni PO AH-1..AH-5). Nato dall'audit manuale del PO su device
+(2026-07-13): porta **ciò che esiste** alla maturità Telegram/Instagram —
+solo tecnica e UX, non design; verticali non costruite ESCLUSE (M9/M10/M11/M4
+frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
+- **P0** diagnosi live push+sessioni (pooler + dashboard, read-only)
+- **P1** rete al boot (`initRete`) + QueryClient maturo + pattern SWR
+  (`statoSchermo`: dati cache sempre, spinner solo senza dati, stato offline)
+- **P2** persistenza cache MMKV (chat offline scorribile WhatsApp-like, AH-5)
+  + outbox su disco (AH-4)
+- **P3** push client: pre-prompt permesso alla shell + rotazione token +
+  icona notifica
+- **P4** push server: receipt Expo (`push_tickets`/`push_health`), pruning
+  `DeviceNotRegistered`, `dispatch_push` osservabile — deploy owner
+- **P5** sessioni multi-device: `signOut scope local` + SIGNED_OUT con grazia
+- **P6** notifica "nuovo accesso" (`new_login` + Edge `login-alert`, città da
+  IP best-effort AH-3, soppressione own-device) — deploy owner
+- **P7** `sync_live_viewer_count` incrementale a delta + riconciliazione in
+  `expire_content` v8 (chiude il warning in testa)
+- **P8** `lives_feed` paginata keyset Top Friends + recenza (AH-2, R-04
+  intatta; chiude l'altro warning)
+- **P9** live UX: tastiera commenti senza Modal (`useAnimatedKeyboard`) +
+  overlay ~7 commenti a scorrimento
+- **P10** tab Notifiche reale (ledger, mark-all-read, deep link, badge)
+- **P11** performance (seed clearedAt, prefetch su press, pre-warm chunk
+  LiveKit, spinner nei fallback Suspense) + pulizia docs
+- **Verifica:** Definition of Done in `docs/audit/AUDIT-HARDENING.md` §15;
+  un punto alla volta su comando esplicito del PO, un commit per punto.
 
 ### ♻️ Trasversale (continuo)
 Componenti UI residui (`Badge`, `BottomSheet`) · font (Inter, Clash Display) ·

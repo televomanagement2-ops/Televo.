@@ -18,6 +18,7 @@
 // dei miei amici è in diretta ORA" che alimenta striscia, feed e badge.
 
 import { create } from 'zustand';
+import type { CursoreLiveFeed } from '@/lib/live';
 import type {
   LiveFeedItemRaw,
   LivesFeedRaw,
@@ -89,9 +90,19 @@ interface LiveState {
   ordine: string[];
   /** server_now − Date.now() (clock calibrato, condiviso dalle superfici live). */
   clockOffsetMs: number;
+  /** M13/P8: esiste una pagina successiva sul server (lives_feed keyset). */
+  hasMore: boolean;
+  /** M13/P8: cursore della prossima pagina, derivato dall'ULTIMA riga RAW
+   *  ricevuta (started_at ISO verbatim: la precisione è parte del cursore). */
+  cursore: CursoreLiveFeed | null;
 
-  /** Lo snapshot è la verità: rimpiazza dizionario e ordine, ricalibra il clock. */
+  /** Lo snapshot è la verità: rimpiazza dizionario e ordine, ricalibra il clock.
+   *  Un refetch della prima pagina RESETTA la paginazione (le pagine caricate
+   *  oltre la prima si ricaricano scorrendo: il feed è contenuto deperibile). */
   idrataFeed: (snap: LivesFeedRaw) => void;
+  /** M13/P8: append di una pagina successiva (dedup sugli id già presenti —
+   *  una live prepesa via delta può ricomparire in una pagina più giù). */
+  appendFeed: (snap: LivesFeedRaw) => void;
   /** Delta live_started: upsert in testa (il ranking vero arriva col prossimo snapshot). */
   applicaLiveStarted: (p: LiveStartedPayload) => void;
   /** Delta live_status (live↔paused): patch della live già nota; ignoto = no-op
@@ -106,10 +117,23 @@ interface LiveState {
   reset: () => void; // al logout
 }
 
+/** Cursore keyset dall'ultima riga RAW di una pagina (null = pagina vuota). */
+function cursoreDaPagina(snap: LivesFeedRaw): CursoreLiveFeed | null {
+  const ultima = snap.lives[snap.lives.length - 1];
+  if (!ultima) return null;
+  return {
+    top: ultima.is_top_friend,
+    before: ultima.started_at,
+    beforeId: ultima.live_id,
+  };
+}
+
 export const useLiveStore = create<LiveState>((set) => ({
   lives: {},
   ordine: [],
   clockOffsetMs: 0,
+  hasMore: false,
+  cursore: null,
 
   idrataFeed: (snap) =>
     set(() => {
@@ -119,7 +143,31 @@ export const useLiveStore = create<LiveState>((set) => ({
         lives[raw.live_id] = normalizzaLive(raw);
         ordine.push(raw.live_id);
       }
-      return { lives, ordine, clockOffsetMs: Date.parse(snap.server_now) - Date.now() };
+      return {
+        lives,
+        ordine,
+        clockOffsetMs: Date.parse(snap.server_now) - Date.now(),
+        hasMore: snap.has_more,
+        cursore: cursoreDaPagina(snap),
+      };
+    }),
+
+  appendFeed: (snap) =>
+    set((s) => {
+      const lives = { ...s.lives };
+      const ordine = [...s.ordine];
+      for (const raw of snap.lives) {
+        if (!lives[raw.live_id]) ordine.push(raw.live_id);
+        lives[raw.live_id] = normalizzaLive(raw);
+      }
+      return {
+        lives,
+        ordine,
+        hasMore: snap.has_more,
+        // Il cursore avanza SEMPRE all'ultima riga della pagina server (anche
+        // se dedupata in lista): la prossima pagina riparte da lì.
+        cursore: cursoreDaPagina(snap) ?? s.cursore,
+      };
     }),
 
   applicaLiveStarted: (p) =>
@@ -178,9 +226,10 @@ export const useLiveStore = create<LiveState>((set) => ({
       return { lives: resto, ordine: s.ordine.filter((id) => id !== liveId) };
     }),
 
-  resetDatiLive: () => set({ lives: {}, ordine: [] }),
+  resetDatiLive: () => set({ lives: {}, ordine: [], hasMore: false, cursore: null }),
 
-  reset: () => set({ lives: {}, ordine: [], clockOffsetMs: 0 }),
+  reset: () =>
+    set({ lives: {}, ordine: [], clockOffsetMs: 0, hasMore: false, cursore: null }),
 }));
 
 // =============================================================================

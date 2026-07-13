@@ -1,13 +1,22 @@
 # Televo — Roadmap & Stato del Progetto
 
-> DA RILAVORARE IN FUTURO: LIMITE LIVES_FEED() A ~150 AMICI SENZA PAGINAZIONE (LIVE.MD §15.2) — VA RIVISTO PRIMA DI SCALARE OLTRE IL LANCIO A TERNI. → **Pianificato in M13, punto P8** (`docs/audit/AUDIT-HARDENING.md` §6.1, decisione PO AH-2).
+> ✅ RISOLTO (2026-07-13, M13/P8): `lives_feed()` è **paginata keyset** (AH-2: due blocchi Top Friends → recenza, cap 20/pagina, cursore derivato dal payload senza esporre contatori — R-04 intatta) — migrazione `20260713150000` LIVE + load-more client. Il limite ~150 amici non esiste più. ⚠️ resta l'annotazione H9: `map_snapshot()` è ancora unbounded (stessa assunzione ≤150 amici, nessun sintomo — fuori scope del round M13).
 > ✅ RISOLTO (2026-07-13, M13/P7): `sync_live_viewer_count()` è ora **incrementale a delta** (tre trigger mirati con WHEN + riconciliazione anti-drift in `expire_content` v8) — migrazione `20260713140000` LIVE. Il collo di bottiglia da ricalcolo per-evento su `live_viewers` non esiste più.
 
 > Documento di verità sullo stato di Televo. Backend **live**; frontend in
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P7 FATTO** —
+> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P8 FATTO —
+> con P5/P6/P7 chiude il blocco sessioni+scala backend del round.**
+> `lives_feed` paginata keyset a due blocchi (AH-2) con cursore derivato dal
+> payload (R-04 intatta), migrazione 64 live, load-more nel client, pgTAP
+> 567/567 + smoke 6/6 sul remoto. ENTRAMBI i warning di scala in testa alla
+> roadmap sono chiusi (P7+P8). ⚠️ Coda deploy OWNER invariata: `login-alert`
+> (P6) e `send-push` v3 (P4) — serve `supabase login` con l'account Televo.
+> Prossimi: P9 (live UX), P10 (tab Notifiche), P11 (polish+docs) su comando
+> PO. Dettagli nella sezione M13).
+> Precedente: 2026-07-13 notte (**M13 — Hardening: P7 FATTO** —
 > contatore spettatori Live incrementale: migrazione 63 live (funzione a
 > DELTA sotto row-lock + 3 trigger WHEN + indice parziale + `expire_content`
 > v8 = v7 verbatim + riconciliazione anti-drift ≤5 min). pgTAP 564/564 +
@@ -1152,8 +1161,27 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
   sul remoto** (+5) + smoke pooler **6/6** (join/leave/rientro/kick/kick
   preventivo/re-mint no-op/drift 99→sanato/purge su ended congelata; rolled
   back). Chiude il warning `sync_live_viewer_count` in testa alla roadmap
-- **P8** `lives_feed` paginata keyset Top Friends + recenza (AH-2, R-04
-  intatta; chiude l'altro warning)
+- ✅ **P8 FATTO** (2026-07-13) `lives_feed` paginata keyset (§6.1, AH-2):
+  migrazione 64 `lives_feed_paginato` **LIVE** via CLI `db push` — drop della
+  firma zero-arg, nuova `lives_feed(p_top, p_before, p_before_id, p_limit)`
+  con ordinamento a **due blocchi** (Top Friends del viewer → resto; dentro
+  `started_at desc, id desc`), cap `least(p_limit,20)`, sentinella limit+1 →
+  `has_more`, predicato composito `(is_top::int, started_at, id) <
+  (p_top::int, p_before, p_before_id)`. Il **cursore è derivabile dal client
+  dall'ultima riga** (is_top_friend/started_at/live_id già nel payload):
+  zero campi nuovi, R-04 intatta anche nel cursore; `rpc('lives_feed', {})`
+  resta compatibile (default = prima pagina). Mobile: `fetchLivesFeed(cursore?)`
+  + `CursoreLiveFeed` (started_at ISO **verbatim** dal server: la precisione µs
+  è parte del cursore), liveStore `hasMore`/`cursore`/`appendFeed` (dedup su
+  id; lo snapshot resetta le pagine), `useLivesFeed.caricaAltre` (guardia
+  anti-concorrenza, fuori TanStack: le pagine >1 non vanno in cache/persistenza),
+  `LiveFeed` `onEndReached` + striscia bloccata alla prima pagina; ⚠️ fix
+  contestuale: `queryFn: () => fetchLivesFeed()` (il context TanStack sarebbe
+  diventato un finto cursore). pgTAP **567/567 sul remoto** (+3, guardie
+  riscritte: no zero-arg, due blocchi, `not like viewer_count` nel prosrc) +
+  smoke pooler **6/6** (23 live: top block in testa, recenza, walk completo
+  senza duplicati/salti, cap 20, confine top→non-top, R-04; rolled back).
+  Chiude il warning `lives_feed` in testa alla roadmap
 - **P9** live UX: tastiera commenti senza Modal (`useAnimatedKeyboard`) +
   overlay ~7 commenti a scorrimento
 - **P10** tab Notifiche reale (ledger, mark-all-read, deep link, badge)

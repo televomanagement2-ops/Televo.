@@ -39,15 +39,20 @@ import { ROUTES, dynamicRoutes } from '@/constants/routes';
 import { livesOrdinate, useLiveStore, type LiveAmico } from '@/store/liveStore';
 import { colors, fontFamily, fontSize, spacing } from '@/constants/theme';
 
+// Dimensione della prima pagina server (lives_feed keyset, default p_limit):
+// la STRISCIA resta sulla sola prima pagina anche dopo i load-more (P8).
+const PRIMA_PAGINA = 10;
+
 export default function LiveFeed() {
-  const { query, appActive } = useLivesFeed();
+  const { query, appActive, caricaAltre } = useLivesFeed();
   const online = useOnline();
 
-  // L'ordine è del server (Top Friends → spettatori reali → Aura host, §7B);
-  // i delta prependono le novità, lo snapshot riconcilia.
+  // L'ordine è del server (P8/AH-2: Top Friends → recenza, a pagine keyset);
+  // i delta prependono le novità, lo snapshot riconcilia e resetta le pagine.
   const lives = useLiveStore((s) => s.lives);
   const ordine = useLiveStore((s) => s.ordine);
   const items = useMemo(() => livesOrdinate({ lives, ordine }), [lives, ordine]);
+  const itemsStriscia = useMemo(() => items.slice(0, PRIMA_PAGINA), [items]);
 
   // Home a fuoco? Aprendo /live/[id] (o un altro stack) questa superficie resta
   // montata sotto: il blur DEVE staccare la preview (budget R-3, §12.15).
@@ -131,7 +136,7 @@ export default function LiveFeed() {
 
   return (
     <View style={styles.flex}>
-      <LiveStrip lives={items} onApri={apri} />
+      <LiveStrip lives={itemsStriscia} onApri={apri} />
       <View style={styles.flex} onLayout={(e) => setAltezza(e.nativeEvent.layout.height)}>
         {altezza > 0 ? (
           <FlatList
@@ -149,6 +154,9 @@ export default function LiveFeed() {
             initialNumToRender={1}
             maxToRenderPerBatch={2}
             windowSize={3}
+            // P8: load-more keyset a fine lista (append nello store, dedup incluso).
+            onEndReached={caricaAltre}
+            onEndReachedThreshold={0.5}
           />
         ) : null}
       </View>

@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(564);
+select plan(567);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -1772,24 +1772,42 @@ select ok((select prosrc like '%emit_aura%' and prosrc like '%participation%'
     where n.nspname = 'public' and p.proname = 'lives_award_participation'),
   'lives_award_participation: premio 1/n a rendimenti decrescenti (formula drops)');
 
--- lives_feed: la porta di lettura della Home.
-select has_function('public', 'lives_feed', 'lives_feed esiste');
+-- lives_feed: la porta di lettura della Home — M13/P8: paginata KEYSET (AH-2),
+-- ordinamento a due blocchi (Top Friends del viewer → resto, dentro recenza),
+-- cursore interamente derivabile dal payload (R-04 intatta: nessun contatore
+-- esce dal server, nemmeno nel cursore).
+select has_function('public', 'lives_feed',
+  array['boolean', 'timestamptz', 'uuid', 'integer'], 'lives_feed paginata esiste');
+select ok((select not exists (select 1 from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_feed' and p.pronargs = 0)),
+  'lives_feed: la vecchia firma zero-arg è stata rimossa');
 select ok((select prosecdef and proconfig::text like '%search_path=%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'lives_feed'),
   'lives_feed è security definer con search_path svuotato');
-select ok((select has_function_privilege('authenticated', 'public.lives_feed()', 'EXECUTE')
-             and not has_function_privilege('anon', 'public.lives_feed()', 'EXECUTE')),
+select ok((select has_function_privilege('authenticated',
+      'public.lives_feed(boolean, timestamptz, uuid, integer)', 'EXECUTE')
+    and not has_function_privilege('anon',
+      'public.lives_feed(boolean, timestamptz, uuid, integer)', 'EXECUTE')),
   'lives_feed: authenticated sì, anon no');
 select ok((select prosrc like '%can_see_live%' and prosrc like '%ended_at is null%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'lives_feed'),
   'lives_feed: solo live attive visibili al chiamante (unico predicato)');
-select ok((select prosrc like '%top_friends%' and prosrc like '%viewer_count%'
-             and prosrc like '%aura_score%'
+select ok((select prosrc like '%top_friends%' and prosrc like '%started_at desc%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'lives_feed'),
-  'lives_feed: ordinamento server-side (Top Friends → spettatori reali → Aura)');
+  'lives_feed: due blocchi Top Friends → recenza (AH-2)');
+select ok((select prosrc not like '%viewer_count%' and prosrc not like '%peak_viewers%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_feed'),
+  'lives_feed: nessun contatore, nemmeno nel cursore (anti-vanity R-04)');
+select ok((select prosrc like '%least(%' and prosrc like '%p_before_id%'
+             and prosrc like '%has_more%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_feed'),
+  'lives_feed: keyset composito con cap 20 e has_more');
 select ok((select prosrc like '%server_now%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'lives_feed'),

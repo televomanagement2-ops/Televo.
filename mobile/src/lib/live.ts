@@ -109,11 +109,28 @@ export function lasciaLive(liveId: string): void {
 // RPC di lettura (LM2)
 // -----------------------------------------------------------------------------
 
+/** Cursore keyset del feed live (M13/P8): interamente derivabile dall'ULTIMA
+ *  riga ricevuta — is_top_friend, started_at (ISO verbatim dal server, mai
+ *  ricostruito da epoch: la precisione ai microsecondi è parte del cursore) e
+ *  live_id. Nessun contatore viaggia nel cursore (anti-vanity R-04). */
+export interface CursoreLiveFeed {
+  top: boolean;
+  before: string;
+  beforeId: string;
+}
+
 /** Feed Home (striscia + verticale): live ATTIVE degli amici visibili, già
- *  ordinate server-side (Top Friends → spettatori reali → Aura host) senza mai
- *  esporre i contatori. È la VERITÀ a mount/foreground; i delta inbox patchano. */
-export async function fetchLivesFeed(): Promise<LivesFeedRaw> {
-  return callRpc<LivesFeedRaw>('lives_feed', {});
+ *  ordinate server-side a due blocchi (Top Friends del viewer → resto, dentro
+ *  recenza — AH-2) senza mai esporre i contatori. Senza cursore = prima
+ *  pagina (la VERITÀ a mount/foreground; i delta inbox patchano); col cursore
+ *  = pagina successiva (load-more, append allo store). */
+export async function fetchLivesFeed(cursore?: CursoreLiveFeed): Promise<LivesFeedRaw> {
+  return callRpc<LivesFeedRaw>(
+    'lives_feed',
+    cursore
+      ? { p_top: cursore.top, p_before: cursore.before, p_before_id: cursore.beforeId }
+      : {},
+  );
 }
 
 /** Dettaglio + revalidation 60s: su errore `not_visible` (blocco, rimozione

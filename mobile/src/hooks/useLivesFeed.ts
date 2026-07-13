@@ -46,12 +46,15 @@ export function useLivesFeed() {
   const uid = session?.user.id;
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
 
-  // Snapshot: la porta di lettura. RN non ha "window focus" → refetch a
-  // foreground/riconnessione gestiti sotto; l'interval vive SOLO in foreground.
+  // Snapshot: la porta di lettura (PRIMA pagina — P8: il refetch resetta la
+  // paginazione, le pagine oltre la prima si ricaricano scorrendo). RN non ha
+  // "window focus" → refetch a foreground/riconnessione gestiti sotto;
+  // l'interval vive SOLO in foreground. ⚠️ arrow esplicita: fetchLivesFeed ha
+  // un parametro cursore opzionale e il context di TanStack NON deve finirci.
   const query = useQuery({
     queryKey: uid ? liveKeys.feed(uid) : ['live', 'anon', 'feed'],
     enabled: !!uid,
-    queryFn: fetchLivesFeed,
+    queryFn: () => fetchLivesFeed(),
     staleTime: 15_000,
     refetchOnWindowFocus: false,
     refetchInterval: appActive ? RECONCILE_MS : false,
@@ -109,6 +112,28 @@ export function useLivesFeed() {
     return () => sub.remove();
   }, [invalida]);
 
+  // M13/P8 — load-more keyset: pesca la pagina successiva col cursore dello
+  // store (derivato dall'ultima riga RAW) e la APPENDE (dedup nello store).
+  // Fuori da TanStack di proposito: le pagine oltre la prima sono contenuto
+  // deperibile che non va né in cache né persistito — al prossimo snapshot la
+  // paginazione riparte pulita.
+  const caricandoAltre = useRef(false);
+  const caricaAltre = useCallback(() => {
+    const { hasMore, cursore } = useLiveStore.getState();
+    if (!uid || !hasMore || !cursore || caricandoAltre.current) return;
+    caricandoAltre.current = true;
+    void (async () => {
+      try {
+        const pagina = await fetchLivesFeed(cursore);
+        useLiveStore.getState().appendFeed(pagina);
+      } catch {
+        // Best-effort: si ritenta al prossimo onEndReached (o allo snapshot).
+      } finally {
+        caricandoAltre.current = false;
+      }
+    })();
+  }, [uid]);
+
   // Refetch alla riconnessione (i broadcast non vengono ritrasmessi).
   useEffect(() => onRiconnessione(invalida), [invalida]);
 
@@ -123,5 +148,5 @@ export function useLivesFeed() {
     };
   }, []);
 
-  return { query, appActive };
+  return { query, appActive, caricaAltre };
 }

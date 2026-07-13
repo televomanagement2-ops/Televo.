@@ -225,10 +225,14 @@ export interface LiveFeedItemRaw {
   host: LiveHostIdentityRaw;
 }
 
-/** Ritorno di lives_feed(): la porta di lettura della Home live (striscia + feed). */
+/** Ritorno di lives_feed(): la porta di lettura della Home live (striscia +
+ *  feed). M13/P8: paginata keyset — `has_more` dice se esiste una pagina
+ *  successiva; il cursore si deriva dall'ULTIMA riga ricevuta
+ *  (is_top_friend, started_at, live_id): nessun campo nuovo esposto (R-04). */
 export interface LivesFeedRaw {
   server_now: string;
   lives: LiveFeedItemRaw[];
+  has_more: boolean;
 }
 
 /** Un host ATTIVO in live_detail (host principale primo, poi i co-host). */
@@ -1222,7 +1226,21 @@ export interface Database {
       // is_cohost, can_comment } } + viewer_count/peak_viewers SOLO se il
       // chiamante è l'host (anti-vanity R-04); errore not_visible se il
       // predicato nega → il client si disconnette.
-      lives_feed: { Args: Record<string, never>; Returns: Json };
+      // M13/P8: lives_feed è paginata keyset (AH-2): ordinamento a due blocchi
+      // (Top Friends del viewer → resto, dentro recenza), cap 20 per pagina,
+      // ritorna { server_now, lives, has_more }. Cursore = ultima riga
+      // ricevuta: (p_top=is_top_friend, p_before=started_at, p_before_id=
+      // live_id). Senza argomenti = prima pagina (compatibile con la chiamata
+      // storica).
+      lives_feed: {
+        Args: {
+          p_top?: boolean | null;
+          p_before?: string | null;
+          p_before_id?: string | null;
+          p_limit?: number;
+        };
+        Returns: Json;
+      };
       live_detail: { Args: { p_live: string }; Returns: Json };
     };
     Enums: {

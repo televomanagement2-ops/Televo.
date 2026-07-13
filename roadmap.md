@@ -7,7 +7,24 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-13 sera (**M13 — Hardening: P2 e P3
+> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P4 FATTO** —
+> push server: receipt Expo + osservabilità. Migrazione
+> `20260713120000_push_receipts` **LIVE sul remoto** (via CLI `db push`, 60ª):
+> due tabelle di SISTEMA `push_tickets`/`push_health` (RLS attiva, **ZERO
+> policy**, revoke da anon+authenticated, nessun grant — solo service_role,
+> pattern `invites`/`storage_cleanup_queue`) + `dispatch_push` ridefinita
+> **verbatim+add** (marker `dispatch_skipped_no_secrets`: il no-op da segreti
+> Vault assenti resta ma diventa DIAGNOSTICABILE). Edge **`send-push` v3** (nel
+> repo, Deno check pulito): salva i ticket "ok", a ogni run interroga le
+> **receipt Expo** dei ticket >15 min (`getReceipts`) → `ok` risolve,
+> `DeviceNotRegistered` pota il device, `InvalidCredentials`/altro →
+> `push_health` + `console.error` (così il **breakpoint #4** di P0 smette di
+> essere invisibile), ticket >24h potati; scrive `send_push_last_run`. pgTAP
+> **552/552 sul remoto** (+15 P4) + verifica funzionale pooler. ⚠️ **Unica
+> azione OWNER residua**: `supabase functions deploy send-push` (finché non
+> deployata resta live la v2 — il sistema è COERENTE: dispatch invariato,
+> tabelle vuote). Prossimo P5 su comando PO).
+> Precedente: 2026-07-13 sera (**M13 — Hardening: P2 e P3
 > FATTI** — P2 = persistenza cache offline MMKV + outbox su disco (AH-4/AH-5,
 > chat offline WhatsApp-like); P3 = push client: pre-prompt permesso alla
 > shell = **fix della root cause diagnosticata in P0**, rotazione token,
@@ -118,7 +135,7 @@ Progetto Supabase hosted `mmunnybytyfybncohkky` ("Televo Project"), org
 | Area | Stato |
 |------|-------|
 | **42 migrazioni** (Fasi 0–8 + GDPR + onboarding + Aura v3 + chat 25–33 + hardening CM1 34–35 + chat modern CM4 36 + media hardening CM5 37 + CM7/CM8 38–42: contact_revoke, chat_overview, chat_receipts, chat_cleanup, grants_audit) | ✅ tutte applicate (le 38–42 via pooler: CLI bloccata da criterio app Windows, vedi nota) |
-| **13 Edge Functions** | ✅ TUTTE deployate e allineate al repo (2026-07-12, CLI con login owner): coda deploy-owner SVUOTATA (`gdpr-export` v5, `send-push` v2, `storage-cleanup`) + le 4 di LM4 (`livekit-token` v2, `live-kick`, `livekit-webhook`, `moderate-text` v3); flag verify_jwt verificati con `functions list` |
+| **13 Edge Functions** | ✅ deployate e allineate al repo (2026-07-12, CLI con login owner): coda deploy-owner SVUOTATA (`gdpr-export` v5, `send-push` v2, `storage-cleanup`) + le 4 di LM4 (`livekit-token` v2, `live-kick`, `livekit-webhook`, `moderate-text` v3); flag verify_jwt verificati con `functions list`. ⚠️ **Coda deploy owner (M13/P4)**: `send-push` **v3** (receipt Expo + osservabilità) è nel repo ma NON ancora deployata → `supabase functions deploy send-push` |
 | 3 Vault secrets (`edge_base_url`, `service_role_key`, `cron_secret`) | ✅ registrati il 2026-07-02 (`dispatch_push` attivo) |
 | 209 invarianti pgTAP | ✅ 209/209 verdi SUL REMOTO (suite eseguita via pooler il 2026-07-04; pgtap creata DENTRO la transazione della suite, rollback) |
 | 7 cron job pg_cron (`aura-recompute` ora **daily**; `expire_content` v4 pulisce anche i gruppi orfani) | ✅ attivi e verificati |
@@ -1053,8 +1070,26 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
   fresh install → pre-prompt → prompt OS → riga in `devices` (pooler) → push
   reale (quest'ultima dipende dal check owner credenziali FCM v1/APNs su EAS,
   vedi P0).
-- **P4** push server: receipt Expo (`push_tickets`/`push_health`), pruning
-  `DeviceNotRegistered`, `dispatch_push` osservabile — deploy owner
+- ✅ **P4 FATTO** (2026-07-13) push server: receipt Expo + osservabilità.
+  Migrazione `20260713120000_push_receipts` **LIVE** (CLI `db push`, 60ª):
+  tabelle di sistema `push_tickets` (ticket id Expo in attesa di receipt) e
+  `push_health` (sink diagnostico chiave→jsonb) — **RLS attiva, ZERO policy**,
+  `revoke all from anon, authenticated`, nessun grant a client (solo
+  service_role, pattern `invites`/`storage_cleanup_queue`); `dispatch_push`
+  ridefinita **verbatim+add** (unica differenza: upsert
+  `push_health('dispatch_skipped_no_secrets')` nel ramo segreti assenti — il
+  no-op resta, ma è tracciabile). Edge **`send-push` v3** (repo, `deno check`
+  pulito): salva i ticket "ok" (backref per indice già sfruttato in v2), fase
+  **receipt** a OGNI run sui ticket >15 min (`getReceipts`, batch ≤300):
+  `ok`→risolto (delete), `DeviceNotRegistered`→device potato,
+  `InvalidCredentials`/altro→`push_health` + `console.error`, ticket senza
+  receipt >24h→potati; `send_push_last_run` {processed, sent, marked, pruned,
+  receipts_checked, receipt_errors} a ogni invocazione. La marcatura per-chunk
+  v2 **invariata** (receipts additivi). pgTAP **552/552 sul remoto** (+15) +
+  verifica funzionale via pooler (colonne, RLS/policy, upsert rolled-back,
+  marker nel catalogo, tabelle vuote a baseline). ⚠️ **Azione OWNER**: `supabase
+  functions deploy send-push` (finché non deployata resta la v2; il sistema è
+  coerente PRIMA del deploy — dispatch invariato, tabelle vuote, R-4).
 - **P5** sessioni multi-device: `signOut scope local` + SIGNED_OUT con grazia
 - **P6** notifica "nuovo accesso" (`new_login` + Edge `login-alert`, città da
   IP best-effort AH-3, soppressione own-device) — deploy owner

@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(537);
+select plan(552);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -1867,6 +1867,60 @@ select ok((select prosrc like '%map_safe_zones%' and prosrc like '%contact_hashe
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'process_account_deletion'),
   'process_account_deletion v7: corpo v6 conservato (mappa, chat, drops, audit)');
+
+-- =============================================================================
+-- M13 · Push (P4) — receipt Expo + osservabilità
+-- =============================================================================
+-- docs/audit/AUDIT-HARDENING.md §3.3. Due tabelle di SISTEMA (RLS attiva SENZA
+-- policy, pattern invites/storage_cleanup_queue: scritte/lette solo da
+-- service_role, il client non le tocca mai) + dispatch_push reso osservabile
+-- (ridefinita verbatim + marker nel ramo segreti assenti). Le prove FUNZIONALI
+-- (salvataggio/svuotamento ticket, prune device da receipt, last-run) sono nello
+-- smoke via pooler / on-device.
+
+-- Esistenza tabelle.
+select has_table('public', 'push_tickets', 'push_tickets esiste');
+select has_table('public', 'push_health',  'push_health esiste');
+
+-- Colonne portanti.
+select has_column('public', 'push_tickets', 'ticket_id', 'push_tickets.ticket_id esiste (pk = receipt id Expo)');
+select has_column('public', 'push_health',  'key',       'push_health.key esiste (pk)');
+select has_column('public', 'push_health',  'value',     'push_health.value esiste (jsonb diagnostico)');
+
+-- RLS abilitata su entrambe.
+select ok((select relrowsecurity from pg_class where oid = 'public.push_tickets'::regclass),
+  'RLS attiva su push_tickets');
+select ok((select relrowsecurity from pg_class where oid = 'public.push_health'::regclass),
+  'RLS attiva su push_health');
+
+-- Zero policy (pattern invites/storage_cleanup_queue: solo service_role/definer).
+select is((select count(*)::int from pg_policies where schemaname='public' and tablename='push_tickets'),
+  0, 'push_tickets non ha policy (solo service_role)');
+select is((select count(*)::int from pg_policies where schemaname='public' and tablename='push_health'),
+  0, 'push_health non ha policy (solo service_role)');
+
+-- Nessun privilegio ai ruoli client (il client non legge mai i sink diagnostici).
+select ok((select not has_table_privilege('authenticated', 'public.push_tickets', 'SELECT')),
+  'authenticated non legge push_tickets');
+select ok((select not has_table_privilege('authenticated', 'public.push_health', 'SELECT')),
+  'authenticated non legge push_health');
+select ok((select not has_table_privilege('anon', 'public.push_tickets', 'SELECT')),
+  'anon non legge push_tickets');
+select ok((select not has_table_privilege('anon', 'public.push_health', 'SELECT')),
+  'anon non legge push_health');
+
+-- dispatch_push: aggiunta osservabilità (traccia il no-op da segreti assenti).
+select ok((select prosrc like '%dispatch_skipped_no_secrets%' and prosrc like '%push_health%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'dispatch_push'),
+  'dispatch_push: marker osservabile nel ramo segreti assenti (P4)');
+
+-- dispatch_push: corpo verbatim conservato (nessun cambio di comportamento).
+select ok((select prosrc like '%net.http_post%' and prosrc like '%edge_base_url%'
+             and prosrc like '%cron_secret%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'dispatch_push'),
+  'dispatch_push: corpo v1 conservato (Vault + net.http_post — solo aggiunta)');
 
 select * from finish();
 rollback;

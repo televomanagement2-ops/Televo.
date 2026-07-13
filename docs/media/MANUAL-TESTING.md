@@ -13,12 +13,11 @@
 >   remote da SDK 53). Senza push, i test 7.x e 8.3 si verificano in-app.
 > - Backend live: migrazioni fino a **`20260706140100`** (Drop del giorno).
 >   Vault configurato (`edge_base_url`/`service_role_key`/`cron_secret`).
-> - **Edge in coda deploy owner** (CLI 403): `storage-cleanup` (nuova),
->   `gdpr-export` v3, `send-push` v2. Senza il deploy owner:
->   - la **pulizia storage** (test 9.x) non svuota i bucket → verificare invece
->     l'accodamento in `storage_cleanup_queue`;
->   - il **deep link** delle push (7.x, 8.3) degrada (il `data.type` arriva solo
->     con `send-push` v2): la notifica compare comunque.
+> - **Edge deployate** (coda owner svuotata il 2026-07-12 con la CLI owner):
+>   `storage-cleanup`, `gdpr-export`, `send-push` sono live → pulizia storage
+>   (9.x), export GDPR (10.x) e deep link delle push (7.x, 8.3) girano senza
+>   passi preliminari. La coda deploy M13 (`send-push` v3, `login-alert`) NON
+>   blocca questi scenari.
 > - **Scadenza simulata** (per Ricordi/effimerità): via pooler
 >   ```sql
 >   update public.drops set expires_at = now() - interval '1 minute' where id = '<DROP_ID>';
@@ -185,17 +184,17 @@
 8.5 **Una sola al giorno** — Nessuna seconda notifica del tema nello stesso
     giorno anche se il cron rigira. [guard notified_at]
 
-## 9. Pulizia storage (R-09) — richiede deploy owner della Edge
+## 9. Pulizia storage (R-09)
 9.1 **Elimina drop con foto** — A elimina un drop foto. Atteso: entro un ciclo
-    (~15 min) il file sparisce dal bucket `drop-media`; senza deploy owner,
-    verifica la riga in `storage_cleanup_queue`. [R-09, RC-07]
+    (~15 min) il file sparisce dal bucket `drop-media` (la riga transita da
+    `storage_cleanup_queue`). [R-09, RC-07]
 9.2 **Ricordo eliminato** — Eliminando un Ricordo con file, idem (coda → rimozione).
 9.3 **Debito chat sanato** — Vocali chat scaduti / media azzerati dal GDPR
     finiscono nella stessa coda e vengono rimossi. [R-09]
 9.4 **Whitelist bucket** — (tecnico) La Edge rimuove solo dai bucket previsti
     (`drop-media`/`drop-audio`/`voice-messages`/`chat-media`). [DM6]
 
-## 10. GDPR (RC-08) — export richiede deploy owner della Edge
+## 10. GDPR (RC-08)
 10.1 **Export** — Da Impostazioni → esporta i miei dati. Atteso: l'export
      contiene `drops`, `drop_comments`, `drop_likes`, `drop_saves`. [RC-08,
      art. 15]
@@ -253,5 +252,5 @@
 - [ ] Anti-vanity verificato con occhi (nessun numero su drop altrui) E via API.
 - [ ] Effimerità: feed pulito, Ricordi vivi, interazioni cancellate, file in coda.
 - [ ] Drop del giorno: banner + notifica una-volta-al-giorno + solo attivi.
-- [ ] GDPR e pulizia storage verificati **dopo** il deploy owner delle Edge.
+- [ ] GDPR e pulizia storage verificati (Edge live dal 2026-07-12).
 - [ ] Nessun crash; ogni errore server mappato in italiano con azione suggerita.

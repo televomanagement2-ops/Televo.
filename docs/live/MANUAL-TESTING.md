@@ -14,9 +14,10 @@
 > - **Secrets LiveKit configurati** sul progetto Supabase (`LIVEKIT_API_KEY`,
 >   `LIVEKIT_API_SECRET`, `LIVEKIT_WS_URL`) e **URL del webhook** registrato
 >   nella dashboard LiveKit Cloud
->   (`https://<ref>.supabase.co/functions/v1/livekit-webhook`). Senza webhook
->   il lifecycle degrada a "più lento" (reti cron LM3): i test 8.4/8.5 lo
->   richiedono.
+>   (`https://<ref>.supabase.co/functions/v1/livekit-webhook`) — **fatti il
+>   2026-07-12** (M12 verificato end-to-end su device); ricontrollare solo se
+>   il progetto LiveKit è cambiato. Senza webhook il lifecycle degrada a "più
+>   lento" (reti cron LM3): i test 8.4/8.5 lo richiedono.
 > - `PERSPECTIVE_API_KEY` opzionale: senza, il test 5.6 degrada a "in coda di
 >   revisione umana" (comportamento comunque da verificare).
 > - **Accesso DB in sola lettura** via pooler (Deno + postgres.js, runbook del
@@ -87,7 +88,12 @@
 5.2 **Contatore solo host** — Atteso: A vede il numero di spettatori; B NON
     vede alcun contatore (anti-vanity). [§1.2, §13]
 5.3 **Commenti realtime** — B commenta. Atteso: il commento appare a entrambi
-    e sfuma dopo ~10s (fade SOLO visivo; la riga resta a DB). [§6]
+    in basso a sinistra; con flusso fitto ne restano **~7 visibili** e i più
+    vecchi ESCONO SCORRENDO (restano raggiungibili scrollando la colonna, fino
+    al cap 50 in memoria; la riga resta a DB). [§6, M13/P9]
+5.3b **Tastiera (Android fisico)** — B tocca "Commenta...". Atteso: la barra
+    input resta SOPRA la tastiera (si vede ciò che si scrive); tap fuori o
+    back hardware chiudono il composer, NON lo schermo live. [M13/P9]
 5.4 **Rate-limit** — B invia 6 commenti in <30s. Atteso: il 6° rifiutato con
     messaggio inline (5/30s). [§6]
 5.5 **Commenti off / pausa** — A avvia con commenti OFF: pillola assente/

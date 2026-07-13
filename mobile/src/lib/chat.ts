@@ -94,6 +94,7 @@ export async function fetchConversations(
       archivedAt: r.archived_at,
       pinnedAt: r.pinned_at,
       hiddenAt: r.hidden_at,
+      clearedAt: r.cleared_at,
     };
   });
 

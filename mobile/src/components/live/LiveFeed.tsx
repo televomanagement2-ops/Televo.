@@ -33,6 +33,7 @@ import { LiveFeedPage } from '@/components/live/LiveFeedPage';
 import { LiveStrip } from '@/components/live/LiveStrip';
 import { useLivesFeed } from '@/hooks/useLivesFeed';
 import { liveErrorMessage } from '@/lib/errors';
+import { prewarmLiveDetail } from '@/lib/live';
 import { statoSchermo } from '@/lib/query-ui';
 import { useOnline } from '@/lib/rete';
 import { ROUTES, dynamicRoutes } from '@/constants/routes';
@@ -83,6 +84,8 @@ export default function LiveFeed() {
   ]).current;
 
   const apri = useCallback((liveId: string) => {
+    // H2 (P11): il dettaglio si scalda in parallelo alla navigazione.
+    prewarmLiveDetail(liveId);
     router.push(dynamicRoutes.live(liveId));
   }, []);
 

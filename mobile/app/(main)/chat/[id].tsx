@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Audio } from 'expo-av';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -62,6 +62,7 @@ import {
 } from '@/hooks/useChat';
 import { usePeerPresence, presenceLabel } from '@/hooks/usePresenza';
 import { useChatStore } from '@/store/chatStore';
+import { conversationsPrefix } from '@/lib/chat-cache';
 import { giveMessageProp, previewText, reportMessage } from '@/lib/chat';
 import { dropKeys, fetchDropDetail } from '@/lib/drops';
 import { avvisa, conferma, mostraMenu, type VoceMenu } from '@/lib/dialoghi';
@@ -80,7 +81,7 @@ import { dynamicRoutes, ROUTES } from '@/constants/routes';
 import { MAX_FORWARD_SELECTION, type ReactionEmoji } from '@/constants/chat';
 import type { AuraTrait } from '@/constants/aura';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/constants/theme';
-import type { MessageRow, ReactionRow } from '@/types';
+import type { ConversationPreview, MessageRow, ReactionRow } from '@/types';
 
 type Item =
   | { kind: 'sep'; id: string; label: string }
@@ -116,9 +117,26 @@ export default function Chat() {
   const online = useOnline();
 
   const header = useConversationHeader(convId);
-  // clearedAt: undefined finché l'header non è pronto → query messaggi spenta
-  // (così "Cancella cronologia" filtra DENTRO la chat, senza flash dei vecchi).
-  const messagesQ = useMessages(convId, header.data ? header.data.myClearedAt ?? null : undefined);
+  const queryClient = useQueryClient();
+  // H1 (P11): niente waterfall header→messaggi. L'overview dell'hub porta già
+  // il cleared_at della MIA membership: finché l'header è pending si SEMINA da
+  // lì (quando l'header conferma lo stesso valore la chiave non cambia →
+  // nessun refetch doppio); senza seme (deep link a freddo) resta il gate di
+  // sempre, così "Cancella cronologia" filtra DENTRO la chat senza flash.
+  const clearedAtSeed = useMemo(() => {
+    if (!uid) return undefined;
+    for (const [, lista] of queryClient.getQueriesData<ConversationPreview[]>({
+      queryKey: conversationsPrefix(uid),
+    })) {
+      const conv = lista?.find((c) => c.id === convId);
+      if (conv) return conv.clearedAt ?? null;
+    }
+    return undefined;
+  }, [uid, queryClient, convId]);
+  const messagesQ = useMessages(
+    convId,
+    header.data ? header.data.myClearedAt ?? null : clearedAtSeed,
+  );
 
   // Stato d'ingresso SWR (P1): i messaggi (gated sull'header) sono il dato che
   // conta; header e messaggi entrano nella pausa offline e negli errori. Query

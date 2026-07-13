@@ -8,8 +8,8 @@
 // Drops (M6), Map (M7) e Live (M12) sono REALI; Aura e Sport mostrano
 // "Prossimamente" finché non vengono collegate. NB: niente "Reels" (rimosso).
 
-import { Suspense, lazy, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Suspense, lazy, useEffect, useState } from 'react';
+import { InteractionManager, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { HomeHeader } from '@/components/navigation/HomeHeader';
 import { CategoryBar } from '@/components/feed/CategoryBar';
@@ -17,6 +17,7 @@ import { FeedCard } from '@/components/feed/FeedCard';
 import { ComingSoon } from '@/components/feed/ComingSoon';
 import { DropFeed } from '@/components/drops/DropFeed';
 import { MapCanvas } from '@/components/mappa/MapCanvas';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { PannelloDevBuild } from '@/components/live/PannelloDevBuild';
 import { dopoBootstrapLiveKit, liveKitDisponibile } from '@/lib/livekit';
 import { FEED_ITEMS } from '@/constants/feedItems';
@@ -32,6 +33,19 @@ const LiveFeed = lazy(dopoBootstrapLiveKit(() => import('@/components/live/LiveF
 export default function Home() {
   const [category, setCategory] = useState<FeedCategoryKey>(DEFAULT_FEED_CATEGORY);
 
+  // H3 (M13/P11): pre-warm di bootstrap LiveKit + chunk del feed live DOPO il
+  // primo frame della Home (runAfterInteractions: mai in competizione col
+  // rendering di atterraggio). Il primo ingresso in Live/schermo live salta
+  // così il tratto "nero" chunk+bootstrap. L'ordine resta quello del vincolo 4
+  // di lib/livekit.ts: prima il polyfill, poi la valutazione del chunk.
+  useEffect(() => {
+    if (!liveKitDisponibile) return;
+    const task = InteractionManager.runAfterInteractions(() => {
+      void dopoBootstrapLiveKit(() => import('@/components/live/LiveFeed'))().catch(() => {});
+    });
+    return () => task.cancel();
+  }, []);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <HomeHeader />
@@ -45,7 +59,8 @@ export default function Home() {
         <MapCanvas />
       ) : category === 'live' ? (
         liveKitDisponibile ? (
-          <Suspense fallback={<View style={styles.flex} />}>
+          // Fallback = spinner (P11): mai un buco nero mentre arriva il chunk.
+          <Suspense fallback={<LoadingSpinner style={styles.flex} />}>
             <LiveFeed />
           </Suspense>
         ) : (

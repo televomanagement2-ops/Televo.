@@ -2,12 +2,34 @@
 
 > ✅ RISOLTO (2026-07-13, M13/P8): `lives_feed()` è **paginata keyset** (AH-2: due blocchi Top Friends → recenza, cap 20/pagina, cursore derivato dal payload senza esporre contatori — R-04 intatta) — migrazione `20260713150000` LIVE + load-more client. Il limite ~150 amici non esiste più. ⚠️ resta l'annotazione H9: `map_snapshot()` è ancora unbounded (stessa assunzione ≤150 amici, nessun sintomo — fuori scope del round M13).
 > ✅ RISOLTO (2026-07-13, M13/P7): `sync_live_viewer_count()` è ora **incrementale a delta** (tre trigger mirati con WHEN + riconciliazione anti-drift in `expire_content` v8) — migrazione `20260713140000` LIVE. Il collo di bottiglia da ricalcolo per-evento su `live_viewers` non esiste più.
+> ℹ️ Annotazioni H9 (M13/P11 — NESSUNA azione in questo round): `map_snapshot()` resta unbounded (assunzione ≤150 amici, nessun sintomo); `expo-updates` assente (nessun canale OTA: gli update passano da una build); `profiles.expo_push_token` è una colonna legacy MORTA (i token vivono in `devices`) — candidata a drop in una migrazione futura.
 
 > Documento di verità sullo stato di Televo. Backend **live**; frontend in
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P10 FATTO —
+> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P11 FATTO —
+> IL ROUND M13 (P0–P11) È COMPLETO lato sviluppo.** P11 = performance polish +
+> pulizia docs (§8): **H1** l'apertura chat non aspetta più l'header —
+> `chat_overview` ora mappa `cleared_at` in `ConversationPreview` e la chat lo
+> SEMINA dalla cache dell'hub (stessa chiave quando l'header conferma → zero
+> refetch doppio; `buster` cache → v2); **H2** prefetch su press (hub →
+> header+prima pagina messaggi via prefetchQuery/prefetchInfiniteQuery;
+> striscia/feed live → `prewarmLiveDetail` one-shot TTL 5s consumata da
+> `fetchLiveDetail`); **H3** pre-warm del bootstrap LiveKit + chunk LiveFeed
+> dopo il primo frame della Home (`InteractionManager.runAfterInteractions`,
+> ordine del vincolo 4: prima il polyfill poi il chunk) e fallback `Suspense`
+> → `LoadingSpinner` in home/live (mai più buco nero); **H6** prereq dei
+> MANUAL-TESTING live/media aggiornati (coda deploy 2026-07-12 svuotata,
+> secrets LiveKit fatti; +scenari P9: ~7 commenti a scorrimento, tastiera
+> Android) — **H4/H5/H9 solo annotazioni** (accorpamento query chat
+> server-side e upsertMessage per-pagina = ottimizzazioni future;
+> map_snapshot/expo-updates/expo_push_token in testa alla roadmap).
+> tsc+eslint verdi. ⚠️ Restano le azioni OWNER: deploy `send-push` v3 +
+> `login-alert` (serve `supabase login` Televo), nuova Dev Build EAS (MMKV +
+> icona notifica P2/P3), done-when on-device di P1–P3/P5–P6/P9–P10 e check
+> credenziali push EAS + Sessions (P0). Dettagli nella sezione M13).
+> Precedente: 2026-07-13 notte (**M13 — Hardening: P10 FATTO —
 > tab Notifiche REALE (AH-1: assorbe il residuo M8).** SOLO mobile, nessuna
 > migrazione (il backend era già pronto: RLS owner-only + grant per-colonna
 > `read_at`): `(tabs)/notifiche.tsx` via il ComingSoon → lista del ledger
@@ -1068,7 +1090,7 @@ pattern drop_comments per i commenti realtime. Nuove Edge: `live-kick`,
 - **Verifica:** criteri per milestone e Definition of Done in `docs/live/live.md`
   (§18–§20); QA aperte §22 (cap 8h, pausa 30 min, preview muta, soglie Aura).
 
-### 🔧 M13 — Hardening tecnico/UX ("app matura") — 📋 PIANIFICATO (2026-07-13)
+### 🔧 M13 — Hardening tecnico/UX ("app matura") — ✅ SVILUPPO COMPLETO (P0–P11, 2026-07-13; restano azioni owner)
 Spec+piano ufficiale: **`docs/audit/AUDIT-HARDENING.md`** (Rev. 1, punti
 P0–P11; decisioni PO AH-1..AH-5). Nato dall'audit manuale del PO su device
 (2026-07-13): porta **ciò che esiste** alla maturità Telegram/Instagram —
@@ -1250,8 +1272,33 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
   serialize. Tipi TS: +`aura_upgrade`/`aura_downgrade` (nel DB da Aura v3,
   mancavano nei tipi a mano). tsc+eslint verdi. ⏳ done-when on-device: deep
   link per tipo, badge coerenti, offline = ultima lista nota (P2)
-- **P11** performance (seed clearedAt, prefetch su press, pre-warm chunk
-  LiveKit, spinner nei fallback Suspense) + pulizia docs
+- ✅ **P11 FATTO** (2026-07-13) performance polish + pulizia docs (§8) —
+  **CHIUDE IL ROUND M13 lato sviluppo**. **H1** (waterfall apertura chat):
+  `fetchConversations` mappa `cleared_at` → `ConversationPreview.clearedAt`;
+  `chat/[id]` SEMINA `clearedAt` dalla cache overview finché l'header è
+  pending (stessa chiave quando l'header conferma lo stesso valore → nessun
+  refetch doppio; deep link a freddo = gate invariato, "Cancella cronologia"
+  resta senza flash); shape persistita cambiata → `CACHE_BUSTER` v2. **H2**
+  (prefetch su press): hub → `prefetchQuery` header + `prefetchInfiniteQuery`
+  prima pagina messaggi (chiave VERA grazie a H1); striscia/feed live →
+  `prewarmLiveDetail` in `lib/live.ts` (cache di modulo one-shot, TTL 5s,
+  consumata da `fetchLiveDetail` — live_detail NON vive in TanStack, è stato
+  locale di useLiveSession). **H3** (buco nero prima live): pre-warm
+  `InteractionManager.runAfterInteractions` dopo il mount della Home =
+  bootstrap LiveKit POI chunk LiveFeed (vincolo 4 rispettato: mai chunk prima
+  del polyfill), dietro guard `liveKitDisponibile`; fallback `Suspense` →
+  `LoadingSpinner` in `home.tsx` e `live/[id].tsx`. **H6** (docs stale):
+  prereq `docs/media/MANUAL-TESTING.md` (coda deploy owner svuotata il
+  2026-07-12: 9.x/10.x girano; la coda M13 non li blocca) e
+  `docs/live/MANUAL-TESTING.md` (secrets+webhook LiveKit FATTI il 2026-07-12;
+  scenario 5.3 riscritto per P9 + nuovo 5.3b tastiera Android). **H7** i due
+  warning di scala in testa erano già chiusi da P7/P8. **H4/H5/H9** solo
+  annotazioni: accorpamento receipts/reactions/senders/presence server-side e
+  `upsertMessage` che rimappa tutte le pagine = ottimizzazioni future (mitigati
+  da H1/H2); `map_snapshot` unbounded, `expo-updates` assente,
+  `profiles.expo_push_token` colonna morta → annotati in testa alla roadmap.
+  tsc+eslint verdi. ⏳ done-when on-device: apertura chat/live percettibilmente
+  più rapida (messaggi senza attendere l'header, prima live senza buco nero)
 
 > **✅ Esito diagnosi P0 (2026-07-13, via pooler read-only + CLI `functions
 > list`).** Verificati i 5 punti §12/P0 + contesto. Numeri reali sul remoto:

@@ -82,6 +82,9 @@ export interface ConversationPreview {
   pinnedAt: string | null;
   /** ISO se "eliminata" (DM soft-hide); riappare a nuovo messaggio. */
   hiddenAt: string | null;
+  /** cleared_at della MIA membership (H1/P11: seme per la query messaggi —
+   *  la chat parte senza attendere l'header). */
+  clearedAt: string | null;
 }
 
 /** Un messaggio salvato (bookmark), con la conversazione d'origine, per la vista S7. */

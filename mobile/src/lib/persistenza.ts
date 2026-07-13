@@ -151,7 +151,8 @@ const CHIAVE_CACHE = 'televo.query-cache';
 
 // Da bumpare a ogni cambio di shape dei dati persistiti (il restore con buster
 // diverso scarta la cache); la versione app fa da seconda componente.
-const CACHE_BUSTER = `v1:${Constants.expoConfig?.version ?? '0'}`;
+// v2: ConversationPreview porta clearedAt (P11/H1).
+const CACHE_BUSTER = `v2:${Constants.expoConfig?.version ?? '0'}`;
 
 const persister = mmkv
   ? createSyncStoragePersister({

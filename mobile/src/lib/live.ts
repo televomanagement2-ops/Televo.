@@ -133,9 +133,34 @@ export async function fetchLivesFeed(cursore?: CursoreLiveFeed): Promise<LivesFe
   );
 }
 
+// Pre-warm del dettaglio (M13/P11, H2): al press su striscia/feed si scalda
+// `live_detail` in parallelo alla navigazione, così il mount dello schermo
+// risparmia un round-trip. La voce scaldata vale UNA volta e pochi secondi;
+// le revalidation successive ripassano sempre dal server.
+let dettaglioCaldo: {
+  liveId: string;
+  promessa: Promise<LiveDetailRaw>;
+  natoA: number;
+} | null = null;
+const PREWARM_TTL_MS = 5_000;
+
+/** Scalda il dettaglio della live che si sta per aprire (fire-and-forget). */
+export function prewarmLiveDetail(liveId: string): void {
+  const promessa = callRpc<LiveDetailRaw>('live_detail', { p_live: liveId });
+  // Se nessuno la consuma non deve diventare un'unhandled rejection; chi la
+  // consuma riceve comunque l'errore originale (il catch non altera promessa).
+  promessa.catch(() => {});
+  dettaglioCaldo = { liveId, promessa, natoA: Date.now() };
+}
+
 /** Dettaglio + revalidation 60s: su errore `not_visible` (blocco, rimozione
  *  amicizia, kick a metà live) o stato `ended` il client si disconnette (§5). */
 export async function fetchLiveDetail(liveId: string): Promise<LiveDetailRaw> {
+  const caldo = dettaglioCaldo;
+  if (caldo && caldo.liveId === liveId && Date.now() - caldo.natoA < PREWARM_TTL_MS) {
+    dettaglioCaldo = null; // vale una volta sola
+    return caldo.promessa;
+  }
   return callRpc<LiveDetailRaw>('live_detail', { p_live: liveId });
 }
 

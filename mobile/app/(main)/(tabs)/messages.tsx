@@ -9,19 +9,23 @@ import { useCallback } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '@/components/ui/Button';
 import { VistaStato } from '@/components/ui/VistaStato';
 import { ConversazioneRow } from '@/components/chat/ConversazioneRow';
 import {
+  chatKeys,
   useConversationOrg,
   useConversations,
   useLeaveConversation,
   useMarkRead,
 } from '@/hooks/useChat';
+import { useAuth } from '@/hooks/useAuth';
 import { usePushBanner } from '@/hooks/useNotifiche';
 import { dynamicRoutes, ROUTES } from '@/constants/routes';
 import { avvisa, conferma, mostraMenu, type VoceMenu } from '@/lib/dialoghi';
+import { fetchConversationHeader, fetchMessagesPage, MESSAGES_PAGE } from '@/lib/chat';
 import { chatErrorMessage } from '@/lib/errors';
 import { statoSchermo } from '@/lib/query-ui';
 import { useOnline } from '@/lib/rete';
@@ -38,10 +42,35 @@ function muteUntilFromChoice(choice: '8h' | '1w' | 'always'): string {
 
 export default function Messages() {
   const router = useRouter();
+  const { session } = useAuth();
+  const uid = session?.user.id;
+  const queryClient = useQueryClient();
   const conversazioni = useConversations();
   const { refetch } = conversazioni;
   const online = useOnline();
   const stato = statoSchermo(conversazioni, online);
+
+  // H2 (P11): al press si scaldano header e prima pagina messaggi in parallelo
+  // alla navigazione (fire-and-forget; se già fresche in cache non rifetcha).
+  // Il cleared_at dell'overview (H1) rende la chiave messaggi quella VERA.
+  const apriChat = useCallback(
+    (conv: ConversationPreview) => {
+      if (uid) {
+        void queryClient.prefetchQuery({
+          queryKey: chatKeys.header(conv.id),
+          queryFn: () => fetchConversationHeader(conv.id, uid),
+        });
+        void queryClient.prefetchInfiniteQuery({
+          queryKey: [...chatKeys.messages(conv.id), conv.clearedAt ?? null] as const,
+          queryFn: ({ pageParam }) =>
+            fetchMessagesPage(conv.id, pageParam, MESSAGES_PAGE, conv.clearedAt ?? null),
+          initialPageParam: undefined as string | undefined,
+        });
+      }
+      router.push(dynamicRoutes.chat(conv.id));
+    },
+    [uid, queryClient, router],
+  );
   // Permesso push contestuale (CM6, RC-13): il banner compare al primo ingresso
   // nell'hub finché il permesso di sistema non è mai stato chiesto.
   const pushBanner = usePushBanner();
@@ -129,10 +158,7 @@ export default function Messages() {
           data={conversazioni.data}
           keyExtractor={(c) => c.id}
           renderItem={({ item }) => (
-            <ConversazioneRowContainer
-              conv={item}
-              onPress={() => router.push(dynamicRoutes.chat(item.id))}
-            />
+            <ConversazioneRowContainer conv={item} onPress={() => apriChat(item)} />
           )}
           ListHeaderComponent={
             <Pressable style={styles.nuovoGruppo} onPress={() => router.push(ROUTES.nuovoGruppo)}>

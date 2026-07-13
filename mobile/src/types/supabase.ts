@@ -42,7 +42,8 @@ export type NotificationType =
   | 'drop_comment' // M6: commento/reply su un mio drop
   | 'drop_prompt' // DM7: "tema del giorno" (§16.2, notifica broadcast dosata)
   | 'live_started' // M12: un amico ha avviato una live (default TUTTI, L-4)
-  | 'live_cohost_invite'; // M12: invito co-host
+  | 'live_cohost_invite' // M12: invito co-host
+  | 'new_login'; // M13/P6: nuovo accesso al tuo account (Edge login-alert)
 export type ModerationTarget =
   | 'user'
   | 'room'
@@ -1107,6 +1108,18 @@ export interface Database {
       // Notifiche / device
       register_device: { Args: { p_token: string; p_platform?: string }; Returns: Json };
       unregister_device: { Args: { p_token: string }; Returns: Json };
+      // M13/P6 — "nuovo accesso": eseguibile SOLO da service_role (la Edge
+      // login-alert); il client non la chiama mai direttamente. Dedup 1h per
+      // (utente, install_id); p_city = solo il nome della città (mai l'IP).
+      enqueue_login_alert: {
+        Args: {
+          p_user: string;
+          p_install_id: string;
+          p_device_label?: string | null;
+          p_city?: string | null;
+        };
+        Returns: Json;
+      };
       // Economia
       process_symbolic_tip: {
         Args: {

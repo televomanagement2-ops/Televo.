@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(552);
+select plan(559);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -1921,6 +1921,52 @@ select ok((select prosrc like '%net.http_post%' and prosrc like '%edge_base_url%
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'dispatch_push'),
   'dispatch_push: corpo v1 conservato (Vault + net.http_post — solo aggiunta)');
+
+-- =============================================================================
+-- M13 · Sessioni (P6) — notifica "nuovo accesso" (new_login + enqueue_login_alert)
+-- =============================================================================
+-- docs/audit/AUDIT-HARDENING.md §5.2. La notifica nasce SERVER-SIDE dalla Edge
+-- login-alert (JWT → IP → città best-effort; l'IP non viene mai persistito) e
+-- passa dal wrapper SECURITY DEFINER enqueue_login_alert, eseguibile SOLO da
+-- service_role. Le prove funzionali (dedup 1h, testo con/senza città) sono
+-- nello smoke via pooler.
+
+-- L'enum notification_type ha il valore 'new_login'.
+select ok((select exists (
+    select 1 from pg_enum e
+    join pg_type t on t.oid = e.enumtypid
+    join pg_namespace n on n.oid = t.typnamespace
+    where n.nspname = 'public' and t.typname = 'notification_type'
+      and e.enumlabel = 'new_login')),
+  'notification_type include new_login (P6)');
+
+-- La RPC esiste ed è definer con search_path svuotato.
+select has_function('public', 'enqueue_login_alert',
+  array['uuid', 'text', 'text', 'text'], 'enqueue_login_alert esiste');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'enqueue_login_alert'),
+  'enqueue_login_alert è security definer con search_path svuotato');
+
+-- Privilegi: SOLO service_role (la Edge login-alert); mai i ruoli client.
+select ok((select has_function_privilege('service_role',
+    'public.enqueue_login_alert(uuid, text, text, text)', 'EXECUTE')),
+  'enqueue_login_alert: service_role può eseguire');
+select ok((select not has_function_privilege('authenticated',
+      'public.enqueue_login_alert(uuid, text, text, text)', 'EXECUTE')
+    and not has_function_privilege('anon',
+      'public.enqueue_login_alert(uuid, text, text, text)', 'EXECUTE')),
+  'enqueue_login_alert: i ruoli client non possono eseguire');
+
+-- Dedup anti-spam 1h per install_id + accodamento sulla pipeline esistente.
+select ok((select prosrc like '%1 hour%' and prosrc like '%install_id%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'enqueue_login_alert'),
+  'enqueue_login_alert: dedup <1h sullo stesso install_id');
+select ok((select prosrc like '%enqueue_notification%' and prosrc like '%new_login%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'enqueue_login_alert'),
+  'enqueue_login_alert: accoda new_login via enqueue_notification (zero pezzi nuovi a valle)');
 
 select * from finish();
 rollback;

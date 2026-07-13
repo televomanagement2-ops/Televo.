@@ -145,7 +145,14 @@ function rottaPerNotifica(data: Record<string, unknown>): string | null {
   ) {
     return dynamicRoutes.live(data.live_id);
   }
-  // prop / achievement: la tab Notifiche arriva con M8.
+  // M13/P6: "nuovo accesso al tuo account" → tab Notifiche della bottombar
+  // (per ora placeholder: diventa la lista reale in P10; il deep link è già
+  // quello giusto). Il banner sul device che ha appena fatto login è soppresso
+  // a monte da installNotificationHandler.
+  if (data.type === 'new_login') {
+    return ROUTES.notifiche;
+  }
+  // prop / achievement: la tab Notifiche arriva con P10.
   return null;
 }
 

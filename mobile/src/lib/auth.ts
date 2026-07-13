@@ -10,9 +10,12 @@
 // si verifica il codice e poi si imposta la nuova password (updateUser). Tutto
 // gira in Expo Go. Google/Facebook usano l'OAuth di Supabase (da abilitare).
 
+import { Platform } from 'react-native';
 import { decode as decodeBase64 } from 'base64-arraybuffer';
+import * as Device from 'expo-device';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
+import { getInstallId } from '@/lib/install-id';
 import { supabase } from '@/lib/supabase';
 import type { ProfileRow } from '@/types';
 
@@ -67,6 +70,34 @@ export async function signInWithPassword(email: string, password: string): Promi
     password,
   });
   if (error) throw error;
+  // M13/P6: avvisa gli ALTRI device del nuovo accesso. Solo sul login
+  // esplicito (mai su restore di sessione, che non passa da qui).
+  segnalaNuovoAccesso();
+}
+
+// --- Notifica "nuovo accesso" (M13/P6, audit §5.2) -----------------------------
+// Dopo un login con password riuscito la Edge login-alert accoda la notifica
+// 'new_login' per gli altri device (città stimata dall'IP best-effort lato
+// server, AH-3; l'IP non viene mai persistito). FIRE-AND-FORGET: il login non
+// deve mai attendere né fallire per questo; il dedup 1h per install_id è
+// server-side. Il banner sul device che ha appena fatto login viene soppresso
+// da installNotificationHandler confrontando l'install_id del payload.
+
+function segnalaNuovoAccesso(): void {
+  void (async () => {
+    try {
+      const installId = await getInstallId();
+      const label =
+        Device.modelName ??
+        Device.deviceName ??
+        (Platform.OS === 'ios' ? 'iPhone' : 'Android');
+      await supabase.functions.invoke('login-alert', {
+        body: { install_id: installId, device_label: label },
+      });
+    } catch {
+      // Best-effort: meglio nessun avviso che un login degradato.
+    }
+  })();
 }
 
 /** Crea un NUOVO account con email + password (poi prosegue con l'onboarding). */

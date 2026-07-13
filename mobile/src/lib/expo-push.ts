@@ -12,6 +12,7 @@ import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import { getInstallId, installIdNoto } from '@/lib/install-id';
 import { callRpc } from '@/lib/rpc';
 import { colors } from '@/constants/theme';
 
@@ -51,6 +52,8 @@ export function setDropAperto(dropId: string | null): void {
 export function installNotificationHandler(): void {
   if (handlerInstallato) return;
   handlerInstallato = true;
+  // P6: scalda la cache dell'install id per il confronto sincrono qui sotto.
+  void getInstallId();
   Notifications.setNotificationHandler({
     handleNotification: async (notifica) => {
       const data = (notifica.request.content.data ?? {}) as Record<string, unknown>;
@@ -63,7 +66,13 @@ export function installNotificationHandler(): void {
         data.type === 'drop_comment' &&
         typeof data.drop_id === 'string' &&
         data.drop_id === dropAperto;
-      const sopprimi = stessaChat || stessoDrop;
+      // P6: il "nuovo accesso" serve agli ALTRI device — il device che ha
+      // appena fatto login non vede il banner del proprio accesso.
+      const mioAccesso =
+        data.type === 'new_login' &&
+        typeof data.install_id === 'string' &&
+        data.install_id === installIdNoto();
+      const sopprimi = stessaChat || stessoDrop || mioAccesso;
       return {
         shouldShowBanner: !sopprimi,
         shouldShowList: !sopprimi,

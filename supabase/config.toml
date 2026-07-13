@@ -462,6 +462,12 @@ verify_jwt = true
 [functions.gdpr-delete]
 verify_jwt = true
 
+# login-alert: notifica "nuovo accesso al tuo account" dopo un login con
+# password (M13/P6). Città stimata dall'IP best-effort (AH-3), IP mai
+# persistito; accodamento via RPC enqueue_login_alert (solo service_role).
+[functions.login-alert]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

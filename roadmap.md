@@ -7,7 +7,20 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P5 FATTO** —
+> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P6 FATTO** —
+> notifica "nuovo accesso" end-to-end: migrazioni 61–62 live (enum
+> `new_login` + RPC `enqueue_login_alert` solo-service_role con dedup 1h),
+> nuova Edge `login-alert` (città dall'IP best-effort ipwho.is, IP MAI
+> persistito, AH-3), mobile install-id + fire-and-forget post-login +
+> soppressione banner own-device + rotta push. pgTAP 559/559 + smoke 4/4 sul
+> remoto. ⚠️ **Coda deploy OWNER**: `supabase functions deploy login-alert` e
+> `send-push` (v3 di P4) — il deploy dà **403: la CLI è loggata su un ALTRO
+> account** (org "ecommerce/landingpage", non quella Televo): serve
+> `supabase login` con televo.management2@gmail.com, poi i due deploy. Il
+> sistema è coerente anche prima del deploy (R-4): la RPC esiste ma nessuno
+> la chiama; il client fallisce in silenzio (fire-and-forget). Dettagli nella
+> sezione M13. Prossimo P7).
+> Precedente: 2026-07-13 notte (**M13 — Hardening: P5 FATTO** —
 > sessioni multi-device (audit §5.1, sintomo 6). SOLO mobile, nessuna
 > migrazione: `signOut` passa a **scope 'local'** (il default 'global' di
 > supabase-js revoca i refresh token di TUTTI i device — era il "login su B
@@ -1106,8 +1119,20 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
   in `lib/auth.ts` (il 'global' di default revocava TUTTI i device) + flag
   `logoutVolontario` consumato in `useAuthListener` → SIGNED_OUT subìto =
   dialog "Sessione scaduta" (mai kick silenzioso), logout volontario invariato
-- **P6** notifica "nuovo accesso" (`new_login` + Edge `login-alert`, città da
-  IP best-effort AH-3, soppressione own-device) — deploy owner
+- ✅ **P6 FATTO** (2026-07-13) notifica "nuovo accesso" (AH-3): migrazioni
+  61–62 **LIVE** via CLI `db push` (`login_alert_enum` = notification_type +
+  'new_login'; `login_alert` = RPC `enqueue_login_alert` SECURITY DEFINER
+  eseguibile SOLO da service_role, dedup 1h per install_id, body "Da <device>
+  · vicino a <città>" con degradazione senza città). Nuova Edge
+  **`login-alert`** (verify_jwt=true, in config.toml): uid dal JWT, città dal
+  primo hop x-forwarded-for via ipwho.is (timeout 1200ms, catch totale,
+  **IP mai persistito**) → adminClient.rpc. Mobile: `lib/install-id.ts`
+  (UUID per-installazione in SecureStore), fire-and-forget post
+  `signInWithPassword` (mai su restore), soppressione banner own-device in
+  `installNotificationHandler`, rotta `new_login` → tab Notifiche, tipi TS.
+  pgTAP **559/559 sul remoto** (+7) + smoke funzionale pooler 4/4
+  (accodamento, dedup, no-city, invalid_input; rolled back). ⚠️ deploy Edge
+  `login-alert` in coda owner (vedi sotto)
 - **P7** `sync_live_viewer_count` incrementale a delta + riconciliazione in
   `expire_content` v8 (chiude il warning in testa)
 - **P8** `lives_feed` paginata keyset Top Friends + recenza (AH-2, R-04

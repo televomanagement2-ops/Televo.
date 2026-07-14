@@ -39,8 +39,7 @@ const THROTTLE_MS = 45_000;
  * nella shell autenticata (ChatRuntime via useChatRuntime).
  */
 export function usePresenceHeartbeat() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const lastTouch = useRef(0);
 
   useEffect(() => {

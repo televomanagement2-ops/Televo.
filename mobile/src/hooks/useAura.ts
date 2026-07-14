@@ -78,8 +78,7 @@ function parseBreakdown(raw: unknown): Partial<Record<AuraTrait, number>> {
  * tratto dominante dall'ultimo snapshot (fallback: tratto dedotto dal colore).
  */
 export function useMyAura() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   return useQuery({
     queryKey: uid ? auraKeys.mine(uid) : ['aura', 'anon'],
@@ -201,8 +200,7 @@ export interface RankInfo {
  * stanno davanti (rank = #score_maggiori + 1).
  */
 export function useMyRank(trait: AuraTrait) {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   return useQuery({
     queryKey: uid ? auraKeys.rank(uid, trait) : ['aura', 'anon', 'rank', trait],

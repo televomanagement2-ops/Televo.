@@ -43,8 +43,7 @@ const selectZones = (snap: MapSnapshotRaw): SafeZone[] => (snap.me.zones ?? []).
 
 export function useSafeZones() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   // Le zone vivono dentro lo snapshot (me.zones). `select` estrae solo quelle:
   // gli altri observer dello stesso key (useMappa) restano invariati.

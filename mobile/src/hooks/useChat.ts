@@ -71,8 +71,7 @@ export { chatKeys };
 // --- Lista conversazioni -----------------------------------------------------
 
 export function useConversations(view: ConversationView = 'active') {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useQuery({
     queryKey: uid ? chatKeys.conversations(uid, view) : ['chat', 'anon', 'conversations', view],
     enabled: !!uid,
@@ -98,8 +97,7 @@ export function useUnreadTotale(): number | null {
 // --- Messaggi salvati (S7) ---------------------------------------------------
 
 export function useSavedMessages() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useQuery({
     queryKey: uid ? chatKeys.saved(uid) : ['chat', 'anon', 'saved'],
     enabled: !!uid,
@@ -110,8 +108,7 @@ export function useSavedMessages() {
 // --- Header conversazione ----------------------------------------------------
 
 export function useConversationHeader(convId: string) {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useQuery({
     queryKey: chatKeys.header(convId),
     enabled: !!uid && !!convId,
@@ -175,8 +172,7 @@ export function useMessages(convId: string, clearedAt: string | null | undefined
  * coppia. `peerId` va passato solo per le DM (null per i gruppi).
  */
 export function useComposerDisabledReason(peerId: string | null) {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useQuery({
     queryKey: ['chat', 'composer-block', uid ?? 'anon', peerId ?? 'none'] as const,
     enabled: !!uid,
@@ -188,8 +184,7 @@ export function useComposerDisabledReason(peerId: string | null) {
 
 export function useSendMessage(convId: string) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useMutation({
     mutationFn: (input: { body: string; replyTo?: string | null }) =>
       sendTextMessage(convId, input.body, input.replyTo),
@@ -203,8 +198,7 @@ export function useSendMessage(convId: string) {
 /** Invio di un vocale: stesso pattern di useSendMessage (upsert + invalidate). */
 export function useSendAudioMessage(convId: string) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useMutation({
     mutationFn: (input: { audioPath: string; replyTo?: string | null }) =>
       sendAudioMessage(convId, input.audioPath, input.replyTo),
@@ -227,8 +221,7 @@ export function useDeleteMessage(convId: string) {
  *  onUpdate riconferma a tutti (badge "modificato" da edited_at). */
 export function useEditMessage(convId: string) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useMutation({
     mutationFn: (input: { id: string; body: string }) => editMessage(input.id, input.body),
     onSuccess: (msg) => {
@@ -248,8 +241,7 @@ export function useEditMessage(convId: string) {
  */
 export function useForwardMessages() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useMutation({
     mutationFn: async (input: { destConvId: string; messages: MessageRow[] }) => {
       if (!uid) throw new Error('not_authenticated');
@@ -275,8 +267,7 @@ export function useForwardMessages() {
  */
 export function useForwardDropRef() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useMutation({
     mutationFn: async (input: { destConvId: string; dropId: string }) => {
       const row = await forwardDropReference(input.destConvId, input.dropId);
@@ -308,8 +299,7 @@ export function useReactions(convId: string) {
  */
 export function useToggleReaction(convId: string) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useMutation({
     mutationFn: async (input: { messageId: string; emoji: ReactionEmoji; mine: string | null }) => {
       if (!uid) throw new Error('not_authenticated');
@@ -360,8 +350,7 @@ export function useSearchMessages(term: string, convId: string | null) {
 
 export function useMarkRead(convId: string) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useMutation({
     mutationFn: () => markConversationRead(convId),
     onSuccess: () => {
@@ -375,8 +364,7 @@ export function useMarkRead(convId: string) {
 /** Crea un gruppo/house e ritorna il conversation_id. Invalida la lista. */
 export function useCreateGroup() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useMutation({
     mutationFn: (input: { type: ConversationType; name: string | null; members: string[] }) =>
       createGroupConversation(input.type, input.name, input.members),
@@ -389,8 +377,7 @@ export function useCreateGroup() {
 /** Invalida header + senders della conversazione dopo un cambio di membri. */
 function useInvalidateMembers(convId: string) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return () => {
     void queryClient.invalidateQueries({ queryKey: chatKeys.header(convId) });
     void queryClient.invalidateQueries({ queryKey: chatKeys.senders(convId) });
@@ -417,8 +404,7 @@ export function useRemoveMember(convId: string) {
 /** Esci dalla conversazione (il chiamante gestisce la navigazione all'hub). */
 export function useLeaveConversation(convId: string) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useMutation({
     mutationFn: () => leaveConversation(convId),
     onSuccess: () => {
@@ -455,8 +441,7 @@ export function usePromoteAdmin(convId: string) {
  */
 export function useConversationOrg(convId: string) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const invalidate = () => {
     if (uid) void queryClient.invalidateQueries({ queryKey: conversationsPrefix(uid) });
     void queryClient.invalidateQueries({ queryKey: chatKeys.header(convId) });
@@ -484,8 +469,7 @@ export function useConversationOrg(convId: string) {
 /** Salva / rimuovi un messaggio dai salvati. Invalida la lista salvati. */
 export function useSaveMessage() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const invalidate = () => {
     if (uid) void queryClient.invalidateQueries({ queryKey: chatKeys.saved(uid) });
   };
@@ -512,8 +496,7 @@ const TYPING_THROTTLE_MS = 2_500;
  */
 export function useConversationRealtime(convId: string, onIncoming?: (m: MessageRow) => void) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   // Timer di scadenza per utente + invio agganciato al canale corrente via ref
@@ -601,8 +584,7 @@ export function useConversationRealtime(convId: string, onIncoming?: (m: Message
  */
 export function useOutbox(convId: string) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const tutti = useChatStore((s) => s.outbox);
   const discardStore = useChatStore((s) => s.outboxRemove);
 
@@ -659,8 +641,7 @@ export function useOutbox(convId: string) {
  */
 export function useChatRuntime() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   usePresenceHeartbeat();
 

@@ -39,8 +39,7 @@ const RECONCILE_MS = 180_000;
 
 export function useMappa() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
 
   // Snapshot: la porta di lettura. RN non ha "window focus" → gestiamo noi il

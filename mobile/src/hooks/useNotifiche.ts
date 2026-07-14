@@ -51,8 +51,7 @@ const PREPROMPT_RITARDO_MS = 2000;
  * "Attiva"); su 'denied' non si ri-chiede MAI (si rispetta la scelta).
  */
 export function usePushRuntime(): void {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const queryClient = useQueryClient();
   const unreadChat = useUnreadTotale();
   const unreadNotifiche = useNotificheUnread();

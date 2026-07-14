@@ -53,8 +53,7 @@ const MAX_TITOLO = 80;
 type Permessi = 'in_verifica' | 'ok' | 'negati';
 
 export default function LiveComposerSurface() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   const [permessi, setPermessi] = useState<Permessi>('in_verifica');
   const [track, setTrack] = useState<LocalVideoTrack | null>(null);

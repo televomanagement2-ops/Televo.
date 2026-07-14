@@ -56,8 +56,7 @@ export const mappaKeys = {
 // useConsensoContatti: `consents` è owner-only via RLS, grant select già live.
 // -----------------------------------------------------------------------------
 export function useConsensoPosizione() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   return useQuery({
     queryKey: uid ? mappaKeys.consenso(uid) : ['mappa', 'anon', 'consenso-posizione'],
@@ -81,8 +80,7 @@ export function useConsensoPosizione() {
 // -----------------------------------------------------------------------------
 export function useCondivisionePosizione() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const update = useUpdateProfile();
 
   const sessione = useMapStore((s) => s.sessione);
@@ -176,8 +174,7 @@ export function useCondivisionePosizione() {
 // Runtime del watcher — montato UNA volta in ChatRuntime.
 // -----------------------------------------------------------------------------
 export function useCondivisionePosizioneRuntime() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   const sessione = useMapStore((s) => s.sessione);
   const permesso = useMapStore((s) => s.permesso);

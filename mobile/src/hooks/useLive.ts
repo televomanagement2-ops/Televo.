@@ -139,8 +139,7 @@ export function useLiveSession(
   liveId: string | undefined,
   opzioni?: OpzioniLiveSession,
 ): LiveSessionApi {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   const [fase, setFase] = useState<FaseLive>('connessione');
   const [errore, setErrore] = useState<string | null>(null);
@@ -635,8 +634,7 @@ export function useLiveComments(
   attivi: boolean,
   identitaNote: IdentitaNota[],
 ) {
-  const { session, profile } = useAuth();
-  const uid = session?.user.id;
+  const { uid, profile } = useAuth();
 
   const [commenti, setCommenti] = useState<CommentoLive[]>([]);
   // Cache identità autore (userId → nome/avatar), seminata con host e profilo

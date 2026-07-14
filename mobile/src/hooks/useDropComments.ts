@@ -112,8 +112,7 @@ export function useDropCommentsRealtime(dropId: string) {
  */
 export function useCommentOutbox(dropId: string) {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const all = useDropStore((s) => s.commentOutbox);
   const items = useMemo(() => all.filter((o) => o.dropId === dropId), [all, dropId]);
 

@@ -68,8 +68,7 @@ async function fetchNotifichePage(cursore?: CursoreNotifiche): Promise<NotificaR
 
 /** Lista paginata del ledger (senza le 'message'), più recente in testa. */
 export function useNotificheTab() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useInfiniteQuery({
     queryKey: uid ? notificheKeys.list(uid) : ['notifiche', 'anon', 'list'],
     enabled: !!uid,
@@ -101,8 +100,7 @@ async function fetchNotificheUnread(): Promise<number> {
  * semantica di useUnreadTotale).
  */
 export function useNotificheUnread(): number | null {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const query = useQuery({
     queryKey: uid ? notificheKeys.unread(uid) : ['notifiche', 'anon', 'unread'],
     enabled: !!uid,
@@ -118,8 +116,7 @@ export function useNotificheUnread(): number | null {
  * appena viste restano visibili fino al prossimo refetch, niente flash (§7).
  */
 export function useSegnaTutteLette() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {

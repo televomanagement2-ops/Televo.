@@ -42,8 +42,7 @@ const RECONCILE_MS = 60_000;
 
 export function useLivesFeed() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
 
   // Snapshot: la porta di lettura (PRIMA pagina — P8: il refetch resetta la

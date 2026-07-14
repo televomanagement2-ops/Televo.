@@ -28,8 +28,7 @@ export interface ContattoArricchito extends ContattoMatch {
 
 /** Il consenso 'contacts_sync' è attivo? (granted e non revocato) */
 export function useConsensoContatti() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   return useQuery({
     queryKey: uid ? contattiKeys.consenso(uid) : ['contatti', 'anon', 'consenso'],
@@ -51,8 +50,7 @@ export function useConsensoContatti() {
 /** Attiva il consenso (record_consent) e invalida lo stato. */
 export function useAttivaContatti() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   return useMutation({
     mutationFn: () => recordConsent('contacts_sync', true),
@@ -65,8 +63,7 @@ export function useAttivaContatti() {
 /** Sincronizza la rubrica (mio hash → email → hash → match) e cache i risultati. */
 export function useSincronizzaContatti() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { session, uid } = useAuth();
 
   return useMutation({
     mutationFn: () => sincronizzaContatti(session?.user.email ?? null),
@@ -78,8 +75,7 @@ export function useSincronizzaContatti() {
 
 /** I match dell'ultima sincronizzazione (riempiti dalla mutation). */
 export function useMatchContatti() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   return useQuery<ContattoMatch[]>({
     queryKey: uid ? contattiKeys.match(uid) : ['contatti', 'anon', 'match'],
@@ -93,8 +89,7 @@ export function useMatchContatti() {
 /** Revoca atomica: hash cancellati + consenso revocato → si riparte da zero. */
 export function useRevocaContatti() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   return useMutation({
     mutationFn: () => revocaContatti(),

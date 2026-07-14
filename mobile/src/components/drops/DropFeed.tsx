@@ -52,8 +52,7 @@ type ListItem =
   | { kind: 'outbox'; item: DropOutboxItem };
 
 export function DropFeed() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const queryClient = useQueryClient();
 
   const feed = useDropsFeed();

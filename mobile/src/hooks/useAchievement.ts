@@ -32,8 +32,7 @@ export const AURA_LEVEL_KEYS = ['aura_100', 'aura_250', 'aura_500'] as const;
  * round di query: catalogo (pubblico) + i propri user_achievements, poi merge.
  */
 export function useMyAchievements() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   return useQuery({
     queryKey: uid ? achievementKeys.mine(uid) : ['achievements', 'anon'],

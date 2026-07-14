@@ -46,8 +46,7 @@ export type Relazione =
 
 /** Gli amici accettati (card profilo), per la schermata Amici. */
 export function useAmici() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   return useQuery({
     queryKey: uid ? amiciKeys.list(uid) : ['amici', 'anon', 'list'],
@@ -77,8 +76,7 @@ export interface RichiestePendenti {
 
 /** Richieste di amicizia pendenti (in entrata e in uscita). */
 export function usePendingRequests() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   return useQuery({
     queryKey: uid ? amiciKeys.pending(uid) : ['amici', 'anon', 'pending'],
@@ -113,8 +111,7 @@ export function usePendingRequests() {
 
 /** Gli utenti che ho bloccato io (lista "Utenti bloccati" in S10, CM8). */
 export function useBloccati() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   return useQuery({
     queryKey: uid ? amiciKeys.bloccati(uid) : ['amici', 'anon', 'bloccati'],
@@ -125,8 +122,7 @@ export function useBloccati() {
 
 /** Ricerca utenti per username/nome (min 2 caratteri). */
 export function useSearchUsers(term: string) {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const enabled = !!uid && term.trim().length >= 2;
 
   return useQuery({
@@ -138,8 +134,7 @@ export function useSearchUsers(term: string) {
 
 /** La relazione con un utente specifico (per il profilo altrui). */
 export function useRelazione(otherId: string | undefined) {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const enabled = !!uid && !!otherId && otherId !== uid;
 
   return useQuery({
@@ -175,8 +170,7 @@ export function useRelazione(otherId: string | undefined) {
 /** Invalida tutte le viste amicizia dopo una mutazione. */
 function useInvalidateAmici() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return async () => {
     if (!uid) return;
     await Promise.all([

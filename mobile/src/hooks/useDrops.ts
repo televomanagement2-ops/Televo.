@@ -55,8 +55,7 @@ import type { DropReactionTrait, SavedDropRow } from '@/types/supabase';
  */
 export function useDropOutbox() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   const pubblicaTesto = useCallback(
     (body: string): string | null => {
@@ -109,8 +108,7 @@ export function useDropOutbox() {
  */
 export function useDropOutboxCards() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   const items = useDropStore((s) => s.outbox);
 
   const retry = useCallback(
@@ -134,8 +132,7 @@ export function useDropOutboxCards() {
  * filtra nulla. Il chiamante appiattisce le pagine e ci antepone l'outbox.
  */
 export function useDropsFeed() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useInfiniteQuery({
     queryKey: dropKeys.feed(),
     enabled: !!uid,
@@ -227,10 +224,10 @@ export function useDeleteDrop() {
 /** I miei segnalibri (S4). La RLS limita alle mie righe; il drop embeddato alla
  *  visibilità corrente (scaduto/ex-amico → null, "non disponibile" nella UI). */
 export function useSavedDrops() {
-  const { session } = useAuth();
+  const { uid } = useAuth();
   return useQuery({
     queryKey: dropKeys.saved(),
-    enabled: !!session?.user.id,
+    enabled: !!uid,
     queryFn: () => fetchSavedDrops(),
     staleTime: 30_000,
   });
@@ -242,10 +239,10 @@ export function useSavedDrops() {
  * al giorno). È solo uno spunto: nessuna azione, nessun contatore.
  */
 export function useDropPromptOfDay() {
-  const { session } = useAuth();
+  const { uid } = useAuth();
   return useQuery({
     queryKey: dropKeys.prompt(),
-    enabled: !!session?.user.id,
+    enabled: !!uid,
     queryFn: () => fetchDropPromptToday(),
     staleTime: 60 * 60_000, // 1h: il tema è stabile nell'arco della giornata
   });
@@ -279,8 +276,7 @@ export function useRemoveSave() {
 
 /** I miei Ricordi (S5): i miei drop scaduti, keyset desc, retention illimitata. */
 export function useMemories() {
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useInfiniteQuery({
     queryKey: dropKeys.memories(),
     enabled: !!uid,
@@ -305,8 +301,7 @@ export function useMemories() {
  */
 export function useDropRuntime() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
 
   useEffect(() => {
     if (!uid) return;

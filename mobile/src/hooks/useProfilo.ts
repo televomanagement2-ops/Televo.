@@ -26,8 +26,7 @@ export const profiloKeys = {
 
 /** Il profilo dell'utente loggato (parte dalla cache di authStore, poi rivalida). */
 export function useMyProfile() {
-  const { session, profile } = useAuth();
-  const uid = session?.user.id;
+  const { uid, profile } = useAuth();
 
   return useQuery({
     queryKey: uid ? profiloKeys.me(uid) : ['profilo', 'anon'],
@@ -53,8 +52,7 @@ export interface ProfilePatch {
 /** Aggiorna il profilo proprio; invalida le query e ricarica authStore. */
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
-  const { session, refreshProfile } = useAuth();
-  const uid = session?.user.id;
+  const { uid, refreshProfile } = useAuth();
 
   return useMutation({
     mutationFn: async (patch: ProfilePatch): Promise<ProfileRow> => {
@@ -169,8 +167,7 @@ export function useTopFriends(userId: string | undefined) {
 /** Invalidatore manuale (es. dopo upload avatar) del profilo proprio. */
 export function useInvalidateProfilo() {
   const queryClient = useQueryClient();
-  const { session } = useAuth();
-  const uid = session?.user.id;
+  const { uid } = useAuth();
   return useCallback(() => {
     if (uid) queryClient.invalidateQueries({ queryKey: profiloKeys.me(uid) });
   }, [queryClient, uid]);

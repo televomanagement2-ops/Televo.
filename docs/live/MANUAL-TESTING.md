@@ -235,3 +235,35 @@
      aereo, riapertura. Atteso: Home con hub e chat scorribili dalla cache
      (MAI la login page); tolto l'aereo la sessione si rinnova da sola senza
      kick. Logout volontario → login page e cache pulita.
+
+## 14. M14 round 2 — le cause vere (F1–F5; richiede la build post-round)
+
+14.1 **Co-Live: promozione a publisher (F1)** — A in diretta, B spettatore;
+     A invita B, B accetta. Atteso su B entro ~2s: mic/camera/flip COMPAIONO
+     (token publisher), pillola occhi e "Lascia il Co-Live" presenti, griglia
+     sopra/sotto col PROPRIO video. Atteso su A e sullo spettatore C: griglia
+     sopra/sotto entro ~2s. Controprova a DB (pooler): la riga `live_hosts`
+     del co-host resta `active` (mai `left` dopo pochi ms — era la race del
+     webhook, ora ignorata dal trigger nei primi 60s dal join).
+14.2 **Co-Live: uscita volontaria nei primi 60s (F1)** — subito dopo 14.1,
+     B tocca "Lascia il Co-Live" → conferma. Atteso: B torna spettatore (la
+     scelta dell'utente NON è bloccata dalla guardia); griglia singola per
+     tutti entro ~2s.
+14.3 **Preview feed con video (F2, ripete 13.2)** — atteso: VIDEO nella
+     preview (zOrder media-overlay + pager senza clipping); badge LIVE e piede
+     testo restano sopra il video; se la preview fallisse, il riquadro ora è
+     SCURO (sfondo finestra #04030a), mai bianco.
+14.4 **Pre-prompt notifiche (F3)** — installazione con permesso di sistema
+     ancora da decidere (Android 13+): entro ~2s dall'ingresso in Home appare
+     "Attiva le notifiche". Con "Non ora": non riappare prima di 24h. Con
+     permesso attivato A MANO dalle impostazioni di sistema: al ritorno
+     nell'app il token si registra subito (riga fresca in `devices`), senza
+     riavvio.
+14.5 **Badge campanella (F5)** — B in Home; A invia una richiesta di amicizia
+     (o commenta un drop di B). Atteso: il badge numerico sulla campanella
+     spawna ENTRO POCHI SECONDI senza toccare nulla (canale realtime, non la
+     push); aprendo la tab si azzera (mark-all).
+14.6 **Push end-to-end (dopo azione owner FCM)** — messaggio da A con B in
+     background. Atteso: push su B con suono e deep-link; `push_health.
+     send_push_last_run` con `ticket_errors: 0`; se le credenziali mancano
+     ancora, `send_push_ticket_errors` ora la racconta (InvalidCredentials).

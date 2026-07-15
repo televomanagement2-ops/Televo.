@@ -917,9 +917,54 @@ cold start = Home con cache, mai la login.
    altri fix M14 non la richiedono).
 4. Smoke finale 2 device: checklist PO + `docs/live/MANUAL-TESTING.md` §13.
 
+# APPENDICE — M14 round 2: le cause vere dietro i 3 ❌ residui (2026-07-15)
+
+Seconda verifica on-device del PO (Huawei + Redmi, build EAS preview
+`1a1c22c2` con `google-services.json` a bordo): 3 test su 5 ancora ❌
+nonostante V0–V7, più un quarto sintomo (badge campanella mai spawnate).
+Round **M14R2 (F0–F6)**: questa volta la diagnosi è su DATI REALI — ledger di
+produzione via pooler, invio diretto alle API push di Expo, evidenza degli
+screenshot del PO — non su lettura di codice. Tutte e quattro le cause sono
+risultate DIVERSE dalle ipotesi del round precedente.
+
+| Sintomo ❌ | Causa VERIFICATA | Fix |
+|---|---|---|
+| Push: token ora registrati, ma non arriva NULLA | **Ticket Expo = `InvalidCredentials`** ("Unable to retrieve the FCM server key for the recipient's app"), riprodotto con invio diretto ai 2 token reali di `devices`: per `app.televo.mobile` Expo non trova NESSUNA credenziale FCM sul progetto `4087043e` — la chiave o non è stata caricata dove serve, o è di un altro progetto Firebase. Aggravante di codice: la Edge v3 ignorava i ticket `error` ≠ DeviceNotRegistered → run "sent" con zero consegne, `receipts_checked` sempre 0, errore invisibile | **F4** (19f18b5): send-push v4 — errori di ticket in `push_health.send_push_ticket_errors` + `ticket_errors` nella run (deploy = owner). La CONSEGNA si sblocca solo con l'azione owner 1 |
+| Pre-prompt del permesso mai mostrato | Il flag "una volta nella vita" su SecureStore sopravvive a upgrade/backup Android e si brucia anche quando il dialogo non viene mai visto (slot-dialogo a rimpiazzo) → sui device del PO il prompt non riappariva in NESSUNA build. (Su Android ≤12 il permesso è concesso di default: lì un prompt non esiste proprio) | **F3** (613e3d0): timestamp + cadenza — il pre-prompt si ripropone (≥24h) finché il permesso resta `undetermined`; su `denied` mai. In più il token si registra al ritorno in FOREGROUND: attivazione manuale dalle impostazioni → operativa senza riavvio |
+| Preview feed ANCORA bianca | La traccia ERA sottoscritta (V4 aveva risolto quella metà: overlay renderizzato, niente fallback avatar): il guasto restante è il **compositing** — la SurfaceView dentro la FlatList paginata su Fabric non apre il buco e si vede lo sfondo FINESTRA, bianco perché `app.json` non aveva un `backgroundColor` root | **F2** (e2de7a0): `zOrder={1}` (media overlay, l'opzione 1 del piano mai provata) + `removeClippedSubviews={false}` sul pager + sfondo finestra `#04030a` (quest'ultimo attivo dalla prossima build) |
+| Co-Live: split-screen MAI, co-host senza controlli publisher | **Race accettazione→webhook**, letta nel ledger di produzione: in OGNI prova la riga `live_hosts` passava ad `active` e ~350ms dopo a `left`. L'accettazione impone la riconnessione (token publisher nuovo): il `participant_left` del VECCHIO collegamento da spettatore retrocedeva il co-host appena attivato, e il mint successivo nasceva `canPublish=false` (screenshot: pillola occhi + "Lascia il Co-Live" presenti, mic/camera assenti) | **F1** (b441998): trigger `live_cohost_reconnect_guard` (migrazione 67 LIVE) — nei primi 60s dal join la transizione active→left appartiene solo alla scelta dell'utente (`live_leave`); la riconciliazione di servizio è ignorata. Smoke 3 scenari rolled-back + pgTAP 574 |
+| Badge campanella mai spawnate (bottombar) | La query unread della tab Notifiche non aveva segnali di refresh: l'unica invalidazione era la push ricevuta in foreground — che non arriva (vedi sopra). Il badge chat invece ha il canale realtime | **F5** (ae201a7): `notifications` nella publication `supabase_realtime` (migrazione 68 LIVE, RLS owner-only come filtro) + canale `notifiche:hub` in usePushRuntime che invalida badge+lista a ogni INSERT. pgTAP 575 |
+
+**Azioni OWNER (la consegna push si sblocca SOLO qui):**
+1. **expo.dev → progetto `4087043e-…` → Credentials → Android →
+   `app.televo.mobile` → "FCM V1 service account key"** (sezione Push
+   Notifications / Service Credentials): caricare la chiave JSON generata dal
+   progetto Firebase **`televo-project`** (lo stesso del
+   `google-services.json` in build: project number 738493204828) da Project
+   settings → Service accounts → Generate new private key. ⚠️ NON è lo slot
+   "Google Service Account Key" usato per EAS Submit: serve proprio quello
+   etichettato FCM V1. L'errore attuale dice che Expo non trova alcuna chiave
+   per l'app — se una chiave risulta già caricata lì, va rifatta dal progetto
+   Firebase giusto.
+2. Verifica IMMEDIATA senza device (2 min): rieseguire l'invio di prova alle
+   API Expo (script del round: `scratchpad/test-push.ts`, o Expo push tool
+   sul dashboard) → il ticket deve tornare `ok` e la receipt `ok`; poi una
+   push reale deve suonare sul device.
+3. Deploy Edge **`send-push` v4** (F4). Il CLI su questo account risponde 403:
+   serve `supabase login` con l'account owner.
+4. **Nuova build EAS preview** per portare a bordo i fix mobile F2/F3/F5 (il
+   bundle JS è impacchettato nel binario della preview) + lo sfondo finestra
+   scuro. Comando invariato: `npx eas-cli build --platform android --profile
+   preview --non-interactive` da `mobile/`.
+5. Riesecuzione checklist PO sui 2 device: split-screen entro ~2s
+   dall'accettazione (e controlli publisher visibili al co-host), preview feed
+   col video, pre-prompt notifiche al primo avvio (o entro 24h), badge
+   campanella che spawna a notifica ricevuta, push end-to-end.
+
 ## Revision history
 
 | Rev | Data | Cosa |
 |-----|------|------|
 | 1 | 2026-07-13 | Prima stesura: mappatura completa (audit PO + 3 indagini + review) e piano P0–P11. Decisioni AH-1..AH-5 validate dal PO in sessione. |
 | 2 | 2026-07-15 | Appendice M14 — fix dell'audit di verifica (V0–V7): diagnosi push conclusiva (root cause google-services.json), boot offline, dispatch_push v4, keep-awake, preview feed, Co-Live griglia immediata + dashboard quasi-host (VF-1..VF-3). |
+| 3 | 2026-07-15 | Appendice M14 round 2 (F0–F6) — diagnosi su dati reali dei 3 ❌ residui + badge campanella: FCM `InvalidCredentials` al ticket (owner), race accettazione→webhook Co-Live (migrazione 67), compositing SurfaceView nel pager (zOrder/clipping), pre-prompt a cadenza, ledger notifiche realtime (migrazione 68). |

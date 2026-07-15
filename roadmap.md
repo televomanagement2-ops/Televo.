@@ -8,7 +8,36 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-15 (**M14 — Fix dell'audit di verifica:
+> **Ultimo aggiornamento:** 2026-07-15 sera (**M14 round 2 (F0–F6) — le cause
+> VERE dietro i 3 ❌ residui della seconda verifica on-device, più il badge
+> campanella. ROUND COMPLETO lato sviluppo.** Diagnosi su dati reali (ledger
+> di produzione via pooler + invio diretto alle API Expo + screenshot PO):
+> tutte le cause erano DIVERSE dalle ipotesi del round 1. **F1 Co-Live**
+> (b441998): race accettazione→webhook — a ogni accept la riga `live_hosts`
+> passava ad `active` e ~350ms dopo a `left` (il `participant_left` del
+> VECCHIO collegamento da spettatore), quindi il mint nuovo nasceva senza
+> canPublish → trigger `live_cohost_reconnect_guard` (migrazione **67 LIVE**):
+> nei primi 60s dal join active→left è solo scelta dell'utente; smoke 3
+> scenari + pgTAP 574. **F2 preview bianca** (e2de7a0): la traccia ERA
+> sottoscritta — è compositing SurfaceView nel pager su Fabric → `zOrder=1` +
+> `removeClippedSubviews=false` + sfondo finestra scuro in app.json (il bianco
+> ERA lo sfondo finestra). **F3 push client** (613e3d0): pre-prompt a cadenza
+> ≥24h finché `undetermined` (il flag once-per-lifetime sopravviveva a
+> upgrade/backup e si bruciava senza essere visto) + registrazione token al
+> ritorno in foreground. **F4 send-push v4** (19f18b5): i ticket `error` di
+> Expo diventano visibili (`push_health.send_push_ticket_errors`) — il test
+> reale sui 2 token di `devices` ha dato **`InvalidCredentials`: su expo.dev
+> manca/è sbagliata la FCM V1 key per `app.televo.mobile`** (progetto Firebase
+> `televo-project`) → la consegna è SOLO configurazione owner. **F5 badge
+> campanella** (ae201a7): `notifications` nella publication realtime
+> (migrazione **68 LIVE**, pgTAP **575/575**) + canale `notifiche:hub` che
+> invalida badge+lista. **F0** (8caa788): cablaggio build EAS
+> google-services.json committato. ⚠️ Azioni OWNER: FCM V1 key su expo.dev
+> (slot Push Notifications, progetto Firebase televo-project!) + deploy
+> `send-push` v4 + **nuova build EAS preview** (i fix mobile viaggiano nel
+> bundle del binario) + checklist `MANUAL-TESTING.md` live **§14**. Dettagli:
+> appendice "M14 round 2" di AUDIT-HARDENING.md).
+> Precedente: 2026-07-15 (**M14 — Fix dell'audit di verifica:
 > ROUND COMPLETO lato sviluppo (V0–V7).** Il PO ha rieseguito la checklist
 > post-M13 su device: 5 ❌ residui, tutti mappati e chiusi (appendice M14 in
 > `docs/audit/AUDIT-HARDENING.md`). **V0** diagnosi push via pooler — la

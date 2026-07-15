@@ -216,6 +216,20 @@ export function useLiveSession(
     }
   }, [liveId, chiudiRoom]);
 
+  // M14/V5: la griglia dei riquadri nasce da detail.hosts — quando un co-host
+  // accetta, RIENTRA nella stanza con token publisher, e l'attesa del giro dei
+  // 60s teneva lo split-screen invisibile per tutti. Al churn dei partecipanti
+  // la verità si richiede SUBITO, debounced (un burst di join/leave collassa
+  // in una sola chiamata).
+  const revalidaDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const revalidaPresto = useCallback(() => {
+    if (revalidaDebounceRef.current) clearTimeout(revalidaDebounceRef.current);
+    revalidaDebounceRef.current = setTimeout(() => {
+      revalidaDebounceRef.current = null;
+      void revalida();
+    }, 400);
+  }, [revalida]);
+
   // --- Connessione (mount, ricarica, riconnessione post-accettazione) -----------
 
   const connetti = useCallback(
@@ -253,8 +267,14 @@ export function useLiveSession(
           if (audioSilenziatoRef.current) applicaVolumeLocale(room, true);
         };
         room
-          .on(RoomEvent.ParticipantConnected, suPartecipanti)
-          .on(RoomEvent.ParticipantDisconnected, bump)
+          .on(RoomEvent.ParticipantConnected, () => {
+            suPartecipanti();
+            revalidaPresto(); // V5: il nuovo arrivato può essere un co-host
+          })
+          .on(RoomEvent.ParticipantDisconnected, () => {
+            bump();
+            revalidaPresto(); // V5: chi esce può essere un co-host (griglia giù)
+          })
           .on(RoomEvent.TrackSubscribed, suPartecipanti)
           .on(RoomEvent.TrackUnsubscribed, bump)
           .on(RoomEvent.TrackMuted, bump)
@@ -310,7 +330,7 @@ export function useLiveSession(
         await chiudiRoom();
       }
     },
-    [liveId, uid, applicaVolumeLocale, chiudiRoom, revalida],
+    [liveId, uid, applicaVolumeLocale, chiudiRoom, revalida, revalidaPresto],
   );
 
   useEffect(() => {
@@ -318,6 +338,10 @@ export function useLiveSession(
     void connetti(segnale);
     return () => {
       segnale.annullato = true;
+      if (revalidaDebounceRef.current) {
+        clearTimeout(revalidaDebounceRef.current);
+        revalidaDebounceRef.current = null;
+      }
       void chiudiRoom();
       void AudioSession.stopAudioSession();
     };

@@ -211,7 +211,12 @@ export const LiveFeedPage = memo(function LiveFeedPage({ live, attiva, altezza, 
   return (
     <Pressable style={[styles.pagina, { height: altezza }]} onPress={apri}>
       {trackRef ? (
-        <VideoTrack trackRef={trackRef} style={styles.video} objectFit="cover" />
+        // M14R2/F2: zOrder=1 (media overlay). Dentro il pager la SurfaceView di
+        // default compone DIETRO la finestra via hole-punching, e su Android/
+        // Fabric il buco può non aprirsi → riquadro cieco color finestra pur
+        // con la traccia sottoscritta. Il layer media-overlay resta sotto le
+        // view RN (badge e piede visibili) ma sopra le altre surface.
+        <VideoTrack trackRef={trackRef} style={styles.video} objectFit="cover" zOrder={1} />
       ) : (
         <View style={styles.senzaVideo}>
           <Avatar uri={live.host.avatarUrl} name={nomeHost} size={84} />

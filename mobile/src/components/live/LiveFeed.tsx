@@ -148,6 +148,11 @@ export default function LiveFeed() {
             renderItem={renderItem}
             pagingEnabled
             showsVerticalScrollIndicator={false}
+            // M14R2/F2: su Android il clipping della VirtualizedList stacca le
+            // subview native fuori viewport — con una SurfaceView (la preview
+            // video) il distacco rompe il compositing. Le pagine restano
+            // comunque poche (windowSize=3) e UNA sola è connessa (R-3).
+            removeClippedSubviews={false}
             getItemLayout={(_, index) => ({ length: altezza, offset: altezza * index, index })}
             viewabilityConfigCallbackPairs={coppieViewability}
             // Una live nuova che arriva via delta viene PREPESA: mantieni ferma

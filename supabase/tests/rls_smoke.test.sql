@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(569);
+select plan(574);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -1840,6 +1840,30 @@ select ok((select prosrc like '%v_is_host or v_is_cohost%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'live_detail'),
   'live_detail v2: blocco contatori consegnato a host principale O co-host attivo (V6)');
+
+-- M14 round 2 (F1): guardia di riconnessione del co-host. L'accettazione di un
+-- invito comporta una riconnessione LiveKit (token nuovo con canPublish): la
+-- riconciliazione di servizio del VECCHIO collegamento non deve retrocedere il
+-- co-host appena attivato — nei primi 60s dal join la transizione active→left
+-- appartiene solo alla scelta dell'utente (auth.uid presente). La prova
+-- funzionale (update di servizio ignorato / update utente eseguito) è nello
+-- smoke via pooler.
+select has_function('public', 'live_cohost_reconnect_guard', '{}'::name[],
+  'live_cohost_reconnect_guard() esiste');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_cohost_reconnect_guard'),
+  'live_cohost_reconnect_guard è security definer con search_path svuotato');
+select has_trigger('public', 'live_hosts', 'live_cohost_reconnect_guard_trg',
+  'live_hosts ha la guardia di riconnessione del co-host (before update)');
+select ok((select prosrc like '%60 seconds%' and prosrc like '%auth.uid()%'
+             and prosrc like '%joined_at%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_cohost_reconnect_guard'),
+  'guardia co-host: finestra 60s dal join riservata alla scelta dell''utente');
+select ok((select not has_function_privilege('authenticated', 'public.live_cohost_reconnect_guard()', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.live_cohost_reconnect_guard()', 'EXECUTE')),
+  'live_cohost_reconnect_guard: nessuna esecuzione diretta dai ruoli client');
 
 -- =============================================================================
 -- M12 · Live (LM3) — ciclo di vita v7 (reti di sicurezza cron + GDPR)

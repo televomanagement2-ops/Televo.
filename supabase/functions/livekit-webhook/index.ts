@@ -99,6 +99,11 @@ Deno.serve(async (req) => {
       .is("kicked_at", null);
 
     // Co-host ATTIVO caduto → 'left' (come live_leave); può essere re-invitato.
+    // Nei primi 60s dal join questo UPDATE è un no-op: il trigger
+    // live_cohost_reconnect_guard (migrazione 20260715150000) protegge la
+    // riconnessione post-accettazione — il vecchio collegamento da spettatore
+    // muore mentre il client riminta il token publisher, e questo evento NON
+    // deve retrocedere il co-host appena attivato (M14 round 2, F1).
     await db
       .from("live_hosts")
       .update({ status: "left", left_at: nowIso })

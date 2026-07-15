@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(567);
+select plan(568);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -1951,6 +1951,13 @@ select ok((select prosrc like '%net.http_post%' and prosrc like '%edge_base_url%
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'dispatch_push'),
   'dispatch_push: corpo v1 conservato (Vault + net.http_post — solo aggiunta)');
+
+-- dispatch_push (M14/V2): il gate d'ingresso guarda ANCHE push_tickets — la
+-- Edge parte pure a coda notifiche vuota finché ci sono receipt da riconciliare.
+select ok((select prosrc like '%push_tickets%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'dispatch_push'),
+  'dispatch_push: gate esteso ai ticket receipt pendenti (V2)');
 
 -- =============================================================================
 -- M13 · Sessioni (P6) — notifica "nuovo accesso" (new_login + enqueue_login_alert)

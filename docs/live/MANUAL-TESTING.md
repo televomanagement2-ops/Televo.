@@ -85,8 +85,9 @@
 ## 5. Schermo spettatore + commenti (LM6)
 5.1 **Join** — B entra dal feed (o dalla notifica). Atteso: video full-screen
     di A; DB: riga `live_viewers` (il mint È il join). [§5, §15.3]
-5.2 **Contatore solo host** — Atteso: A vede il numero di spettatori; B NON
-    vede alcun contatore (anti-vanity). [§1.2, §13]
+5.2 **Contatore agli host attivi** — Atteso: A vede il numero di spettatori;
+    B (spettatore) NON vede alcun contatore (anti-vanity). Il co-host ATTIVO
+    invece lo vede (dashboard quasi-host, M14/V6 — scenario 6.7). [§1.2, §13]
 5.3 **Commenti realtime** — B commenta. Atteso: il commento appare a entrambi
     in basso a sinistra; con flusso fitto ne restano **~7 visibili** e i più
     vecchi ESCONO SCORRENDO (restano raggiungibili scrollando la colonna, fino
@@ -113,19 +114,31 @@
 ## 6. Co-Live (LM6) — richiede D (amico di B, non di A)
 6.1 **Invito** — A invita B come co-host (dal composer o in diretta). Atteso:
     push `live_cohost_invite` a B + banner "Accetta invito". [§4]
-6.2 **Accettazione** — B accetta. Atteso: B pubblica video (griglia 2), token
-    con `canPublish`; DB: `live_hosts` di B → `active`. [§4]
+6.2 **Accettazione** — B accetta. Atteso: B pubblica video (griglia 2: uno
+    sopra, uno sotto; 3-4 host = quadranti), token con `canPublish`; DB:
+    `live_hosts` di B → `active`. Lo split-screen compare **entro ~2s** su A,
+    su B E su ogni spettatore (revalida sul churn dei partecipanti, M14/V5 —
+    non serve aspettare il giro dei 60s). [§4, M14/V5]
 6.3 **Unione dei pubblici (L-3)** — Con B co-host attivo, D apre la Home.
     Atteso: D VEDE la live (amico di B) e può entrare; prima dell'accept non
     la vedeva. [§4, L-3]
 6.4 **Uscita/rimozione** — B esce (o A lo rimuove). Atteso: B torna
-    spettatore/fuori; D perde la visibilità al più tardi alla revalidation
-    (~60s). [§4, §12.4]
+    spettatore/fuori; la griglia si restringe entro ~2s per tutti (M14/V5);
+    D perde la visibilità al più tardi alla revalidation (~60s). [§4, §12.4]
 6.5 **Tetto 4** — A prova a invitare un 4° co-host oltre il tetto. Atteso:
     errore `cohost_cap_reached`. [§4]
 6.6 **Eccezione top_friends** — A avvia con visibilità "Top Friends" e B
     co-host. Atteso: il pubblico resta la SOLA cerchia di A (D non vede
     nulla anche se amico di B). [§4]
+6.7 **Dashboard quasi-host (M14/V6)** — B co-host attivo. Atteso: B vede la
+    pillola occhi col numero di spettatori (NON tappabile: la lista col kick
+    resta ad A); B NON ha pausa/fine/inviti/kick. Lo spettatore continua a
+    non vedere alcun contatore (R-04). [VF-1]
+6.8 **Lascia il Co-Live (M14/V6)** — B tocca il controllo exit → conferma.
+    Atteso: B torna spettatore SENZA uscire dalla live (riconnessione
+    automatica, video suo giù dalla griglia entro ~2s per tutti); DB:
+    `live_hosts` di B → `left`; A può reinvitarlo (re-invito su riga `left`).
+    [VF-1, §4]
 
 ## 7. Kick & blocco a metà live (LM0/LM4)
 7.1 **Kick** — A apre la lista spettatori → rimuove B. Atteso: media tagliato
@@ -204,5 +217,21 @@
      token → 403, commenti invisibili (RLS), nessun delta realtime. [§13, §20]
 12.2 **Il bloccato/kickato non rientra** — dopo 7.x: mint → 403 anche a nuova
      apertura dell'app. [§13, §20]
-12.3 **Contatori mai esposti** — `live_detail` a B senza `viewer_count`
-     (verifica via pooler con JWT simulato). [§1.2, §13]
+12.3 **Contatori mai agli spettatori** — `live_detail` a B SPETTATORE senza
+     `viewer_count` (verifica via pooler con JWT simulato); da co-host ATTIVO
+     i contatori arrivano (M14/V6, smoke 3 ruoli già eseguito via pooler).
+     [§1.2, §13, VF-1]
+
+## 13. M14 — Fix dell'audit di verifica (V3/V4 + boot offline)
+13.1 **Keep-awake (M14/V3)** — A in diretta, B spettatore, entrambi senza
+     toccare lo schermo oltre il timeout di sistema (2 min). Atteso: lo
+     schermo NON si spegne per nessuno dei due; vale anche nel composer
+     camera. Usciti dalla live, il timeout normale riprende.
+13.2 **Preview feed con video (M14/V4, Android fisico)** — B apre Home →
+     sezione Live con A in diretta. Atteso: la preview mostra il VIDEO di A
+     (niente riquadro bianco); swipe tra più live → nessun riquadro bianco;
+     in dashboard LiveKit resta UNA sola connessione preview per volta (R-3).
+13.3 **Boot offline (M14/V1)** — app CHIUSA da >1h (token scaduto), modalità
+     aereo, riapertura. Atteso: Home con hub e chat scorribili dalla cache
+     (MAI la login page); tolto l'aereo la sessione si rinnova da sola senza
+     kick. Logout volontario → login page e cache pulita.

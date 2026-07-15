@@ -8,7 +8,34 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-13 notte (**M13 — Hardening: P11 FATTO —
+> **Ultimo aggiornamento:** 2026-07-15 (**M14 — Fix dell'audit di verifica:
+> ROUND COMPLETO lato sviluppo (V0–V7).** Il PO ha rieseguito la checklist
+> post-M13 su device: 5 ❌ residui, tutti mappati e chiusi (appendice M14 in
+> `docs/audit/AUDIT-HARDENING.md`). **V0** diagnosi push via pooler — la
+> pipeline è SANA (receipt `ok`, Vault/cron/Edge v3/login-alert operativi): la
+> root cause è che i device di test NON sono in `devices` perché manca
+> **`google-services.json`** → `getExpoPushTokenAsync` lancia su Android e la
+> registrazione tace → `sent: 0`. FIX = CONFIGURAZIONE OWNER (Firebase +
+> google-services.json in mobile/ + `android.googleServicesFile` in app.json +
+> FCM v1 key su expo.dev + **nuova Dev Build**). **V1** boot offline: mai più
+> login page in aereo — `identita-locale.ts` (uid+onboarded su MMKV), shell in
+> modalità offline con cache P2, SIGNED_OUT offline ignorato (non distrugge
+> più la cache), hook dati su `useAuth().uid` (83ed1da). **V2** dispatch_push
+> v4: gate esteso a `push_tickets` → la fase receipt della Edge gira anche a
+> backlog vuoto (fine ticket eterni) — migrazione **65 LIVE**, pgTAP 568
+> (99620e1). **V3** keep-awake in LiveSurface+composer: lo schermo non si
+> spegne in diretta (0227bc8). **V4** preview feed: Room senza
+> adaptiveStream/autoSubscribe + iscrizione esplicita alla sola camera host →
+> fix riquadro bianco Android + meno banda (e512a18). **V5** Co-Live: revalida
+> debounced sul churn → split-screen entro ~2s (griglia 2=sopra/sotto,
+> 3-4=quadranti, già esistente) (eddd256). **V6** dashboard quasi-host VF-1:
+> `live_detail` v2 (contatori a host E co-host attivo, MAI spettatori — R-04;
+> migrazione **66 LIVE**, pgTAP **569/569**, smoke 3 ruoli) + contatore e
+> "Lascia il Co-Live" nel client (f356066). tsc+eslint verdi a ogni punto.
+> ⚠️ Azioni OWNER: Firebase/google-services.json + FCM v1 su EAS + nuova Dev
+> Build (SOLO per la push) + on-device `MANUAL-TESTING.md` live §13 e checklist
+> PO. Dettagli: appendice M14 di AUDIT-HARDENING.md).
+> Precedente: 2026-07-13 notte (**M13 — Hardening: P11 FATTO —
 > IL ROUND M13 (P0–P11) È COMPLETO lato sviluppo.** P11 = performance polish +
 > pulizia docs (§8): **H1** l'apertura chat non aspetta più l'header —
 > `chat_overview` ora mappa `cleared_at` in `ConversationPreview` e la chat lo

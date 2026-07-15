@@ -886,8 +886,40 @@ diagn  rete   cache  push   push   sess.  new    viewer feed   live   tab     po
    `tsc --noEmit` + `eslint` puliti a ogni punto; `roadmap.md` e i
    MANUAL-TESTING toccati aggiornati; un commit per punto.
 
+---
+
+# APPENDICE — M14: Fix dell'audit di verifica (2026-07-15)
+
+Il PO ha rieseguito la checklist dell'app dopo M13 (Dev Build Android reale):
+la maggior parte dei test è verde, con 5 problemi residui ❌. Round correttivo
+**M14 (V0–V7)**, decisioni PO: **VF-1** co-host = dashboard quasi-host
+(contatore + "Lascia il Co-Live"; fine/kick/inviti solo host principale) ·
+**VF-2** preview bianca = solo area video, solo Android · **VF-3** offline
+cold start = Home con cache, mai la login.
+
+| Sintomo ❌ | Causa verificata | Fix |
+|---|---|---|
+| Cold start offline → login page | Token scaduto + zero rete: `getSession()` → null (falso logout: il refresh token in SecureStore è vivo); `SIGNED_OUT` spurio distruggeva anche la cache MMKV | **V1** (83ed1da): `identita-locale.ts` {uid, onboarded} → shell in modalità offline (uid per le queryKey → cache P2 a schermo); SIGNED_OUT offline ignorato; hook su `useAuth().uid` |
+| Push: non arriva NULLA | **`devices` quasi vuota**: manca `google-services.json` (+`android.googleServicesFile`) → su Android `getExpoPushTokenAsync` lancia e il catch tace → token MAI registrato → Edge marca `sent: 0`. Diagnosi V0 via pooler: receipt dei 2 ticket = `ok` (niente InvalidCredentials); Vault/cron/Edge v3/login-alert tutti operativi | **V0** (diagnosi) + **azioni owner** sotto. Il fix è di CONFIGURAZIONE, non di codice |
+| `push_tickets` si riempie e resta | Starvation: `dispatch_push` partiva solo con notifiche da spingere → la fase receipt della Edge non girava mai a backlog vuoto | **V2** (99620e1): dispatch_push v4, gate esteso a `push_tickets` — migrazione 65 LIVE, pgTAP 568 |
+| Schermo in standby in live | `expo-keep-awake` mai usato | **V3** (0227bc8): `useKeepAwake()` in LiveSurface (tutti i ruoli) + composer; dipendenza esplicita, nessuna build nuova |
+| Preview live bianca (Android) | adaptiveStream lega il download del video alla visibilità dell'elemento; nel pager il rilevamento può non scattare → stream in pausa → SurfaceView senza frame | **V4** (e512a18): Room preview senza adaptiveStream/autoSubscribe + iscrizione esplicita alla SOLA camera dell'host (banda ↓, R-3 intatta) |
+| Co-Live "non fa niente" | La griglia (che ESISTE: 2 = sopra/sotto, 3-4 = quadranti) dipende da `detail.hosts`, aggiornata solo dalla revalidation 60s | **V5** (eddd256): revalida debounced 400ms su ParticipantConnected/Disconnected → split-screen entro ~2s. **V6** (f356066): dashboard quasi-host (VF-1) — `live_detail` v2 (contatori a host O co-host attivo, R-04 intatta: mai agli spettatori; migrazione 66 LIVE, pgTAP 569, smoke 3 ruoli) + pillola occhi al co-host + "Lascia il Co-Live" (RPC `live_leave` → riconnessione da spettatore) |
+
+**Azioni OWNER (la root cause push è qui):**
+1. Firebase console → progetto con app Android package `app.televo.mobile` →
+   scaricare `google-services.json` in `mobile/` + aggiungere
+   `"googleServicesFile": "./google-services.json"` in `app.json` → android.
+2. expo.dev → progetto `4087043e-…` → Credentials → caricare la **FCM v1
+   service account key** dello stesso progetto Firebase (APNs quando si
+   testerà iOS).
+3. **Nuova Dev Build EAS** (google-services.json entra col prebuild — gli
+   altri fix M14 non la richiedono).
+4. Smoke finale 2 device: checklist PO + `docs/live/MANUAL-TESTING.md` §13.
+
 ## Revision history
 
 | Rev | Data | Cosa |
 |-----|------|------|
 | 1 | 2026-07-13 | Prima stesura: mappatura completa (audit PO + 3 indagini + review) e piano P0–P11. Decisioni AH-1..AH-5 validate dal PO in sessione. |
+| 2 | 2026-07-15 | Appendice M14 — fix dell'audit di verifica (V0–V7): diagnosi push conclusiva (root cause google-services.json), boot offline, dispatch_push v4, keep-awake, preview feed, Co-Live griglia immediata + dashboard quasi-host (VF-1..VF-3). |

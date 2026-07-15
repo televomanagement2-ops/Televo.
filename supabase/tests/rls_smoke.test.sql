@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(574);
+select plan(575);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -130,6 +130,11 @@ select has_column('public', 'wallets', 'balance_real',           'wallets.balanc
 select has_column('public', 'vibe_transactions', 'idempotency_key', 'vibe_transactions.idempotency_key esiste');
 -- Notifiche: marcatura invio push.
 select has_column('public', 'notifications', 'pushed_at', 'notifications.pushed_at esiste');
+-- M14R2/F5: il ledger notifiche è realtime (postgres_changes + RLS owner-only)
+-- — il badge della campanella si aggiorna live, senza dipendere dalle push.
+select ok((select exists (select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'notifications')),
+  'notifications in pubblicazione supabase_realtime (badge campanella live)');
 -- Drops: niente posizione, ma audience friends/school.
 select has_column('public', 'drops', 'audience', 'drops.audience esiste');
 -- Anti-spam props: indice unico (donatore,destinatario,tratto,contenuto).

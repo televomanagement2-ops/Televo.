@@ -34,6 +34,7 @@ import {
   type PermessoPush,
 } from '@/lib/expo-push';
 import { conferma } from '@/lib/dialoghi';
+import { subscribeNotificheAll } from '@/lib/notifiche-realtime';
 import { rottaPerNotifica } from '@/lib/notifiche-rotte';
 
 // --- Runtime push (handler + token + badge + pre-prompt P3) ---------------------
@@ -145,6 +146,16 @@ export function usePushRuntime(): void {
       void queryClient.invalidateQueries({ queryKey: notificheKeys.radice(uid) });
     });
     return () => sub.remove();
+  }, [uid, queryClient]);
+
+  // M14R2/F5: il canale realtime del ledger è la fonte PRIMARIA del badge
+  // campanella — vive anche senza permesso notifiche e senza push consegnate
+  // (il listener push qui sopra resta come cintura per il payload di sistema).
+  useEffect(() => {
+    if (!uid) return;
+    return subscribeNotificheAll(uid, () => {
+      void queryClient.invalidateQueries({ queryKey: notificheKeys.radice(uid) });
+    });
   }, [uid, queryClient]);
 
   // Badge icona app = unread chat + unread notifiche (§7/§8.5). null = fonte

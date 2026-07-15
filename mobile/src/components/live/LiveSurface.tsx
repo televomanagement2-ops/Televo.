@@ -219,16 +219,30 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
 
   return (
     <View style={styles.root}>
-      {/* Video: 1 pieno, 2 in colonna, 3–4 a griglia (Co-Live, §4). */}
+      {/* Video: 1 pieno, 2 in colonna, 3–4 a griglia (Co-Live, §4). La cella
+          di un host senza traccia (camera spenta) NON sparisce: placeholder
+          camera-off al suo posto, la griglia resta stabile (M14R3). La key
+          sulla trackSid ricrea la surface nativa a ogni traccia nuova. */}
       <View style={styles.griglia}>
         {api.riquadri.map((r) => (
           <View key={r.userId} style={cellaStyle(api.riquadri.length)}>
-            <VideoTrack
-              trackRef={r.trackRef}
-              style={styles.video}
-              objectFit="cover"
-              mirror={r.locale && api.fotocameraFrontale}
-            />
+            {r.trackRef ? (
+              <VideoTrack
+                key={r.trackRef.publication.trackSid}
+                trackRef={r.trackRef}
+                style={styles.video}
+                objectFit="cover"
+                mirror={r.locale && api.fotocameraFrontale}
+              />
+            ) : (
+              <View style={styles.cellaSpenta}>
+                <Avatar uri={r.avatarUrl} name={r.nome} size={api.riquadri.length <= 1 ? 84 : 56} />
+                <View style={styles.cellaSpentaRiga}>
+                  <Ionicons name="videocam-off-outline" size={15} color={colors.muted} />
+                  <Text style={styles.cellaSpentaTesto}>Camera spenta</Text>
+                </View>
+              </View>
+            )}
           </View>
         ))}
         {api.riquadri.length === 0 ? (
@@ -459,6 +473,17 @@ const styles = StyleSheet.create({
   cellaMezza: { width: '100%', height: '50%' },
   cellaQuarto: { width: '50%', height: '50%' },
   video: { flex: 1 },
+  cellaSpenta: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.base,
+  },
+  cellaSpentaRiga: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cellaSpentaTesto: { color: colors.muted, fontSize: fontSize.xs, fontFamily: fontFamily.medium },
   senzaVideo: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',

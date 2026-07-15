@@ -8,7 +8,29 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-15 sera (**M14 round 2 (F0–F6) — le cause
+> **Ultimo aggiornamento:** 2026-07-15 notte (**M14 round 3 (F7–F9) — terza
+> verifica on-device del PO, solo bundle JS (nessuna migrazione).** **F7
+> permesso notifiche**: root cause CONFERMATA nel sorgente nativo di
+> expo-notifications — su Android 13+ `getPermissionsAsync()` non risponde MAI
+> `undetermined` (lo status viene schiacciato a `denied` finché
+> `areNotificationsEnabled()` è false, cioè sempre prima del primo consenso) →
+> il pre-prompt non poteva apparire su NESSUNA installazione fresca; fix:
+> `statoPermessoPush()` deriva il tri-stato da `granted`/`canAskAgain` (+
+> `richiediPermessoERegistra` su `granted`, + guardia slot-dialogo: un
+> rimpiazzo non brucia più il giro da 24h). Il "paradosso" push-senza-prompt
+> NON è un bug: dove l'OS dà il permesso da sé (Android ≤12, sideload) il
+> token si registra in silenzio, per design. **F8 Co-Live camera-off**: il
+> co-host che spegneva la camera SPARIVA dalla griglia (riquadri filtrati
+> sulla traccia attiva) → ora un riquadro per OGNI host attivo, cella
+> placeholder camera-off (avatar + videocam-off), griglia stabile. **F9
+> preview feed**: ancora bianca con zOrder=1 → via zOrder (configurazione
+> identica allo schermo live che sugli stessi device renderizza), `key` su
+> `trackSid` (surface nativa ricreata a ogni traccia, anti-recycling Fabric),
+> retry su TrackSubscriptionFailed. tsc+eslint verdi. ⚠️ Azioni OWNER: nuova
+> build EAS preview + `MANUAL-TESTING.md` live **§15** (+ coda round 2:
+> deploy `send-push` v4). Dettagli: appendice "M14 round 3" di
+> AUDIT-HARDENING.md).
+> Precedente: 2026-07-15 sera (**M14 round 2 (F0–F6) — le cause
 > VERE dietro i 3 ❌ residui della seconda verifica on-device, più il badge
 > campanella. ROUND COMPLETO lato sviluppo.** Diagnosi su dati reali (ledger
 > di produzione via pooler + invio diretto alle API Expo + screenshot PO):

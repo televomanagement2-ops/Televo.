@@ -267,3 +267,30 @@
      background. Atteso: push su B con suono e deep-link; `push_health.
      send_push_last_run` con `ticket_errors: 0`; se le credenziali mancano
      ancora, `send_push_ticket_errors` ora la racconta (InvalidCredentials).
+
+## 15. M14 round 3 — permesso notifiche, camera-off, preview (F7–F9; build post-round-3)
+
+15.1 **Pre-prompt notifiche su installazione fresca (F7, ripete 14.4)** —
+     Android 13+, app appena installata (o dati app cancellati), permesso
+     di sistema mai deciso. Atteso: entro ~2s dall'ingresso in Home appare
+     "Attiva le notifiche"; "Attiva" → dialog DI SISTEMA → consenso → riga
+     fresca in `devices`. Con "Non ora": si ripropone dopo ≥24h. Un rifiuto
+     al dialog DI SISTEMA: il pre-prompt può riproporsi (Android concede un
+     secondo dialog); dopo il secondo rifiuto, mai più (denied definitivo).
+     ⚠️ Su Android ≤12 il runtime permission NON esiste: il prompt non deve
+     apparire e le push sono attive da subito — è il comportamento corretto,
+     non un bug (era il "paradosso" del round 3).
+15.2 **Co-Live: camera off = cella che resta (F8)** — A in diretta, B co-host
+     attivo (griglia sopra/sotto), C spettatore. B tocca il toggle camera.
+     Atteso su TUTTI (A, B, C): la cella di B resta al suo posto con avatar +
+     icona videocam-off + "Camera spenta" — la griglia NON si ricompone e il
+     video di A non passa a schermo intero. B riattiva la camera → il video
+     torna nella stessa cella. Stesso comportamento se è A a spegnere la
+     camera (cella di A placeholder, video di B al suo posto).
+15.3 **Preview feed con video (F9, ripete 14.3 senza zOrder)** — B apre Home
+     → sezione Live con A in diretta. Atteso: VIDEO nella preview; swipe tra
+     più live → nessun riquadro bianco (surface ricreata per traccia); badge
+     e piede sempre visibili. Se il riquadro fosse ANCORA bianco, test
+     discriminante: A apre il composer `/live/nuovo` → vede il proprio video
+     locale? Sì → il guasto è nel compositing del solo pager (riportare
+     device e build); No → guasto camera/WebRTC del device.

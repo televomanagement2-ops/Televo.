@@ -140,6 +140,13 @@ export const LiveFeedPage = memo(function LiveFeedPage({ live, attiva, altezza, 
             .on(RoomEvent.TrackUnsubscribed, bump)
             .on(RoomEvent.TrackMuted, bump)
             .on(RoomEvent.TrackUnmuted, bump)
+            // M14R3: iscrizione rifiutata o persa lato SFU (transiente) — un
+            // retry gentile, poi il fallback statico resta onesto.
+            .on(RoomEvent.TrackSubscriptionFailed, () => {
+              setTimeout(() => {
+                if (!segnale.annullato) iscriviCameraHost();
+              }, 1000);
+            })
             .on(RoomEvent.Disconnected, () => {
               if (disconnessioneVolutaRef.current) return;
               // Fine stanza, kick o rete: la preview non insiste — il feed
@@ -211,12 +218,19 @@ export const LiveFeedPage = memo(function LiveFeedPage({ live, attiva, altezza, 
   return (
     <Pressable style={[styles.pagina, { height: altezza }]} onPress={apri}>
       {trackRef ? (
-        // M14R2/F2: zOrder=1 (media overlay). Dentro il pager la SurfaceView di
-        // default compone DIETRO la finestra via hole-punching, e su Android/
-        // Fabric il buco può non aprirsi → riquadro cieco color finestra pur
-        // con la traccia sottoscritta. Il layer media-overlay resta sotto le
-        // view RN (badge e piede visibili) ma sopra le altre surface.
-        <VideoTrack trackRef={trackRef} style={styles.video} objectFit="cover" zOrder={1} />
+        // M14R3: NIENTE zOrder — stessa configurazione dello schermo live, che
+        // sugli stessi device renderizza. Il tentativo media-overlay di M14R2/F2
+        // (zOrder=1) lasciava comunque il riquadro cieco su alcuni compositor
+        // OEM: il vero prerequisito è il pager senza clipping (LiveFeed,
+        // removeClippedSubviews=false). La KEY sulla trackSid ricrea la
+        // SurfaceView nativa a ogni traccia nuova: una surface riciclata da
+        // Fabric può restare vuota anche con la traccia sottoscritta.
+        <VideoTrack
+          key={trackRef.publication.trackSid}
+          trackRef={trackRef}
+          style={styles.video}
+          objectFit="cover"
+        />
       ) : (
         <View style={styles.senzaVideo}>
           <Avatar uri={live.host.avatarUrl} name={nomeHost} size={84} />

@@ -68,11 +68,17 @@ export interface TrackRefLive {
   source: Track.Source;
 }
 
-/** Un riquadro video da renderizzare (host principale primo, poi co-host). */
+/** Un riquadro della griglia (host principale primo, poi co-host attivi).
+ *  M14R3: `trackRef` null = host in stanza ma senza video (camera spenta, o
+ *  publish non ancora arrivato) → la cella resta al suo posto col placeholder
+ *  camera-off. Prima l'host senza traccia veniva SCARTATO e la griglia si
+ *  ricomponeva: un co-host che spegneva la camera spariva dallo schermo. */
 export interface RiquadroVideo {
   userId: string;
   locale: boolean;
-  trackRef: TrackRefLive;
+  nome: string;
+  avatarUrl: string | null;
+  trackRef: TrackRefLive | null;
 }
 
 export interface OpzioniLiveSession {
@@ -100,7 +106,9 @@ export interface LiveSessionApi {
   sonoCoHost: boolean;
   possoPubblicare: boolean;
   possoCommentare: boolean;
-  /** Riquadri video da renderizzare (vuoto in pausa: tracce unpublished). */
+  /** Riquadri della griglia, uno per host attivo (trackRef null = placeholder
+   *  camera-off; in pausa le tracce sono unpublished → tutti placeholder,
+   *  coperti dal velo StatoPausa). */
   riquadri: RiquadroVideo[];
   /** Spettatori in stanza ORA (identità LiveKit, esclusi gli host attivi).
    *  Il NUMERO è mostrato agli host ATTIVI — principale e co-host (V6) — mai
@@ -404,19 +412,24 @@ export function useLiveSession(
 
     const idsHost = new Set(hosts.map((h) => h.user_id));
     // Riquadri nell'ordine di live_detail (host principale primo, poi co-host).
+    // OGNI host attivo ha la sua cella: senza traccia video il trackRef è null
+    // (placeholder camera-off in UI), la griglia non si ricompone (M14R3).
     for (const h of hosts) {
       const locale = h.user_id === room.localParticipant.identity;
       const participant = locale
         ? room.localParticipant
         : room.remoteParticipants.get(h.user_id);
       const publication = participant?.getTrackPublication(Track.Source.Camera);
-      if (participant && publication?.track && !publication.isMuted) {
-        out.push({
-          userId: h.user_id,
-          locale,
-          trackRef: { participant, publication, source: Track.Source.Camera },
-        });
-      }
+      const conVideo = participant != null && publication?.track != null && !publication.isMuted;
+      out.push({
+        userId: h.user_id,
+        locale,
+        nome: h.display_name ?? h.username,
+        avatarUrl: h.avatar_url,
+        trackRef: conVideo
+          ? { participant, publication, source: Track.Source.Camera }
+          : null,
+      });
     }
     for (const p of room.remoteParticipants.values()) {
       if (!idsHost.has(p.identity)) spettatori.push(p.identity);

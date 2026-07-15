@@ -83,12 +83,24 @@ export function installNotificationHandler(): void {
   });
 }
 
-/** Stato del permesso notifiche del sistema (errore ⇒ 'denied': non insistere). */
+/**
+ * Stato del permesso notifiche del sistema (errore ⇒ 'denied': non insistere).
+ *
+ * M14R3: NON fidarsi dello `status` nativo. Su Android 13+ il modulo expo
+ * (NotificationPermissionsModule.kt) risponde 'denied' anche a permesso MAI
+ * richiesto — prima del primo consenso areNotificationsEnabled() è false e
+ * quel false schiaccia lo status — quindi 'undetermined' non arrivava mai al
+ * JS e il pre-prompt non appariva su NESSUNA installazione fresca. La verità
+ * chiedibile è `canAskAgain`: finché il dialog di sistema si può mostrare per
+ * noi è 'undetermined' (Android concede fino a due dialog: dopo UN rifiuto si
+ * può ancora ri-chiedere, con la nostra cadenza gentile); 'denied' resta solo
+ * lo stato definitivo — dialog non più mostrabile — e lì non si insiste MAI.
+ */
 export async function statoPermessoPush(): Promise<PermessoPush> {
   try {
-    const { status } = await Notifications.getPermissionsAsync();
-    if (status === 'granted') return 'granted';
-    return status === 'undetermined' ? 'undetermined' : 'denied';
+    const permesso = await Notifications.getPermissionsAsync();
+    if (permesso.granted) return 'granted';
+    return permesso.canAskAgain ? 'undetermined' : 'denied';
   } catch {
     return 'denied';
   }
@@ -138,11 +150,12 @@ export async function registraTokenPush(): Promise<boolean> {
   }
 }
 
-/** Chiede il permesso (dialog di sistema) e, se concesso, registra il token. */
+/** Chiede il permesso (dialog di sistema) e, se concesso, registra il token.
+ *  Anche qui fede al flag `granted`, non allo `status` (vedi statoPermessoPush). */
 export async function richiediPermessoERegistra(): Promise<boolean> {
   try {
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status !== 'granted') return false;
+    const { granted } = await Notifications.requestPermissionsAsync();
+    if (!granted) return false;
   } catch {
     return false;
   }

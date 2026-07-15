@@ -33,7 +33,7 @@ import {
   tokenPushRegistrato,
   type PermessoPush,
 } from '@/lib/expo-push';
-import { conferma } from '@/lib/dialoghi';
+import { conferma, useDialoghiStore } from '@/lib/dialoghi';
 import { subscribeNotificheAll } from '@/lib/notifiche-realtime';
 import { rottaPerNotifica } from '@/lib/notifiche-rotte';
 
@@ -97,9 +97,12 @@ export function usePushRuntime(): void {
       void (async () => {
         try {
           // Solo finché il prompt OS resta da decidere, e non più spesso del
-          // cooldown (il timestamp si scrive PRIMA di mostrare: se il dialogo
-          // viene rimpiazzato si riproverà comunque al prossimo giro utile).
+          // cooldown. M14R3: se lo slot-dialogo è già occupato NON si brucia
+          // il giro (il timestamp si scrive prima di mostrare: rimpiazzare un
+          // altro dialogo — o esserne rimpiazzati — costerebbe 24h di attesa
+          // per un prompt mai visto); si riproverà al prossimo ingresso.
           if ((await statoPermessoPush()) !== 'undetermined') return;
+          if (useDialoghiStore.getState().dialogo != null) return;
           const ultimo = Number(await SecureStore.getItemAsync(PREPROMPT_TS_KEY)) || 0;
           if (Date.now() - ultimo < PREPROMPT_COOLDOWN_MS) return;
           await SecureStore.setItemAsync(PREPROMPT_TS_KEY, String(Date.now()));

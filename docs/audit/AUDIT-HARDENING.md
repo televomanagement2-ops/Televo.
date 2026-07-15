@@ -959,6 +959,26 @@ receipt `ok` + notifica arrivata sul device reale.
    funzionante end-to-end prima della build nuova (chiave FCM è lato server,
    non nel bundle).
 
+# APPENDICE — M14 round 3 (F7–F9): permesso notifiche, camera-off Co-Live, preview (2026-07-15)
+
+Terza verifica on-device del PO (build EAS post-round-2): il pre-prompt del
+permesso continua a non apparire — con un paradosso: **le push arrivano lo
+stesso, senza che il permesso sia mai stato chiesto** — la preview del feed
+resta bianca, e un co-host che spegne la camera SPARISCE dalla griglia invece
+di mostrare la cella camera-off. Round **M14R3 (F7–F9)**, solo bundle JS
+(nessuna migrazione).
+
+| Sintomo ❌ | Causa VERIFICATA | Fix |
+|---|---|---|
+| Pre-prompt MAI mostrato, su nessuna installazione fresca (e banner hub mai visibile) | Letta nel SORGENTE NATIVO di expo-notifications (`NotificationPermissionsModule.kt`): su Android 13+ lo status `undetermined` **non arriva mai al JS** — il modulo schiaccia lo status a `denied` quando `areNotificationsEnabled()` è false, cioè SEMPRE prima del primo consenso, anche a permesso MAI richiesto. Il nostro `statoPermessoPush()` vedeva `denied` → politica "su denied non si chiede MAI" → né pre-prompt né banner, su QUALUNQUE installazione fresca Android 13+. La cadenza F3 (round 2) era giusta ma non poteva scattare: il gate a monte non diceva mai `undetermined` | **F7**: `statoPermessoPush()` ignora lo `status` nativo e deriva il tri-stato da `granted`/`canAskAgain` (non concesso + dialog ancora mostrabile = `undetermined`; `denied` resta solo lo stato definitivo non più chiedibile — Android concede fino a 2 dialog); `richiediPermessoERegistra` legge `granted`. In più: il pre-prompt NON scrive il timestamp se lo slot-dialogo è occupato (prima un rimpiazzo costava 24h di attesa per un prompt mai visto) |
+| «Invia le notifiche lo stesso anche se il permesso non è mai stato chiesto» (paradosso) | NON è un bug: sui device dove il permesso risulta GIÀ concesso a livello OS — Android ≤12, dove il runtime permission delle notifiche **non esiste** (concesso di default), o grant automatico dell'installer su sideload — `usePushRuntime` registra il token in silenzio all'avvio, per design. Il pre-prompt esiste solo quando c'è davvero qualcosa da chiedere | Nessun fix necessario (comportamento corretto); documentato in 15.1 per i test: su Android ≤12 il prompt NON deve apparire e le push sono subito attive |
+| Co-Live: il co-host che spegne la camera SPARISCE dalla griglia (resta solo il video dell'host) | `useLive.riquadri` includeva un host SOLO con traccia camera sottoscritta e non-muted: al `setCameraEnabled(false)` la publication passa muted → l'host esce dall'array → la griglia si RICOMPONE (2→1 = full screen dell'altro). Vale per tutti: host, co-host, spettatori | **F8**: un riquadro per OGNI host attivo di `live_detail`, `trackRef` nullable (+ nome/avatar nel riquadro); cella placeholder camera-off (avatar + icona videocam-off + "Camera spenta") al posto del video, griglia stabile. In pausa: tutti placeholder, coperti dal velo StatoPausa come prima |
+| Preview feed ANCORA bianca (anche con zOrder=1 del round 2) | Il fallback avatar non compare → la traccia È sottoscritta e `VideoTrack` è montato: il guasto resta nel RENDERING della surface. L'ipotesi media-overlay (F2) non ha retto sul device reale; l'unica variabile rimasta rispetto allo schermo live — che sugli STESSI device renderizza — era proprio `zOrder={1}` + il riuso della view nativa nel pager | **F9**: via `zOrder` (configurazione identica allo schermo live); `key` sulla `trackSid` → la SurfaceView nativa si RICREA a ogni traccia nuova (una surface riciclata da Fabric può restare vuota pur con la traccia viva); retry gentile su `TrackSubscriptionFailed`. Il no-clipping del pager (F2) resta. Se persiste: test discriminante 15.3 (composer host = video locale ok? → subscriber vs compositing) |
+
+**Azioni OWNER (round 3):** nuova build EAS preview (i fix F7–F9 sono bundle
+JS) → riesecuzione §15 di `docs/live/MANUAL-TESTING.md`. Restano in coda le
+azioni owner del round 2 (deploy `send-push` v4).
+
 ## Revision history
 
 | Rev | Data | Cosa |
@@ -966,3 +986,4 @@ receipt `ok` + notifica arrivata sul device reale.
 | 1 | 2026-07-13 | Prima stesura: mappatura completa (audit PO + 3 indagini + review) e piano P0–P11. Decisioni AH-1..AH-5 validate dal PO in sessione. |
 | 2 | 2026-07-15 | Appendice M14 — fix dell'audit di verifica (V0–V7): diagnosi push conclusiva (root cause google-services.json), boot offline, dispatch_push v4, keep-awake, preview feed, Co-Live griglia immediata + dashboard quasi-host (VF-1..VF-3). |
 | 3 | 2026-07-15 | Appendice M14 round 2 (F0–F6) — diagnosi su dati reali dei 3 ❌ residui + badge campanella: FCM `InvalidCredentials` al ticket (owner), race accettazione→webhook Co-Live (migrazione 67), compositing SurfaceView nel pager (zOrder/clipping), pre-prompt a cadenza, ledger notifiche realtime (migrazione 68). |
+| 4 | 2026-07-15 | Appendice M14 round 3 (F7–F9) — permesso notifiche: `undetermined` non raggiungeva mai il JS su Android 13+ (fix via `granted`/`canAskAgain`); cella camera-off stabile nella griglia Co-Live; preview feed senza zOrder + surface per-traccia. |

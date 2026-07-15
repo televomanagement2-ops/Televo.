@@ -28,6 +28,9 @@ yarn-error.*
 .env.local
 .env.*.local
 
+# Segreti Firebase (scaricato da console, mai in git)
+google-services.json
+
 # Typegen
 nativewind-env.d.ts
 

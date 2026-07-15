@@ -35,7 +35,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { VideoTrack } from '@livekit/react-native';
-import { Room, RoomEvent, Track } from 'livekit-client';
+import { Room, RoomEvent, Track, type RemoteTrackPublication } from 'livekit-client';
 import { Avatar } from '@/components/ui/Avatar';
 import type { TrackRefLive } from '@/hooks/useLive';
 import { authErrorCode } from '@/lib/auth';
@@ -82,6 +82,7 @@ export const LiveFeedPage = memo(function LiveFeedPage({ live, attiva, altezza, 
 
   const connetti = attiva && live.status === 'live';
   const liveId = live.liveId;
+  const hostId = live.host.userId;
 
   /** Preview sempre muta (QA-3): vale anche per chi entra dopo. */
   const silenzia = useCallback((room: Room) => {
@@ -109,15 +110,31 @@ export const LiveFeedPage = memo(function LiveFeedPage({ live, attiva, altezza, 
           if (segnale.annullato) return;
           partita = true;
 
-          const room = new Room({ adaptiveStream: true });
+          // M14/V4 (preview bianca Android): NIENTE adaptiveStream e NIENTE
+          // autoSubscribe. La regolazione automatica lega il download del
+          // video alla visibilità dell'elemento, ma dentro il pager (FlatList
+          // pagingEnabled su New Architecture) il rilevamento può non scattare
+          // mai → stream in pausa → riquadro vuoto al posto del video. La
+          // disciplina qui è già esplicita (R-3: UNA pagina connessa per
+          // volta): iscrizione mirata alla SOLA camera dell'host principale —
+          // deterministico e più parco di banda (niente audio né co-host).
+          const room = new Room({ adaptiveStream: false });
           roomRef.current = room;
           const bump = () => setVersione((v) => v + 1);
+          const iscriviCameraHost = () => {
+            const publication = room.remoteParticipants
+              .get(hostId)
+              ?.getTrackPublication(Track.Source.Camera) as RemoteTrackPublication | undefined;
+            if (publication && !publication.isSubscribed) publication.setSubscribed(true);
+          };
           const suPartecipanti = () => {
+            iscriviCameraHost();
             bump();
             silenzia(room);
           };
           room
             .on(RoomEvent.ParticipantConnected, suPartecipanti)
+            .on(RoomEvent.TrackPublished, suPartecipanti)
             .on(RoomEvent.TrackSubscribed, suPartecipanti)
             .on(RoomEvent.ParticipantDisconnected, bump)
             .on(RoomEvent.TrackUnsubscribed, bump)
@@ -131,9 +148,10 @@ export const LiveFeedPage = memo(function LiveFeedPage({ live, attiva, altezza, 
               setFase('fallita');
             });
 
-          await room.connect(token.wsUrl, token.token);
+          await room.connect(token.wsUrl, token.token, { autoSubscribe: false });
           if (segnale.annullato) return; // il cleanup ha già chiuso la room
           silenzia(room);
+          iscriviCameraHost();
           setFase('attiva');
           bump();
         } catch (e) {
@@ -168,10 +186,10 @@ export const LiveFeedPage = memo(function LiveFeedPage({ live, attiva, altezza, 
       if (partita && !inAperturaRef.current) lasciaLive(liveId);
       setFase('spenta');
     };
-  }, [connetti, liveId, silenzia]);
+  }, [connetti, liveId, hostId, silenzia]);
 
-  // Il video dell'HOST PRINCIPALE (l'identità che il feed conosce, L-1): con
-  // adaptiveStream solo la traccia renderizzata viene davvero scaricata.
+  // Il video dell'HOST PRINCIPALE (l'identità che il feed conosce, L-1): la
+  // preview si iscrive SOLO a quella traccia (vedi iscriviCameraHost sopra).
   const trackRef = useMemo<TrackRefLive | null>(() => {
     void versione; // dipendenza esplicita: la Room è mutabile, il bump la fotografa
     const room = roomRef.current;

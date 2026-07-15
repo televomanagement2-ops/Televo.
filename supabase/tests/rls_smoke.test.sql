@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(568);
+select plan(569);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -1829,11 +1829,17 @@ select ok((select prosrc like '%not_visible%' and prosrc like '%can_see_live%'
 select ok((select prosrc like '%is_host%' and prosrc like '%viewer_count%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'live_detail'),
-  'live_detail: contatori spettatori SOLO all''host principale (anti-vanity R-04)');
+  'live_detail: contatori spettatori privati (anti-vanity R-04)');
 select ok((select prosrc like '%is_cohost%' and prosrc like '%can_comment%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'live_detail'),
   'live_detail: flag del chiamante (is_host/is_cohost/can_comment)');
+-- M14/V6: i contatori sono degli host ATTIVI (host principale E co-host) — e
+-- di nessun altro: lo spettatore non li riceve mai.
+select ok((select prosrc like '%v_is_host or v_is_cohost%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_detail'),
+  'live_detail v2: blocco contatori consegnato a host principale O co-host attivo (V6)');
 
 -- =============================================================================
 -- M12 · Live (LM3) — ciclo di vita v7 (reti di sicurezza cron + GDPR)

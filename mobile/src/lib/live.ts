@@ -105,6 +105,15 @@ export function lasciaLive(liveId: string): void {
   void callRpc('live_leave', { p_live: liveId }).catch(() => {});
 }
 
+/**
+ * Uscita dal Co-Live su azione ESPLICITA dell'utente (M14/V6): stessa RPC di
+ * lasciaLive ma awaited — qui l'errore deve risalire alla UI (il co-host resta
+ * publisher finché la riga non passa a 'left').
+ */
+export async function esciDalCoLive(liveId: string): Promise<void> {
+  await callRpc('live_leave', { p_live: liveId });
+}
+
 // -----------------------------------------------------------------------------
 // RPC di lettura (LM2)
 // -----------------------------------------------------------------------------

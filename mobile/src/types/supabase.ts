@@ -250,7 +250,8 @@ export interface LiveDetailHostRaw {
 
 /** Ritorno di live_detail(): dettaglio + revalidation 60s (live.md §5 — su
  *  errore `not_visible`/stato `ended` il client si disconnette). viewer_count/
- *  peak_viewers arrivano SOLO all'host principale (anti-vanity R-04). */
+ *  peak_viewers arrivano agli host ATTIVI — principale e co-host (M14/V6) —
+ *  MAI agli spettatori (anti-vanity R-04). */
 export interface LiveDetailRaw {
   server_now: string;
   live: {
@@ -1226,8 +1227,9 @@ export interface Database {
       // avatar_url, aura_score, aura_color } }] }. live_detail = dettaglio +
       // revalidation 60s: { server_now, live, hosts[], me: { is_host,
       // is_cohost, can_comment } } + viewer_count/peak_viewers SOLO se il
-      // chiamante è l'host (anti-vanity R-04); errore not_visible se il
-      // predicato nega → il client si disconnette.
+      // chiamante è un host ATTIVO — principale o co-host, M14/V6 (anti-vanity
+      // R-04); errore not_visible se il predicato nega → il client si
+      // disconnette.
       // M13/P8: lives_feed è paginata keyset (AH-2): ordinamento a due blocchi
       // (Top Friends del viewer → resto, dentro recenza), cap 20 per pagina,
       // ritorna { server_now, lives, has_more }. Cursore = ultima riga

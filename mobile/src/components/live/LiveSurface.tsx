@@ -172,6 +172,18 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
       .finally(() => setInAccettazione(false));
   };
 
+  // V6: uscita volontaria dal Co-Live (conferma → RPC → riconnessione da
+  // spettatore). La live dell'host principale continua senza il mio video.
+  const lasciaCoLive = () =>
+    conferma({
+      titolo: 'Lasciare il Co-Live?',
+      messaggio: 'Torni tra gli spettatori: la live continua senza il tuo video.',
+      confermaLabel: 'Lascia',
+      onConferma: () => {
+        void api.lasciaCoLive().catch((e) => avvisa('Ops', liveErrorMessage(e)));
+      },
+    });
+
   // --- Stati non attivi --------------------------------------------------------------
 
   if (api.fase === 'connessione') {
@@ -239,8 +251,14 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
           <View style={styles.testataSx}>
             <View style={styles.rigaBadge}>
               <BadgeLive inPausa={api.status === 'paused'} />
-              {api.sonoHost ? (
-                <Pressable style={styles.pillaOcchi} onPress={() => setSheetSpettatori(true)}>
+              {/* V6: il numero di spettatori è degli host ATTIVI (quasi-host
+                  per il co-host); la LISTA col kick resta all'host principale. */}
+              {api.sonoHost || api.sonoCoHost ? (
+                <Pressable
+                  style={styles.pillaOcchi}
+                  onPress={api.sonoHost ? () => setSheetSpettatori(true) : undefined}
+                  disabled={!api.sonoHost}
+                >
                   <Ionicons name="eye-outline" size={14} color={colors.ink} />
                   <Text style={styles.pillaOcchiTesto}>{api.idsSpettatori.length}</Text>
                 </Pressable>
@@ -321,6 +339,11 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
               </>
             ) : (
               <>
+                {/* V6: il co-host attivo può lasciare il Co-Live (torna
+                    spettatore; fine/kick/inviti restano all'host principale). */}
+                {api.sonoCoHost ? (
+                  <Controllo icon="exit-outline" onPress={lasciaCoLive} />
+                ) : null}
                 <Controllo
                   icon={api.audioSilenziato ? 'volume-mute-outline' : 'volume-high-outline'}
                   attivo={!api.audioSilenziato}

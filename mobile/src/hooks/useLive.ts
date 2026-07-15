@@ -29,6 +29,7 @@ import { authErrorCode } from '@/lib/auth';
 import { liveErrorMessage } from '@/lib/errors';
 import {
   accettaInvitoCoHost,
+  esciDalCoLive,
   fetchLiveDetail,
   fetchMioStatoCoHost,
   fetchTokenLive,
@@ -102,7 +103,8 @@ export interface LiveSessionApi {
   /** Riquadri video da renderizzare (vuoto in pausa: tracce unpublished). */
   riquadri: RiquadroVideo[];
   /** Spettatori in stanza ORA (identità LiveKit, esclusi gli host attivi).
-   *  Il NUMERO è mostrato SOLO all'host (anti-vanity §1.2). */
+   *  Il NUMERO è mostrato agli host ATTIVI — principale e co-host (V6) — mai
+   *  agli spettatori (anti-vanity §1.2). */
   idsSpettatori: string[];
   /** Controlli publisher (host e co-host attivi). */
   micAttivo: boolean;
@@ -127,6 +129,9 @@ export interface LiveSessionApi {
    *  (RPC → token nuovo con canPublish → riconnessione → publish). */
   mioInvitoPendente: boolean;
   accettaInvito: () => Promise<void>;
+  /** Co-host attivo: lascia il Co-Live (RPC → 'left' → riconnessione da
+   *  spettatore, specchio di accettaInvito). La live continua senza di lui. */
+  lasciaCoLive: () => Promise<void>;
   /** Ritenta la connessione dalla fase 'errore'. */
   ricarica: () => void;
 }
@@ -592,6 +597,16 @@ export function useLiveSession(
     setTentativo((t) => t + 1);
   }, [liveId, chiudiRoom]);
 
+  // V6: specchio di accettaInvito — la riga live_hosts passa a 'left' e il
+  // token publisher in mano non riflette più il ruolo: mint nuovo da
+  // spettatore (il flusso connetti ripete detail+token, canPublish=false).
+  const lasciaCoLive = useCallback(async () => {
+    if (!liveId) return;
+    await esciDalCoLive(liveId);
+    await chiudiRoom();
+    setTentativo((t) => t + 1);
+  }, [liveId, chiudiRoom]);
+
   const ricarica = useCallback(() => setTentativo((t) => t + 1), []);
 
   return {
@@ -624,6 +639,7 @@ export function useLiveSession(
     esci,
     mioInvitoPendente: mioInvito?.status === 'invited',
     accettaInvito,
+    lasciaCoLive,
     ricarica,
   };
 }

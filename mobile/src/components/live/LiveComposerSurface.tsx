@@ -30,6 +30,7 @@ import { createLocalVideoTrack, type LocalVideoTrack } from 'livekit-client';
 // VideoView (deprecato a favore di VideoTrack) è l'UNICO renderer che accetta
 // una traccia locale NON pubblicata: qui non c'è ancora stanza né publication.
 import { VideoView } from '@livekit/react-native';
+import { useKeepAwake } from 'expo-keep-awake';
 import { Button } from '@/components/ui/Button';
 import {
   ComposerToggles,
@@ -53,6 +54,10 @@ const MAX_TITOLO = 80;
 type Permessi = 'in_verifica' | 'ok' | 'negati';
 
 export default function LiveComposerSurface() {
+  // M14/V3: la preview camera pre-live tiene lo schermo acceso come lo schermo
+  // live che segue (unmount = timeout di sistema ripristinato).
+  useKeepAwake();
+
   const { uid } = useAuth();
 
   const [permessi, setPermessi] = useState<Permessi>('in_verifica');

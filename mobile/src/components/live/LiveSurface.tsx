@@ -20,6 +20,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { VideoTrack } from '@livekit/react-native';
+import { useKeepAwake } from 'expo-keep-awake';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { StatoErrore } from '@/components/ui/StatoErrore';
@@ -41,6 +42,11 @@ import { REPORT_REASONS } from '@/constants/drops';
 import { colors, fontFamily, fontSize, motion, radius, spacing } from '@/constants/theme';
 
 export default function LiveSurface({ liveId }: { liveId: string }) {
+  // M14/V3: durante una live lo schermo non va MAI in standby — vale per host,
+  // co-host e spettatore, per tutta la vita dello schermo (unmount = timeout
+  // di sistema ripristinato dal hook stesso).
+  useKeepAwake();
+
   const navigation = useNavigation();
 
   // Il prompt live-vuota (§12.20) e il back hardware chiamano l'API più

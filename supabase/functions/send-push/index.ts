@@ -1,5 +1,5 @@
 // =============================================================================
-// send-push v3 — invio push (Expo) + RECEIPT + osservabilità — M13/P4.
+// send-push v4 — invio push (Expo) + RECEIPT + osservabilità — M13/P4, M14R2/F4.
 // =============================================================================
 // Preleva le notifiche con `pushed_at is null`, le invia ai dispositivi Expo
 // registrati dell'utente e le marca come inviate.
@@ -25,11 +25,19 @@
 //   • `push_health.send_push_last_run` = {processed, sent, marked, pruned,
 //     receipts_checked, receipt_errors} aggiornata a ogni invocazione.
 //
+// v4 (M14R2/F4) — anche gli errori a livello di TICKET diventano visibili:
+//   • Expo può rifiutare GIÀ nel ticket sincrono (es. `InvalidCredentials`
+//     quando le credenziali FCM non sono associate al progetto): quei ticket
+//     non hanno receipt e non sono DeviceNotRegistered → prima sparivano nel
+//     nulla e la run risultava "sent" con zero consegne. Ora finiscono in
+//     `push_health.send_push_ticket_errors` (+ console.error) e la run riporta
+//     `ticket_errors` — è così che la verifica M14R2 ha stanato la causa reale.
+//
 // Invocata da pg_cron → pg_net (dispatch_push) ogni minuto.
 // Contratto:
 //   POST con header x-cron-secret: <CRON_SECRET>
-//   200 -> { ok: true, processed, sent, marked, pruned, receipts_checked,
-//            receipt_errors } | 401/405/500 -> { error }
+//   200 -> { ok: true, processed, sent, marked, pruned, ticket_errors,
+//            receipts_checked, receipt_errors } | 401/405/500 -> { error }
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { adminClient } from "../_shared/clients.ts";
 
@@ -88,6 +96,7 @@ Deno.serve(async (req) => {
   // Contatori di run (finiscono in push_health.send_push_last_run).
   let sent = 0;
   let pruned = 0;
+  let ticketErrors = 0;
 
   // ===========================================================================
   // FASE INVIO — v2 invariata + salvataggio dei ticket "ok" (v3).
@@ -162,6 +171,7 @@ Deno.serve(async (req) => {
     //    raccolta dei ticket "ok" (v3).
     const tokenMorti = new Set<string>();
     const nuoviTicket: TicketRow[] = [];
+    const erroriTicket: { error: string; message: string | null }[] = [];
     for (let ci = 0; ci < messages.length; ci += CHUNK) {
       const part = messages.slice(ci, ci + CHUNK);
       try {
@@ -193,6 +203,12 @@ Deno.serve(async (req) => {
           const idx = ci + i;
           if (t?.status === "error" && t.details?.error === "DeviceNotRegistered") {
             tokenMorti.add(msgTokens[idx]);
+          } else if (t?.status === "error") {
+            // v4: rifiuto sincrono di Expo (InvalidCredentials & co.) — il
+            // segnale va reso visibile, non ci sarà mai una receipt.
+            const err = t.details?.error ?? "unknown";
+            erroriTicket.push({ error: err, message: t.message ?? null });
+            console.error("push_ticket_error", err, t.message ?? "");
           } else if (t?.status === "ok" && t.id) {
             nuoviTicket.push({
               ticket_id: t.id,
@@ -224,6 +240,21 @@ Deno.serve(async (req) => {
         .from("push_tickets")
         .upsert(nuoviTicket, { onConflict: "ticket_id", ignoreDuplicates: true });
       if (tErr) console.error("push_tickets_insert_error", tErr.message);
+    }
+
+    // 4d) v4: errori sincroni di ticket → traccia diagnostica persistente
+    //     (stessa forma dei receipt errors: at/count/sample).
+    if (erroriTicket.length > 0) {
+      ticketErrors = erroriTicket.length;
+      await db.from("push_health").upsert({
+        key: "send_push_ticket_errors",
+        value: {
+          at: new Date().toISOString(),
+          count: erroriTicket.length,
+          sample: erroriTicket.slice(0, 5),
+        },
+        updated_at: new Date().toISOString(),
+      });
     }
 
     // 5) Marca SOLO le notifiche accettate (o senza device / errore permanente).
@@ -349,6 +380,7 @@ Deno.serve(async (req) => {
       sent,
       marked: daMarcare.size,
       pruned,
+      ticket_errors: ticketErrors,
       receipts_checked: receiptsChecked,
       receipt_errors: receiptErrors,
     },
@@ -361,6 +393,7 @@ Deno.serve(async (req) => {
     sent,
     marked: daMarcare.size,
     pruned,
+    ticket_errors: ticketErrors,
     receipts_checked: receiptsChecked,
     receipt_errors: receiptErrors,
   });

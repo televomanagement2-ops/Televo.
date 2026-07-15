@@ -3,10 +3,12 @@
 // =============================================================================
 // Tre hook:
 // - usePushRuntime (ChatRuntime): handler foreground + registrazione token se
-//   il permesso è GIÀ concesso + PRE-PROMPT del permesso al primo ingresso
-//   nella shell (P3: è il percorso PRIMARIO — l'onboarding non chiede mai il
-//   permesso) + ri-registrazione alla rotazione del token + badge icona =
-//   somma unread (stessa fonte del badge tab, §8.5).
+//   il permesso è GIÀ concesso (all'avvio E al ritorno in foreground, M14R2) +
+//   PRE-PROMPT del permesso all'ingresso nella shell (P3: è il percorso
+//   PRIMARIO — l'onboarding non chiede mai il permesso; si ripropone con
+//   cadenza ≥24h finché il permesso resta da decidere, M14R2/F3) +
+//   ri-registrazione alla rotazione del token + badge icona = somma unread
+//   (stessa fonte del badge tab, §8.5).
 // - useNotificaTap (ChatRuntime): tap su una push → navigazione alla schermata
 //   giusta, cold start incluso. Vive nella shell autenticata di proposito:
 //   monta solo quando auth e navigazione sono pronte (niente race al boot).
@@ -14,6 +16,7 @@
 //   SECONDARIO (resta per chi sceglie "Non ora" al pre-prompt).
 
 import { useCallback, useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
@@ -27,6 +30,7 @@ import {
   registraTokenPush,
   richiediPermessoERegistra,
   statoPermessoPush,
+  tokenPushRegistrato,
   type PermessoPush,
 } from '@/lib/expo-push';
 import { conferma } from '@/lib/dialoghi';
@@ -34,9 +38,15 @@ import { rottaPerNotifica } from '@/lib/notifiche-rotte';
 
 // --- Runtime push (handler + token + badge + pre-prompt P3) ---------------------
 
-// Flag persistente "pre-prompt già mostrato": UNA volta nella vita
-// dell'installazione, qualunque sia stata la scelta (AUDIT-HARDENING §3.3).
-const PREPROMPT_KEY = 'televo.push.preprompt_mostrato';
+// Ultima proposta del pre-prompt (timestamp ms persistito). M14R2/F3: finché
+// il permesso di sistema resta DA DECIDERE ('undetermined'), il pre-prompt si
+// ripropone con cadenza gentile — mai più spesso del cooldown. Un timestamp,
+// non un flag: un flag "per sempre" si brucia anche quando il dialogo non
+// viene mai visto (slot-dialogo rimpiazzato) e SecureStore sopravvive a
+// upgrade e backup di Android — sui device del PO il prompt non riappariva
+// più in nessuna build. Su 'denied' non si chiede comunque MAI (scelta fatta).
+const PREPROMPT_TS_KEY = 'televo.push.preprompt_ultimo';
+const PREPROMPT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 // Respiro dopo il primo frame della shell: il pre-prompt non deve coprire
 // l'atterraggio in Home (né competere con lo slot-dialogo al mount).
@@ -85,10 +95,13 @@ export function usePushRuntime(): void {
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          // Solo se il prompt OS non è mai stato deciso e mai proposto da noi.
+          // Solo finché il prompt OS resta da decidere, e non più spesso del
+          // cooldown (il timestamp si scrive PRIMA di mostrare: se il dialogo
+          // viene rimpiazzato si riproverà comunque al prossimo giro utile).
           if ((await statoPermessoPush()) !== 'undetermined') return;
-          if (await SecureStore.getItemAsync(PREPROMPT_KEY)) return;
-          await SecureStore.setItemAsync(PREPROMPT_KEY, '1');
+          const ultimo = Number(await SecureStore.getItemAsync(PREPROMPT_TS_KEY)) || 0;
+          if (Date.now() - ultimo < PREPROMPT_COOLDOWN_MS) return;
+          await SecureStore.setItemAsync(PREPROMPT_TS_KEY, String(Date.now()));
           conferma({
             titolo: 'Attiva le notifiche',
             messaggio:
@@ -106,6 +119,21 @@ export function usePushRuntime(): void {
       })();
     }, PREPROMPT_RITARDO_MS);
     return () => clearTimeout(timer);
+  }, [uid]);
+
+  // M14R2/F3: chi attiva le notifiche A MANO dalle impostazioni di sistema
+  // torna nell'app con permesso concesso ma token mai registrato — prima
+  // serviva un riavvio. Al ritorno in foreground, se manca la registrazione
+  // di sessione e il permesso ora c'è, il token si registra subito.
+  useEffect(() => {
+    if (!uid) return;
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st !== 'active' || tokenPushRegistrato()) return;
+      void (async () => {
+        if ((await statoPermessoPush()) === 'granted') await registraTokenPush();
+      })();
+    });
+    return () => sub.remove();
   }, [uid]);
 
   // P10: una push arrivata in FOREGROUND aggiorna subito ledger e badge della

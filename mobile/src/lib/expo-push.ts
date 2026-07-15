@@ -107,6 +107,12 @@ async function creaCanaleAndroid(): Promise<void> {
   });
 }
 
+/** true se il token è già stato registrato in QUESTA sessione dell'app (guardia
+ *  per i ri-controlli al foreground: niente RPC ripetute a ogni ritorno). */
+export function tokenPushRegistrato(): boolean {
+  return tokenRegistrato != null;
+}
+
 /**
  * Ottiene il token push Expo e lo registra in `devices` (upsert server-side:
  * al re-login il token passa al nuovo utente). Presuppone il permesso GIÀ

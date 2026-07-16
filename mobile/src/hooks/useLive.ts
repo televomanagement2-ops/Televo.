@@ -13,7 +13,9 @@
 //
 // - useLiveComments: colonna commenti realtime (postgres_changes + RLS,
 //   pattern drop_comments) + invio con moderazione fire-and-forget (§6).
-//   Il fade-out è SOLO visivo e vive nell'overlay, non qui.
+//   Il fade-out è SOLO visivo e vive nell'overlay, non qui. Possiede anche
+//   l'UNICO subscribe del canale `live:{id}` (commenti+like, M15/LR5): il
+//   ramo like arriva dal chiamante come handler `onLike` (useLiveLikes).
 //
 // ⚠️ Questo modulo importa livekit-client/@livekit/react-native (nativo):
 // va importato SOLO dalle superfici live caricate pigramente dietro il guard
@@ -44,11 +46,11 @@ import {
   terminaLive,
   type RigaCoHost,
 } from '@/lib/live';
-import { subscribeLiveComments } from '@/lib/live-realtime';
+import { subscribeLiveRealtime } from '@/lib/live-realtime';
 import { subscribeMapInbox } from '@/lib/map-realtime';
 import { inizializzaLiveKit } from '@/lib/livekit';
 import { fetchProfileCards } from '@/lib/social';
-import type { LiveCommentRow } from '@/types';
+import type { LiveCommentRow, LiveLikeRow } from '@/types';
 import type { LiveDetailHostRaw, LiveDetailRaw, LiveStatus } from '@/types/supabase';
 
 // -----------------------------------------------------------------------------
@@ -111,9 +113,13 @@ export interface LiveSessionApi {
    *  coperti dal velo StatoPausa). */
   riquadri: RiquadroVideo[];
   /** Spettatori in stanza ORA (identità LiveKit, esclusi gli host attivi).
-   *  Il NUMERO è mostrato agli host ATTIVI — principale e co-host (V6) — mai
-   *  agli spettatori (anti-vanity §1.2). */
+   *  Da M15/RW-4 il NUMERO è pubblico a TUTTI (lo spettatore aggiunge sé
+   *  stesso: non è tra i remoti); la LISTA nominativa col kick resta SOLO
+   *  dell'host principale. */
   idsSpettatori: string[];
+  /** Totale ❤ dell'ultimo snapshot live_detail (M15/RW-3b, pubblico ai
+   *  visibili): è la BASELINE di useLiveLikes — il display monotòno vive lì. */
+  likeCount: number;
   /** Controlli publisher (host e co-host attivi). */
   micAttivo: boolean;
   cameraAttiva: boolean;
@@ -635,6 +641,7 @@ export function useLiveSession(
     possoCommentare: commentiAbilitati && status === 'live',
     riquadri,
     idsSpettatori,
+    likeCount: detail?.live.like_count ?? 0,
     micAttivo,
     cameraAttiva,
     fotocameraFrontale,
@@ -686,6 +693,9 @@ export function useLiveComments(
   liveId: string | undefined,
   attivi: boolean,
   identitaNote: IdentitaNota[],
+  /** Ramo like del canale condiviso (M15/LR8): righe live_likes consegnate a
+   *  useLiveLikes. Via ref a valle: un handler nuovo non risottoscrive. */
+  onLike?: (row: LiveLikeRow) => void,
 ) {
   const { uid, profile } = useAuth();
 
@@ -753,10 +763,19 @@ export function useLiveComments(
     [uid],
   );
 
-  // Canale realtime: vive solo con lo schermo aperto e i commenti attivi.
+  // Canale realtime della live (condiviso commenti+like, M15/LR5): vive solo
+  // con lo schermo aperto e i commenti attivi — UN solo subscribe per schermo,
+  // ENTRAMBI gli handler qui. onComment dedupa per id in `aggiungi`; onLike
+  // (LR8) arriva dal chiamante e viaggia via ref: il canale non si
+  // risottoscrive se l'identità dell'handler cambia.
+  const onLikeRef = useRef(onLike);
+  onLikeRef.current = onLike;
   useEffect(() => {
     if (!liveId || !attivi) return;
-    return subscribeLiveComments(liveId, aggiungi);
+    return subscribeLiveRealtime(liveId, {
+      onComment: aggiungi,
+      onLike: (row) => onLikeRef.current?.(row),
+    });
   }, [liveId, attivi, aggiungi]);
 
   /** Invia: insert diretta (trigger = arbitro) + moderazione fire-and-forget.

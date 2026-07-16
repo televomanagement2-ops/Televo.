@@ -212,9 +212,10 @@ export interface LiveHostIdentityRaw {
   aura_color: string | null;
 }
 
-/** Una live nel feed Home (lives_feed): SOLO live di amici (la propria è
- *  esclusa), stato live/paused, MAI contatori (anti-vanity R-04: viewer_count
- *  ordina server-side senza essere esposto). */
+/** Una live nel feed Home (lives_feed v3): SOLO live di amici (la propria è
+ *  esclusa), stato live/paused. M15/LR1 (RW-2+RW-4): `viewer_count` è nel
+ *  payload — PUBBLICO a chi vede la live (eccezione del PO 2026-07-15 a R-04,
+ *  limitata alle live) e pezzo del cursore keyset quaternario. */
 export interface LiveFeedItemRaw {
   live_id: string;
   title: string;
@@ -224,13 +225,14 @@ export interface LiveFeedItemRaw {
   started_at: string;
   paused_at: string | null;
   is_top_friend: boolean; // l'host è nella cerchia del VIEWER (ordinamento)
+  viewer_count: number; //  spettatori concorrenti = l'engagement del ranking (RW-2)
   host: LiveHostIdentityRaw;
 }
 
 /** Ritorno di lives_feed(): la porta di lettura della Home live (striscia +
  *  feed). M13/P8: paginata keyset — `has_more` dice se esiste una pagina
- *  successiva; il cursore si deriva dall'ULTIMA riga ricevuta
- *  (is_top_friend, started_at, live_id): nessun campo nuovo esposto (R-04). */
+ *  successiva; il cursore si deriva dall'ULTIMA riga ricevuta e da M15/LR1 è
+ *  QUATERNARIO (is_top_friend, viewer_count, started_at, live_id). */
 export interface LivesFeedRaw {
   server_now: string;
   lives: LiveFeedItemRaw[];
@@ -248,10 +250,11 @@ export interface LiveDetailHostRaw {
   joined_at: string | null;
 }
 
-/** Ritorno di live_detail(): dettaglio + revalidation 60s (live.md §5 — su
- *  errore `not_visible`/stato `ended` il client si disconnette). viewer_count/
- *  peak_viewers arrivano agli host ATTIVI — principale e co-host (M14/V6) —
- *  MAI agli spettatori (anti-vanity R-04). */
+/** Ritorno di live_detail() v3: dettaglio + revalidation 60s (live.md §5 — su
+ *  errore `not_visible`/stato `ended` il client si disconnette). M15/LR1
+ *  (RW-4): viewer_count e like_count vivono nel jsonb `live` di base — li
+ *  ricevono TUTTI i visibili; peak_viewers resta PRIVATO degli host ATTIVI
+ *  (principale e co-host, M14/V6) e arriva top-level solo a loro. */
 export interface LiveDetailRaw {
   server_now: string;
   live: {
@@ -264,6 +267,8 @@ export interface LiveDetailRaw {
     started_at: string;
     paused_at: string | null;
     ended_at: string | null;
+    viewer_count: number; // pubblico ai visibili (RW-4)
+    like_count: number; //   totale storico, mai decrementato (RW-3b)
   };
   hosts: LiveDetailHostRaw[];
   me: {
@@ -271,8 +276,33 @@ export interface LiveDetailRaw {
     is_cohost: boolean;
     can_comment: boolean;
   };
-  viewer_count?: number;
-  peak_viewers?: number;
+  peak_viewers?: number; // SOLO host/co-host attivi (R-04 non abrogato)
+}
+
+// --- M15 (LR2) — striscia: le terminate <24h ----------------------------------
+
+/** Un segnaposto di live terminata nella striscia (lives_strip): cerchio
+ *  spento, visivamente inequivocabile, che porta al PROFILO dell'amico
+ *  (RW-1a) — non esiste replay. NIENTE aura nel payload (nessun anello
+ *  colore) e NIENTE contatori. */
+export interface LiveStripEndedRaw {
+  live_id: string;
+  ended_at: string;
+  host: {
+    user_id: string;
+    username: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  };
+}
+
+/** Ritorno di lives_strip(): le live terminate da <24h visibili al chiamante
+ *  (ended_at desc, cap 20; la propria esclusa server-side). La sparizione a
+ *  24h ESATTE tra un refetch e l'altro è compito del client: filtro sul clock
+ *  calibrato con `server_now` (pattern M7 §8). */
+export interface LivesStripRaw {
+  server_now: string;
+  ended: LiveStripEndedRaw[];
 }
 
 // --- Payload dei delta live sull'inbox privata `map:u:{uid}` ------------------
@@ -808,9 +838,10 @@ export interface Database {
       };
       lives: {
         // M12 (LM0) — un broadcast per riga. Scrittura SOLO via RPC (create_live,
-        // pause/resume/end). Il grant select è PER-COLONNA: viewer_count e
-        // peak_viewers sono PRIVATI (anti-vanity R-04, li darà live_detail al
-        // solo host in LM2) e livekit_room_name arriva solo da create_live/token.
+        // pause/resume/end). Il grant select è PER-COLONNA: da M15/LR1 (RW-4)
+        // include anche viewer_count e like_count (contatori PUBBLICI ai
+        // visibili — eccezione PO 2026-07-15 a R-04, solo live); peak_viewers e
+        // livekit_room_name restano ESCLUSI → mai `select *` dal client.
         Row: {
           id: string;
           host_id: string;
@@ -824,6 +855,8 @@ export interface Database {
           started_at: string;
           paused_at: string | null; // valorizzato SOLO mentre in pausa
           ended_at: string | null; // null = attiva; stato finale immutabile
+          viewer_count: number; // M15/LR1: spettatori concorrenti (sync a delta)
+          like_count: number; //   M15/LR0: totale storico, mai decrementato
           created_at: string;
         };
         Insert: never; // via RPC create_live
@@ -870,6 +903,24 @@ export interface Database {
           created_at: string;
         };
         Insert: { live_id: string; body: string };
+        Update: never;
+      };
+      live_likes: {
+        // M15 (LR0) — un LOTTO di like TikTok (RW-3: illimitati, non-toggle).
+        // Un tap NON è un insert: il client accumula e fa flush ~800ms (cap 50
+        // tap per riga). Insert diretta arbitrata dal trigger (stato 'live',
+        // can_see_live, is_active_user, rate-limit 15 lotti/10s); user_id e
+        // created_at forzati server-side (fuori dal grant). Niente
+        // update/delete: il totale (lives.like_count) è storico; purge a 24h
+        // dalla fine della live. In pubblicazione realtime (postgres_changes).
+        Row: {
+          id: string;
+          live_id: string;
+          user_id: string;
+          count: number; // tap nel lotto, 1..50 (check a DB)
+          created_at: string;
+        };
+        Insert: { live_id: string; count: number };
         Update: never;
       };
       props: {
@@ -1219,26 +1270,24 @@ export interface Database {
       live_leave: { Args: { p_live: string }; Returns: Json }; // best-effort { ok, role }
       // M12 (LM2) — Live: porte di lettura. lives_feed = Home (striscia +
       // feed verticale): live ATTIVE (live/paused) degli amici visibili al
-      // chiamante, ordinate server-side (Top Friends del viewer → spettatori
-      // reali → Aura host) SENZA mai esporre i contatori; la propria live è
-      // esclusa (il feed è "amici in live"). Ritorna { server_now, lives:
-      // [{ live_id, title, status, visibility, comments_enabled, started_at,
-      // paused_at, is_top_friend, host: { user_id, username, display_name,
-      // avatar_url, aura_score, aura_color } }] }. live_detail = dettaglio +
-      // revalidation 60s: { server_now, live, hosts[], me: { is_host,
-      // is_cohost, can_comment } } + viewer_count/peak_viewers SOLO se il
-      // chiamante è un host ATTIVO — principale o co-host, M14/V6 (anti-vanity
-      // R-04); errore not_visible se il predicato nega → il client si
-      // disconnette.
-      // M13/P8: lives_feed è paginata keyset (AH-2): ordinamento a due blocchi
-      // (Top Friends del viewer → resto, dentro recenza), cap 20 per pagina,
-      // ritorna { server_now, lives, has_more }. Cursore = ultima riga
-      // ricevuta: (p_top=is_top_friend, p_before=started_at, p_before_id=
-      // live_id). Senza argomenti = prima pagina (compatibile con la chiamata
-      // storica).
+      // chiamante; la propria live è esclusa (il feed è "amici in live").
+      // Ritorna { server_now, lives: [LiveFeedItemRaw], has_more }.
+      // live_detail = dettaglio + revalidation 60s (LiveDetailRaw); errore
+      // not_visible se il predicato nega → il client si disconnette.
+      // M13/P8: lives_feed è paginata keyset, cap 20 per pagina; senza
+      // argomenti = prima pagina (compatibile con la chiamata storica).
+      // M15/LR1 (v3, RW-2+RW-4): ranking a engagement — Best Friends del
+      // viewer SEMPRE primi, poi viewer_count desc, recenza a tie-break
+      // (l'Aura esce dal ranking); viewer_count nel payload dell'item e nel
+      // cursore, ora QUATERNARIO: (p_top=is_top_friend, p_viewers=
+      // viewer_count, p_before=started_at, p_before_id=live_id) dall'ultima
+      // riga ricevuta. Il ramo keyset si attiva solo con TUTTI i pezzi
+      // non-null. live_detail v3: viewer_count/like_count nel jsonb `live` per
+      // tutti i visibili; peak_viewers top-level solo host/co-host attivi.
       lives_feed: {
         Args: {
           p_top?: boolean | null;
+          p_viewers?: number | null;
           p_before?: string | null;
           p_before_id?: string | null;
           p_limit?: number;
@@ -1246,6 +1295,10 @@ export interface Database {
         Returns: Json;
       };
       live_detail: { Args: { p_live: string }; Returns: Json };
+      // M15 (LR2) — striscia: le live TERMINATE da <24h visibili al chiamante
+      // (RW-1). Ritorna { server_now, ended: [LiveStripEndedRaw] } — niente
+      // aura, niente contatori: il cerchio spento è una scorciatoia al profilo.
+      lives_strip: { Args: Record<string, never>; Returns: Json };
     };
     Enums: {
       aura_event_type: AuraEventType;

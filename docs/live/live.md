@@ -1,6 +1,6 @@
 # Televo — Live (M12): Specifica di prodotto & Piano di implementazione
 
-> **Rev. 1 — 2026-07-09.** Decisioni di prodotto **L-1..L-4 validate dal product
+> **Rev. 2 — 2026-07-16.** Decisioni di prodotto **L-1..L-4 validate dal product
 > owner** (2026-07-09, sessione di pianificazione). Questo è il documento
 > ufficiale della milestone **M12 — Live**: Parte I = specifica di prodotto (cosa
 > costruiamo e perché), Parte II = piano di implementazione a milestone (come lo
@@ -9,6 +9,13 @@
 > `docs/chat/IMPLEMENTATION-PLAN.md`, `docs/media/drop.md`, `docs/map/map.md`,
 > di cui ricalca formato e convenzioni. Lingua: italiano, come tutto il
 > progetto.
+>
+> ⚠️ **EMENDATO da M15 — Rework Live** (`docs/live/live-rework.md`, decisioni
+> RW-1..RW-5 del PO 2026-07-15): contatori `viewer_count`/`like_count`
+> PUBBLICI ai visibili (eccezione a R-04 limitata alle live), like stile
+> TikTok (§6-bis), striscia con terminate <24h → profilo, ranking del feed a
+> engagement, segno di fine feed. I punti emendati sono marcati `(M15)` nel
+> testo; per il razionale completo vale live-rework.md.
 
 ---
 
@@ -108,9 +115,22 @@ Salienti (Fase 2; `clip_consent` riservato) · blocco tecnico 1:1 adulto-minore
 registrazione/replay.
 
 **Fuori scope:** live pubbliche a sconosciuti (anti-principio) · ranking "per
-te" fuori dal grafo · contatori pubblici di spettatori/like (anti-vanity,
-pattern drops R-04: i numeri li vede solo l'host) · feed infinito di live
-passate (le live finite spariscono: nessun archivio).
+te" fuori dal grafo · feed infinito di live passate.
+
+> **Emendamento M15 (PO 2026-07-15).** Due voci del fuori-scope originale sono
+> state SUPERATE, con perimetro esatto:
+> - *"contatori pubblici di spettatori/like"* → da M15 `viewer_count` e
+>   `like_count` sono **pubblici a chi può vedere la live** (eccezione
+>   esplicita a R-04, LIMITATA alle live). NON si abroga R-04: `peak_viewers`
+>   resta privato (host/co-host), la lista nominativa spettatori + kick resta
+>   solo dell'host principale, e i **drops restano intoccati** (contatori
+>   privati).
+> - *"le live finite spariscono: nessun archivio"* → precisata: escono dal
+>   feed verticale (nessun replay, nessun archivio) ma restano **24h come
+>   segnaposto nella striscia** — un cerchio spento che apre il PROFILO
+>   dell'amico (RW-1a), mai la live.
+> In scope da M15 anche i **like stile TikTok** (§6-bis), il ranking a
+> engagement e il segno di fine feed (§7).
 
 ### 0.3 Fonti
 Master plan PO "LIVE + MAPPA (stato live)" (2026-07-09) · `CLAUDE.md` §1
@@ -176,15 +196,19 @@ Non è un palco pubblico, non è una TV, non è un talent per sconosciuti.
   incentivare watch-time). I commenti tossici costano (`toxicity` via
   moderazione). Sulla mappa l'anello rosso si sovrappone all'anello Aura: la
   live è uno stato, l'Aura resta l'identità.
-- **Anti-doomscroll** — le live finite **spariscono** (nessun archivio, nessun
-  replay); il feed verticale mostra solo dirette in corso dentro il grafo —
-  quando non c'è nessuno in live, il feed è onestamente vuoto (nessun
-  riempitivo algoritmico); niente contatori pubblici; il prompt "live vuota"
-  spinge a chiudere invece di lasciar marcire una diretta morta.
+- **Anti-doomscroll** — le live finite **escono dal feed** (nessun archivio,
+  nessun replay; da M15 restano 24h come segnaposto in striscia → profilo,
+  §0.2); il feed verticale mostra solo dirette in corso dentro il grafo — è
+  FINITO quando finiscono le live (segno di fine, M15/RW-5) e onestamente
+  vuoto quando non c'è nessuno (nessun riempitivo algoritmico); il prompt
+  "live vuota" spinge a chiudere invece di lasciar marcire una diretta morta.
+  (I contatori 👁/❤ pubblici sono un'eccezione deliberata del PO, M15 §0.2 —
+  limitata alle live, mai estesa a drops o profili.)
 
 ### 1.1 Attori
 - **Host**: avvia dalla propria camera, controlla tutto (pausa, fine, inviti,
-  kick), vede il numero di spettatori (solo lui — anti-vanity).
+  kick); resta l'unico a vedere la LISTA nominativa degli spettatori (il
+  NUMERO da M15 è pubblico ai visibili, RW-4).
 - **Co-host**: pubblica nella live dell'host; può andarsene; non controlla la
   live.
 - **Spettatore (amico)**: guarda, commenta (se abilitato), può silenziare
@@ -207,9 +231,12 @@ Non è un palco pubblico, non è una TV, non è un talent per sconosciuti.
   mappa passa dal sistema M7 (opt-in, masked-aware, revoca istantanea).
 - Solo `timestamptz` UTC; stati derivati client con clock calibrato
   (`server_now`, pattern M7 §8).
-- Contatori privati: spettatori/commenti in numero visibili SOLO all'host
-  (pattern drops R-04). Il feed li usa come segnale di ordinamento server-side
-  senza esporli.
+- Contatori (EMENDATO da M15, PO 2026-07-15): `viewer_count` e `like_count`
+  sono PUBBLICI a chi può vedere la live — eccezione esplicita a R-04
+  limitata alle live. Restano privati: `peak_viewers` (host e co-host attivi,
+  M14/V6) e la lista nominativa spettatori + kick (solo host principale); i
+  drops restano a contatori privati. Il feed usa `viewer_count` come ranking
+  (§7) e come pezzo del cursore keyset (supera AH-2 per le sole live).
 
 ## 2. Stati di una Live (macchina a stati)
 
@@ -291,8 +318,11 @@ bottone **"Avvia Live"**.
 - **Revalidation**: il client spettatore ri-esegue `live_detail` ogni ~60s;
   su `not_visible`/`ended` si disconnette (copre blocco/rimozione amicizia a
   metà live, §12.4).
-- Il numero di spettatori è visibile SOLO all'host (§1.2); gli spettatori non
-  vedono contatori.
+- Da M15 (RW-4) il NUMERO di spettatori è pubblico a tutti i visibili: pilla
+  👁 in stanza per tutti (conteggio client-side dai partecipanti LiveKit,
+  istantaneo; lo spettatore aggiunge sé stesso — non è tra i remoti) e
+  `viewer_count` nel feed/detail. La LISTA nominativa col kick resta SOLO
+  dell'host principale; `peak_viewers` resta privato di host e co-host attivi.
 
 ## 6. Commenti (effimeri, moderati)
 
@@ -317,27 +347,74 @@ bottone **"Avvia Live"**.
   `expire_content` li elimina (gli excerpt dei segnalati sopravvivono in
   `moderation_queue`). Nessuna notifica per i commenti (l'host è in diretta).
 
+## 6-bis. Like stile TikTok (M15/RW-3)
+
+- **UX** (schermo `/live/[id]`, host E spettatori): **double-tap ovunque sul
+  video** → cuore NEL punto del tap che sale/scala/sfuma (~900ms, jitter) +
+  **bottone cuore** nel rail dei controlli. Like **illimitati, non-toggle**
+  (ogni tap = +1). **Contatore totale ❤** in pilla accanto alla 👁, visibile
+  a TUTTI i visibili (RW-3b), sale in realtime quando chiunque lika. I cuori
+  sono SOLO locali (RW-3a): dei like altrui si vede solo il contatore. In
+  pausa non si lika (gesto/bottone spenti + il trigger rifiuta, specchio dei
+  commenti). Nella preview del feed i like NON esistono.
+- **Meccanica dati — batching**: un tap NON è un insert. Il client accumula e
+  scarica lotti su `live_likes` con flush ogni **800ms** (`count` 1..50 per
+  riga; flush finale best-effort all'unmount); rate-limit server **15
+  insert/10s** per (live, utente) — le due cifre sono ACCOPPIATE (chi ne
+  cambia una cambia l'altra; commenti gemelli nel trigger SQL e in
+  `useLiveLikes`). `lives.like_count` è incrementato a delta dal sync-trigger
+  SOLO su INSERT (purge/delete NON decrementano: totale storico monotòno,
+  come `peak_viewers`); il display client è monotòno (baseline snapshot +
+  delta realtime altrui + tap propri in optimistic, mai regressioni).
+- **Arbitro server** (`live_likes_before_insert`, specchio dichiarato dei
+  commenti): autore/created_at forzati, `is_active_user`, live esistente,
+  stato `live`, `can_see_live`, `count between 1 and 50`, rate-limit. Errori
+  come codici-stringa; il client scarta il lotto IN SILENZIO (niente retry).
+- **Cosa i like NON fanno**: niente Aura (QA-1 di live-rework.md — mai
+  sommare like grezzi illimitati), niente notifiche, niente moderazione (non
+  hanno contenuto), niente lista "chi ha messo like" in UI.
+- **Retention & GDPR**: righe `live_likes` purgate a 24h dalla fine (stesso
+  blocco di commenti/viewers in `expire_content`); `like_count` sopravvive
+  come **aggregato anonimo** e muore coi 30 giorni della riga `lives`;
+  `process_account_deletion` v8 cancella le righe proprie; `gdpr-export` v6
+  le esporta (art. 15).
+
 ## 7. Home — striscia + feed verticale
 
 Nella **categoria `live` della Home** (già in `FEED_CATEGORIES`, oggi
 `ComingSoon`), ramo full-height fuori dalla ScrollView (pattern DropFeed/Map).
 
-**A. Striscia orizzontale in alto** — scroll orizzontale di cerchi: foto
-profilo + **anello rosso pulsante** (`colors.danger`, pulse `motion.pulse`) +
-etichetta "LIVE". Tap → apre direttamente quella live. Contiene SOLO amici
-(L-1).
+**A. Striscia orizzontale in alto** — scroll orizzontale di cerchi, SOLO amici
+(L-1), in due metà (M15/RW-1):
+1. le live **ATTIVE**: foto profilo + **anello rosso pulsante**
+   (`colors.danger`, pulse `motion.pulse`) + etichetta "LIVE"; tap → apre la
+   live; stesso ordine del feed verticale;
+2. le live **TERMINATE da <24h**: anello statico grigio (`colors.faint`, MAI
+   rosso né pulse), avatar spento, etichetta "FINITA"; tap → **PROFILO
+   dell'amico** (RW-1a: non esiste replay); spariscono a 24h esatte da
+   `ended_at` (filtro client su clock calibrato); un host con live attiva
+   vince sul proprio segnaposto; la propria terminata non appare. Porta di
+   lettura dedicata `lives_strip()` (§15.2); le terminate NON entrano MAI nel
+   feed verticale.
 
 **B. Feed verticale sotto, stile TikTok** — `FlatList pagingEnabled`, una live
 a schermo per volta come **preview video reale** (connessione subscribe-only
 alla SOLA pagina visibile, disconnessione allo scroll — budget LiveKit, §12.15;
 audio mutato in preview, tap per entrare nello schermo spettatore completo,
-QA-3). Ordine (tutto dentro il grafo del viewer):
-1. live di **Top Friends** del viewer;
-2. resto degli **amici**, ordinati per segnali di qualità: spettatori reali
-   (`viewer_count`, usato server-side senza esporlo) e Aura dell'host.
+QA-3; pilla 👁 statica col `viewer_count`, QA-2 di live-rework.md). Ordine
+server-side (M15/RW-2, tutto dentro il grafo del viewer):
+1. live di **Top Friends** del viewer (Best Friends SEMPRE primi);
+2. TUTTE le altre per **engagement = SOLO spettatori concorrenti**
+   (`viewer_count` desc); recenza e id come tie-break. L'**Aura è USCITA dal
+   ranking** (resta nel payload per l'anello colore in UI).
 
-Mai un ranking che pesca fuori dal grafo. Feed vuoto = stato onesto ("Nessun
-amico è in live ora") con CTA ad avviarne una — niente riempitivi.
+Mai un ranking che pesca fuori dal grafo. Quando le pagine finiscono
+(`has_more=false`), l'ultima "pagina" è un **segno di fine** (`FineFeedLive`,
+gemello di SeiInPari dei drops — M15/RW-5), alto esattamente una pagina: il
+paging snappa pulito e su quella pagina NESSUNA preview è connessa (budget
+R-3 gratis). Feed vuoto = stato onesto ("Nessun amico è in live ora") con CTA
+ad avviarne una — niente riempitivi (con la striscia sopra, se esistono
+terminate).
 
 L'aggiornamento è **realtime**: gli eventi `live_started`/`live_ended`
 sull'inbox privata patchano striscia e feed senza polling; `lives_feed` è la
@@ -396,6 +473,9 @@ verità a mount/foreground (pattern snapshot+delta di M7).
   moderazione esistente (nessun meccanismo nuovo).
 - I badge/achievement NON toccano l'Aura (layer separato, Fase 6); un
   achievement "prima live" è un'estensione naturale ma NON in scope M12.
+- **I like (M15) NON toccano l'Aura**: un like non è un prop (nessun tratto,
+  nessun anti-gaming possibile su volumi illimitati) — questione aperta QA-1
+  di live-rework.md per un eventuale segnale futuro anti-gaming.
 
 ## 11. Anti-abuso, safety, moderazione
 
@@ -479,11 +559,15 @@ verità a mount/foreground (pattern snapshot+delta di M7).
 | Entrare come spettatore (token) | — | — | ✅ | ❌ | ❌ |
 | Pubblicare audio/video (`canPublish`) | ✅ | ✅ | ❌ | ❌ | ❌ |
 | Commentare | ✅ | ✅ | ✅ (se abilitati, stato `live`) | ❌ | ❌ |
+| Inviare like (solo stato `live` — M15/RW-3) | ✅ | ✅ | ✅ | ❌ | ❌ |
 | Pausa / riprendi / termina | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Invitare / rimuovere co-host, kick | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Vedere il numero di spettatori | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Vedere `viewer_count` / `like_count` (pille, feed, detail — M15/RW-4) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Vedere `peak_viewers` | ✅ | ✅ (M14/V6) | ❌ | ❌ | ❌ |
+| Lista nominativa spettatori + kick | ✅ (solo host principale) | ❌ | ❌ | ❌ | ❌ |
+| Vedere il cerchio "terminata" in striscia (<24h — M15/RW-1) | — (propria esclusa) | ✅ | ✅ | ❌ | ❌ |
 | Segnalare live / commento | — | ✅ | ✅ | ❌ | ❌ |
-| Scrivere le tabelle live direttamente | ❌ | ❌ | ❌ | ❌ | ❌ (solo RPC/definer) |
+| Scrivere le tabelle live direttamente | ❌ | ❌ | ❌ | ❌ | ❌ (solo RPC/definer; eccezioni trigger-arbitrate: `live_comments` su `(live_id, body)`, `live_likes` su `(live_id, count)`) |
 | Utente `deleted_at` / mutato / bannato | non crea/commenta | idem | lettura ok | — | — |
 
 Con `visibility='top_friends'`: la colonna "Amico (visibile)" vale solo per i
@@ -560,8 +644,9 @@ valore, convenzione `*_enum.sql` del repo):
 | `started_at` | `timestamptz not null default now()` | |
 | `paused_at` | `timestamptz` | valorizzato SOLO mentre in pausa |
 | `ended_at` | `timestamptz` | NULL = attiva; stato finale |
-| `viewer_count` | `int not null default 0` | sync-trigger da `live_viewers` (attivi) |
-| `peak_viewers` | `int not null default 0` | massimo storico |
+| `viewer_count` | `int not null default 0` | sync-trigger da `live_viewers` (attivi); da M15 PUBBLICO ai visibili (grant per-colonna) |
+| `peak_viewers` | `int not null default 0` | massimo storico; resta PRIVATO (fuori dal grant) |
+| `like_count` | `int not null default 0` | M15: sync-trigger da `live_likes` SOLO su INSERT (totale storico, mai decrementato); pubblico ai visibili |
 | `created_at` | `timestamptz not null default now()` | |
 
 Indici: **unique parziale `(host_id) where ended_at is null`** (una live attiva
@@ -607,6 +692,23 @@ predicato su `is_adult` in `can_see_live`/token — nessun refactor).
 
 Indice btree(`live_id`, `created_at`). **In pubblicazione
 `supabase_realtime`** (postgres_changes + RLS). Trigger before-insert: §6.
+
+**`live_likes`** (M15/LR0, migrazione 69) — una riga = un LOTTO di like:
+
+| Colonna | Tipo | Note |
+|---|---|---|
+| `id` | `uuid` PK `default gen_random_uuid()` | |
+| `live_id` | `uuid not null` → `lives on delete cascade` | |
+| `user_id` | `uuid not null` → `profiles on delete cascade` | forzato dal trigger |
+| `count` | `integer not null check (count between 1 and 50)` | tap nel lotto (batching client 800ms) |
+| `created_at` | `timestamptz not null default now()` | forzato dal trigger |
+
+Indici: btree(`live_id`, `created_at`) (finestra rate-limit + purge) ·
+btree(`user_id`) (GDPR). **In pubblicazione `supabase_realtime`**
+(postgres_changes + RLS `can_see_live`). Trigger: `live_likes_before_insert`
+(arbitro, §6-bis) + `sync_live_like_count` AFTER INSERT (delta su
+`lives.like_count`, salta le `ended`). Grant: `insert (live_id, count)` a
+authenticated (`user_id` FUORI dal grant) + select; niente update/delete.
 
 **Helper** `public.can_see_live(p_live uuid, p_viewer uuid)` (stable,
 definer) — l'UNICO predicato di visibilità, riusato da RLS, RPC, token,
@@ -654,16 +756,32 @@ SEMPRE da `public`+`anon`+`authenticated` prima dei grant):
   della Edge `live-kick`).
 - **`live_leave(p_live uuid)`** — spettatore: `left_at = now()`; co-host
   attivo: `status='left'` (best-effort, il webhook riconcilia).
-- **`lives_feed() returns jsonb`** — la porta di lettura del feed: live
-  attive (`live`/`paused`) visibili al chiamante (`can_see_live`), con
-  identità host (username/display/avatar/`aura_color`/`aura_score`), title,
-  status, started_at, flag `is_top_friend`; ordinamento server-side:
-  Top Friends del viewer → poi `viewer_count` e Aura host, senza mai esporre
-  i contatori. Scala ≤150 amici: niente paginazione in v1.
-- **`live_detail(p_live uuid) returns jsonb`** — dettaglio + revalidation:
-  live, host attivi, flag chiamante (`is_host`,`is_cohost`,`can_comment`),
-  `viewer_count` SOLO se host (anti-vanity, pattern drops); errore
-  `not_visible` se `can_see_live` è falso → il client si disconnette.
+- **`lives_feed(p_top boolean, p_viewers integer, p_before timestamptz,
+  p_before_id uuid, p_limit integer) returns jsonb`** — la porta di lettura
+  del feed, **v3** (M13/P8 = paginata keyset; M15/LR1 = ranking a
+  engagement): live attive (`live`/`paused`) visibili al chiamante
+  (`can_see_live`), con identità host, title, status, started_at, flag
+  `is_top_friend` e `viewer_count` (pubblico da M15, anche nel cursore);
+  ordinamento `is_top desc, viewer_count desc, started_at desc, id desc`
+  (Best Friends SEMPRE primi, poi engagement = solo spettatori concorrenti;
+  l'Aura è fuori dal ranking). Keyset QUATERNARIO (tutti i cursor-param o
+  nessuno); `rpc('lives_feed', {})` = prima pagina (tutti default). Il
+  cursore è instabile sotto churn di viewer_count: duplicati/salti accettati
+  (dedup client + reconcile 60s).
+- **`live_detail(p_live uuid) returns jsonb`** — dettaglio + revalidation,
+  **v3** (M14/V6 + M15/LR1): live, host attivi, flag chiamante
+  (`is_host`,`is_cohost`,`can_comment`); `viewer_count` e `like_count` nel
+  jsonb `live` di base (TUTTI i visibili, RW-4); il blocco condizionale
+  host/co-host attivo consegna il SOLO `peak_viewers`; errore `not_visible`
+  se `can_see_live` è falso → il client si disconnette.
+- **`lives_strip() returns jsonb`** (M15/LR2, migrazione 71) — la porta della
+  seconda metà della striscia: live TERMINATE da <24h visibili al chiamante
+  (`can_see_live` funziona anche su `ended`: le righe `live_hosts` restano;
+  kickati/bloccati esclusi), `{server_now, ended:[{live_id, ended_at,
+  host{…}}]}`, `ended_at desc`, cap 20, la propria esclusa. NIENTE aura né
+  contatori nel payload. INVARIANTE dichiarata: la finestra 24h COINCIDE con
+  la purge di `live_viewers` (registro kick) in `expire_content` — le due
+  durate si muovono insieme, o i kickati rientrano in striscia.
 - Interne (revoke totale, nessun grant): `live_fanout(p_live, p_event,
   p_payload)` (§15.4) e la funzione di premio Aura richiamata dal trigger.
 
@@ -712,6 +830,13 @@ SEMPRE da `public`+`anon`+`authenticated` prima dei grant):
 - **Commenti**: postgres_changes su `live_comments` (pubblicazione + RLS
   `can_see_live`) — pattern drop_comments provato; canale per-live
   sottoscritto solo dentro lo schermo spettatore/host.
+- **Like (M15)**: postgres_changes INSERT su `live_likes` come SECONDO
+  listener sullo STESSO canale client `live:{liveId}` dei commenti (un
+  canale, un socket, UN solo subscribe per schermo — `subscribeLiveRealtime`);
+  volume bounded dal batching (≤15 lotti/10s per utente attivo). NESSUN
+  evento inbox nuovo, NESSUN fan-out `live_fanout` per i like. La striscia
+  delle terminate non ha canali propri: `live_ended` (già gestito) invalida
+  la query strip, il refetch 60s copre i force-end del cron.
 - **Contatore spettatori in stanza**: dagli eventi participant di LiveKit
   lato client (istantaneo, zero costo); il `viewer_count` a DB serve solo
   all'ordinamento feed e al prompt live-vuota.
@@ -730,7 +855,11 @@ SEMPRE da `public`+`anon`+`authenticated` prima dei grant):
   righe `live_hosts` cascano) · **cintura difensiva mappa**: `map_events`
   `live_broadcast` con `ended_at is null` ma live non più attiva → chiusura
   +3h (specchio della cintura rooms). Cadenza: cron `expire-content`
-  esistente (5 min) — **nessun job nuovo**.
+  esistente (5 min) — **nessun job nuovo**. Evoluzioni: **v8** (M13/P7,
+  riconciliazione anti-drift di `viewer_count`) e **v9** (M15/LR3, migrazione
+  72: purge `live_likes` nello stesso blocco 24h di commenti/viewers — le
+  righe a 30 giorni cascano già con `lives`; `like_count` NON viene toccato,
+  totale storico).
 - **Trigger `lives_map_close_events`** (via primaria, specchio
   `rooms_map_close_events`): `status → 'ended'` ⇒ sugli eventi collegati
   `ended_at = now()`, `visibility_expires_at = now() + interval '3 hours'`,
@@ -741,10 +870,14 @@ SEMPRE da `public`+`anon`+`authenticated` prima dei grant):
 - **`process_account_deletion` v7** (verbatim v6 + add): end + DELETE delle
   `lives` proprie (cascade su hosts/viewers/comments), delete dei propri
   `live_comments` / `live_viewers` / `live_hosts` su live altrui. Le righe
-  `map_events` dell'utente sono già cancellate dal blocco mappa v6.
+  `map_events` dell'utente sono già cancellate dal blocco mappa v6. **v8**
+  (M15/LR3): + delete delle righe `live_likes` proprie — `lives.like_count`
+  resta (aggregato anonimo non riconducibile all'interessato, muore coi 30
+  giorni della riga `lives`).
 - **GDPR — `gdpr-export` v5** (art. 15): sezioni `lives` (proprie),
   `live_comments` (scritti), `live_viewers` e `live_hosts` (proprie righe).
-  Si accoda alla coda deploy-owner.
+  **v6** (M15/LR3): + sezione `live_likes` (le proprie righe). Si accoda alla
+  coda deploy-owner.
 - **Consenso**: NESSUN nuovo tipo di consenso GDPR — trasmettere è un atto
   volontario e puntuale dell'utente (come postare un drop), non un
   trattamento passivo/continuativo come la posizione (che il consenso ce
@@ -1120,3 +1253,4 @@ tarda. Il frontend parte solo a contratto dati stabile.
 | Rev | Data | Cosa |
 |-----|------|------|
 | 1 | 2026-07-09 | Prima stesura: specifica completa + piano LM0–LM8. Decisioni L-1..L-4 validate dal PO in sessione (incl. override notifiche "sempre a tutti, stile TikTok"). |
+| 2 | 2026-07-16 | **Emendamenti M15 — Rework Live** (`docs/live/live-rework.md`, RW-1..RW-5 del PO 2026-07-15): contatori `viewer_count`/`like_count` pubblici ai visibili (eccezione a R-04 limitata alle live; `peak_viewers` e lista/kick privati, drops intoccati) — §0.2/§1/§1.2/§5/§13; nuova §6-bis (like TikTok: batching 800ms ↔ rate-limit 15/10s, realtime sul canale condiviso, purge 24h, GDPR); §7 riscritta (striscia con terminate <24h → profilo, ranking a engagement, fine feed); §15.1 (`like_count` + tabella `live_likes`), §15.2 (`lives_feed` v3, `live_detail` v3, `lives_strip`), §15.4 (secondo listener like), §15.5 (`expire_content` v9, `process_account_deletion` v8, `gdpr-export` v6). Migrazioni 69–72. |

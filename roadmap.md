@@ -8,7 +8,42 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-15 notte (**M14 round 3 (F7–F9) — terza
+> **Ultimo aggiornamento:** 2026-07-16 (**M15 — Rework Live: MODULO COMPLETO
+> lato sviluppo (LR0–LR9).** Spec+piano `docs/live/live-rework.md` (decisioni
+> **RW-1..RW-5** del PO 2026-07-15, EMENDA live.md → Rev. 2). **Backend
+> LR0–LR4** (migrazioni **69–72 LIVE** sul remoto, applicate via pooler):
+> dominio like `live_likes` (lotti 1..50, trigger arbitro specchio dei
+> commenti, rate-limit 15/10s ACCOPPIATO al flush client 800ms — R-2,
+> `lives.like_count` a delta SOLO su INSERT = totale storico, realtime in
+> publication) · contatori PUBBLICI `viewer_count`/`like_count` (grant
+> per-colonna — ECCEZIONE del PO a R-04 limitata alle live; `peak_viewers` e
+> lista/kick restano privati) con `lives_feed` **v3** (ranking `is_top desc,
+> viewer_count desc` — l'Aura esce dal ranking; keyset QUATERNARIO a 5
+> parametri) e `live_detail` **v3** (contatori nel jsonb `live` a tutti i
+> visibili) · `lives_strip()` (terminate <24h, tap→profilo; finestra 24h =
+> invariante accoppiata alla purge `live_viewers`) · lifecycle/GDPR:
+> `expire_content` **v9** (purge like a 24h), `process_account_deletion`
+> **v8** (in LR3 chiuso anche un buco pre-esistente: revoke della funzione da
+> anon/authenticated), `gdpr-export` **v6** (→ coda owner) · pgTAP
+> **622/622** sul remoto (R-04/AH-2 rovesciati SOLO per le live, +43
+> invarianti). **Mobile LR5–LR8**: tipi/lib/store col cursore quaternario e
+> `subscribeLiveRealtime` (UN canale per commenti+like) · striscia con
+> terminate (anello grigio "FINITA", sparizione a 24h esatte su clock
+> calibrato, dedup attiva>terminata, vuoto-con-terminate) · `FineFeedLive`
+> (footer alto una pagina esatta → zero preview connesse, R-3 gratis) ·
+> **LR8**: `useLiveLikes` (batch 800ms, display ❤ monotòno
+> base+delta+optimistic), `CuoreParticella`/`CuoriOverlay` (Reanimated, cap
+> 20, pointerEvents none), double-tap RNGH sul CONTENITORE della griglia
+> (pattern ViewerMedia, rischio R-8), bottone cuore nel rail, pille 👁/❤ per
+> TUTTI in `/live/[id]` (spettatore = remoti+1), pilla 👁 statica sulla
+> preview del feed (QA-2). tsc+eslint verdi. **LR9**: live.md Rev. 2 +
+> CLAUDE.md §4/§5/§6 + MANUAL-TESTING live **§16** (12 scenari; emendati
+> 4.4/4.5/5.2/6.7/12.3). ⚠️ Azioni OWNER: deploy `gdpr-export` v6 (si accoda
+> a send-push v4; serve `supabase login` con televo.management2) +
+> MANUAL-TESTING §16 su 2 device con la build che include il bundle M15
+> (nessuna dipendenza nativa nuova: basta il bundle JS della prossima build
+> già in coda per M14).)
+> Precedente: 2026-07-15 notte (**M14 round 3 (F7–F9) — terza
 > verifica on-device del PO, solo bundle JS (nessuna migrazione).** **F7
 > permesso notifiche**: root cause CONFERMATA nel sorgente nativo di
 > expo-notifications — su Android 13+ `getPermissionsAsync()` non risponde MAI
@@ -1427,6 +1462,32 @@ frontend), unica eccezione la tab Notifiche (AH-1, assorbe il residuo M8).
 > client); causa già mappata → P5/P6 invariati.
 > - **Verifica:** Definition of Done in `docs/audit/AUDIT-HARDENING.md` §15;
   un punto alla volta su comando esplicito del PO, un commit per punto.
+
+### 🔴 M15 — Rework Live (like TikTok + contatori pubblici) — ✅ SVILUPPO COMPLETO (LR0–LR9, 2026-07-16; restano azioni owner)
+Spec+piano ufficiale: **`docs/live/live-rework.md`** (Rev. 1, decisioni PO
+RW-1..RW-5 del 2026-07-15 — EMENDA `docs/live/live.md` → Rev. 2). Cinque
+modifiche di prodotto: striscia con terminate <24h (tap→profilo, RW-1) ·
+ranking feed a engagement = solo spettatori concorrenti (RW-2, l'Aura esce) ·
+like stile TikTok illimitati non-toggle (RW-3, cuori solo propri) ·
+viewer/like count PUBBLICI ai visibili (RW-4, ECCEZIONE a R-04 limitata alle
+live — `peak_viewers`, lista+kick e drops INTATTI) · fine feed (RW-5).
+- ✅ **LR0–LR4 backend** (migrazioni **69–72 LIVE**, pgTAP **622/622** sul
+  remoto): `live_likes` + trigger arbitro + `like_count` a delta ·
+  grant per-colonna contatori + `lives_feed` v3 (keyset quaternario) +
+  `live_detail` v3 · `lives_strip()` · `expire_content` v9 +
+  `process_account_deletion` v8 + `gdpr-export` v6 (repo).
+- ✅ **LR5–LR8 mobile**: tipi/lib/store (cursore quaternario, canale unico
+  commenti+like) · `useLivesStrip` + `LiveStripAvatarTerminata` ·
+  `FineFeedLive` (footer una-pagina, zero preview connesse) · `useLiveLikes`
+  (batch 800ms ↔ rate-limit 15/10s, display ❤ monotòno) + `CuoriOverlay`/
+  `CuoreParticella` + double-tap RNGH + pille 👁/❤ per tutti + pilla 👁 in
+  preview (QA-2). tsc/eslint verdi a ogni passo.
+- ✅ **LR9 docs**: live.md Rev. 2, CLAUDE.md §4/§5/§6, MANUAL-TESTING live
+  §16 (12 scenari; 4.4/4.5/5.2/6.7/12.3 emendati), memoria di progetto.
+- ⏭️ **Azioni owner**: deploy **`gdpr-export` v6** (coda: si somma a
+  `send-push` v4; serve `supabase login` televo.management2) · esecuzione
+  **MANUAL-TESTING §16 su 2 device** con una build che includa il bundle M15
+  (nessuna dipendenza nativa nuova: basta la build EAS già in coda da M14).
 
 ### ♻️ Trasversale (continuo)
 Componenti UI residui (`Badge`, `BottomSheet`) · font (Inter, Clash Display) ·

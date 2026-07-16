@@ -30,6 +30,7 @@ import { useLiveStore } from '@/store/liveStore';
 
 export const liveKeys = {
   feed: (uid: string) => ['live', uid, 'feed'] as const,
+  strip: (uid: string) => ['live', uid, 'strip'] as const, // terminate <24h (M15/LR6)
 };
 
 // I delta incompleti (live_status di una live ignota) coalescono in UN refetch.

@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(575);
+select plan(622);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -1491,12 +1491,19 @@ select ok((select not has_table_privilege('authenticated', 'public.lives', 'UPDA
 select ok((select not has_table_privilege('authenticated', 'public.lives', 'DELETE')),
   'authenticated non cancella lives');
 
--- Contatori PRIVATI a livello dati (pattern drops R-04): il select per-colonna
--- esclude viewer_count/peak_viewers; il resto della riga è leggibile.
-select ok((select not has_column_privilege('authenticated', 'public.lives', 'viewer_count', 'SELECT')),
-  'viewer_count NON leggibile dal client (anti-vanity a livello dati)');
+-- Contatori a livello dati — M15/LR1 ROVESCIA R-04 limitatamente alle live
+-- (decisione PO 2026-07-15, live-rework.md §0.3): viewer_count e like_count sono
+-- PUBBLICI a chi vede la riga (la RLS can_see_live continua a decidere le RIGHE).
+-- R-04 NON è abrogata: peak_viewers resta privato (host/co-host via live_detail),
+-- livekit_room_name resta fuori dal grant, i drops restano intoccati.
+select ok((select has_column_privilege('authenticated', 'public.lives', 'viewer_count', 'SELECT')),
+  'viewer_count PUBBLICO — decisione PO 2026-07-15, eccezione a R-04 per le live');
+select ok((select has_column_privilege('authenticated', 'public.lives', 'like_count', 'SELECT')),
+  'like_count PUBBLICO — decisione PO 2026-07-15, eccezione a R-04 per le live');
 select ok((select not has_column_privilege('authenticated', 'public.lives', 'peak_viewers', 'SELECT')),
-  'peak_viewers NON leggibile dal client');
+  'peak_viewers NON leggibile dal client (R-04 non abrogata: il picco resta privato)');
+select ok((select not has_column_privilege('authenticated', 'public.lives', 'livekit_room_name', 'SELECT')),
+  'livekit_room_name NON leggibile dal client (fuori dal grant per-colonna, LM0)');
 select ok((select has_column_privilege('authenticated', 'public.lives', 'title', 'SELECT')),
   'title leggibile dal client (controllo positivo del grant per-colonna)');
 
@@ -1777,12 +1784,15 @@ select ok((select prosrc like '%emit_aura%' and prosrc like '%participation%'
     where n.nspname = 'public' and p.proname = 'lives_award_participation'),
   'lives_award_participation: premio 1/n a rendimenti decrescenti (formula drops)');
 
--- lives_feed: la porta di lettura della Home — M13/P8: paginata KEYSET (AH-2),
--- ordinamento a due blocchi (Top Friends del viewer → resto, dentro recenza),
--- cursore interamente derivabile dal payload (R-04 intatta: nessun contatore
--- esce dal server, nemmeno nel cursore).
+-- lives_feed: la porta di lettura della Home — M13/P8: paginata KEYSET; M15/LR1
+-- (v3, RW-2): ranking a ENGAGEMENT (Best Friends del viewer SEMPRE primi, poi
+-- viewer_count desc; la recenza scende a tie-break) e cursore QUATERNARIO.
+-- AH-2 è SUPERATA per le live (PO 2026-07-15, live-rework.md §0.3): viewer_count
+-- entra nel payload dell'item E nel cursore; peak_viewers resta VIETATO nel
+-- body (la guardia prosrc sul contatore privato resta in vigore, R-6).
 select has_function('public', 'lives_feed',
-  array['boolean', 'timestamptz', 'uuid', 'integer'], 'lives_feed paginata esiste');
+  array['boolean', 'integer', 'timestamptz', 'uuid', 'integer'],
+  'lives_feed v3 (5 parametri, cursore quaternario) esiste');
 select ok((select not exists (select 1 from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'lives_feed' and p.pronargs = 0)),
@@ -1792,22 +1802,27 @@ select ok((select prosecdef and proconfig::text like '%search_path=%'
     where n.nspname = 'public' and p.proname = 'lives_feed'),
   'lives_feed è security definer con search_path svuotato');
 select ok((select has_function_privilege('authenticated',
-      'public.lives_feed(boolean, timestamptz, uuid, integer)', 'EXECUTE')
+      'public.lives_feed(boolean, integer, timestamptz, uuid, integer)', 'EXECUTE')
     and not has_function_privilege('anon',
-      'public.lives_feed(boolean, timestamptz, uuid, integer)', 'EXECUTE')),
+      'public.lives_feed(boolean, integer, timestamptz, uuid, integer)', 'EXECUTE')),
   'lives_feed: authenticated sì, anon no');
 select ok((select prosrc like '%can_see_live%' and prosrc like '%ended_at is null%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'lives_feed'),
   'lives_feed: solo live attive visibili al chiamante (unico predicato)');
-select ok((select prosrc like '%top_friends%' and prosrc like '%started_at desc%'
+select ok((select prosrc like '%top_friends%' and prosrc like '%viewer_count desc%'
+             and prosrc like '%started_at desc%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'lives_feed'),
-  'lives_feed: due blocchi Top Friends → recenza (AH-2)');
-select ok((select prosrc not like '%viewer_count%' and prosrc not like '%peak_viewers%'
+  'lives_feed v3: ranking Best Friends → engagement (viewer_count desc) → recenza (RW-2)');
+select ok((select prosrc like '%viewer_count%' and prosrc not like '%peak_viewers%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'lives_feed'),
-  'lives_feed: nessun contatore, nemmeno nel cursore (anti-vanity R-04)');
+  'lives_feed v3: ranking a engagement — viewer_count nel payload, peak resta privato');
+select ok((select prosrc like '%(p_top::int, p_viewers, p_before, p_before_id)%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_feed'),
+  'lives_feed v3: cursore keyset QUATERNARIO (is_top, viewer_count, started_at, id)');
 select ok((select prosrc like '%least(%' and prosrc like '%p_before_id%'
              and prosrc like '%has_more%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -1831,20 +1846,30 @@ select ok((select prosrc like '%not_visible%' and prosrc like '%can_see_live%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'live_detail'),
   'live_detail: not_visible se il predicato nega (il client si disconnette, §5)');
-select ok((select prosrc like '%is_host%' and prosrc like '%viewer_count%'
+-- M15/LR1 (v3, RW-4): viewer_count e like_count stanno nel payload BASE — li
+-- ricevono TUTTI i visibili (rovesciamento R-04 per le live, PO 2026-07-15).
+select ok((select prosrc like '%''viewer_count''%' and prosrc like '%''like_count''%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'live_detail'),
-  'live_detail: contatori spettatori privati (anti-vanity R-04)');
+  'live_detail v3: viewer_count e like_count nel payload base, pubblici ai visibili (RW-4)');
 select ok((select prosrc like '%is_cohost%' and prosrc like '%can_comment%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'live_detail'),
   'live_detail: flag del chiamante (is_host/is_cohost/can_comment)');
--- M14/V6: i contatori sono degli host ATTIVI (host principale E co-host) — e
--- di nessun altro: lo spettatore non li riceve mai.
+-- M14/V6 + M15/LR1: il blocco condizionale degli host ATTIVI (host principale O
+-- co-host) consegna ora il SOLO peak_viewers — il picco storico resta privato
+-- (R-04 non abrogata). L'ordine testuale (contatori pubblici PRIMA del ramo
+-- condizionale) è la prova strutturale dello spostamento.
 select ok((select prosrc like '%v_is_host or v_is_cohost%'
+             and prosrc like '%|| jsonb_build_object(''peak_viewers''%'
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'live_detail'),
-  'live_detail v2: blocco contatori consegnato a host principale O co-host attivo (V6)');
+  'live_detail v3: il ramo host/co-host consegna il SOLO peak_viewers (V6 + RW-4)');
+select ok((select position('''like_count''' in prosrc) > 0
+             and position('''like_count''' in prosrc) < position('if v_is_host or v_is_cohost' in prosrc)
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_detail'),
+  'live_detail v3: contatori pubblici NEL payload base, FUORI dal blocco condizionale');
 
 -- M14 round 2 (F1): guardia di riconnessione del co-host. L'accettazione di un
 -- invito comporta una riconnessione LiveKit (token nuovo con canPublish): la
@@ -2061,6 +2086,205 @@ select ok((select prosrc like '%viewer_count%' and prosrc like '%is distinct fro
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'expire_content'),
   'expire_content v8: riconciliazione anti-drift di viewer_count (heal ≤5 min, live attive)');
+
+-- =============================================================================
+-- M15 · Rework live (LR0–LR3) — like TikTok, striscia terminate, lifecycle & GDPR
+-- =============================================================================
+-- docs/live/live-rework.md (Rev. 1, decisioni PO RW-1..RW-5 del 2026-07-15).
+-- I ROVESCIAMENTI di R-04/AH-2 limitati alle live (grant per-colonna
+-- viewer_count/like_count, lives_feed v3, live_detail v3) vivono nei blocchi
+-- originari LM0/P8 qui sopra; qui stanno le invarianti del dominio NUOVO:
+-- live_likes (lotti di like, LR0), lives_strip (terminate <24h, LR2),
+-- lifecycle & GDPR (LR3). Le prove FUNZIONALI (insert respinte per codice,
+-- rate-limit, realtime, purge, delete account) sono negli smoke via pooler.
+
+-- live_likes: la tabella dei LOTTI (un tap NON è un insert: batching client
+-- ~800ms, cap 50 tap per riga).
+select has_table('public', 'live_likes', 'live_likes esiste');
+select has_column('public', 'lives', 'like_count', 'lives.like_count esiste (totale storico)');
+select col_not_null('public', 'lives', 'like_count', 'lives.like_count è not null');
+select ok((select relrowsecurity from pg_class where oid = 'public.live_likes'::regclass),
+  'RLS attiva su live_likes');
+select is((select count(*)::int from pg_policies where schemaname='public' and tablename='live_likes'),
+  2, 'live_likes ha due policy (select visibile + insert own), zero update/delete');
+select ok((select exists (select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'live_likes'
+      and policyname = 'live_likes_select_visible' and cmd = 'SELECT'
+      and qual like '%can_see_live%')),
+  'live_likes_select_visible: SELECT via can_see_live (filtra anche il canale postgres_changes)');
+select ok((select exists (select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'live_likes'
+      and policyname = 'live_likes_insert_own' and cmd = 'INSERT'
+      and with_check like '%is_active_user%' and with_check like '%can_see_live%')),
+  'live_likes_insert_own: INSERT solo proprio, attivo e visibile');
+
+-- Vincolo del lotto: 1 ≤ count ≤ 50 (cap anti-script a livello dati, gemello
+-- della guardia nel trigger; accoppiato al rate-limit: tetto 750 like/10s).
+select ok((select exists (select 1 from pg_constraint
+    where conrelid = 'public.live_likes'::regclass and contype = 'c'
+      and pg_get_constraintdef(oid) like '%count >= 1%'
+      and pg_get_constraintdef(oid) like '%count <= 50%')),
+  'live_likes.count: check 1..50 (cap del lotto a livello dati)');
+
+-- Grant: insert PER-COLONNA (live_id, count) — l'autore lo forza il trigger
+-- (pattern live_comments); select ad authenticated (serve al realtime + RLS).
+select ok((select has_column_privilege('authenticated', 'public.live_likes', 'live_id', 'INSERT')
+             and has_column_privilege('authenticated', 'public.live_likes', 'count', 'INSERT')),
+  'live_likes: insert su (live_id, count) consentita');
+select ok((select not has_column_privilege('authenticated', 'public.live_likes', 'user_id', 'INSERT')),
+  'live_likes: user_id fuori dal grant insert (forzato dal trigger)');
+select ok((select has_table_privilege('authenticated', 'public.live_likes', 'SELECT')),
+  'live_likes: select ad authenticated (postgres_changes + RLS)');
+select ok((select not has_table_privilege('authenticated', 'public.live_likes', 'UPDATE')
+             and not has_table_privilege('authenticated', 'public.live_likes', 'DELETE')),
+  'live_likes: niente update/delete client (like immutabili; la purge è definer)');
+select ok((select not has_any_column_privilege('anon', 'public.live_likes', 'SELECT')
+             and not has_any_column_privilege('anon', 'public.live_likes', 'INSERT')),
+  'anon a zero su live_likes');
+
+-- Indici: (live_id, created_at) serve la finestra rate-limit e la purge 24h;
+-- (user_id) serve i diritti GDPR.
+select ok((select exists (select 1 from pg_indexes
+      where schemaname = 'public' and tablename = 'live_likes'
+        and indexname = 'live_likes_live_created_idx')
+    and exists (select 1 from pg_indexes
+      where schemaname = 'public' and tablename = 'live_likes'
+        and indexname = 'live_likes_user_idx')),
+  'live_likes: indici (live_id, created_at) e (user_id) presenti');
+
+-- FK a cascata: le righe muoiono con la live (minimizzazione 30 gg) e col profilo.
+select ok((select count(*)::int = 2 from pg_constraint
+    where conrelid = 'public.live_likes'::regclass and contype = 'f' and confdeltype = 'c'),
+  'live_likes: FK verso lives e profiles entrambe ON DELETE CASCADE');
+
+-- Realtime: gli INSERT viaggiano via postgres_changes sullo STESSO canale dei
+-- commenti (nessun canale nuovo; volume bounded dal batching).
+select ok((select exists (select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'live_likes')),
+  'live_likes in pubblicazione supabase_realtime');
+
+-- live_likes_before_insert: l'arbitro (specchio dichiarato di
+-- live_comments_before_insert — ordine guardie in live-rework.md §3.3).
+select has_function('public', 'live_likes_before_insert', '{}'::name[],
+  'live_likes_before_insert() esiste');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_likes_before_insert'),
+  'live_likes_before_insert è security definer con search_path svuotato');
+select ok((select exists (select 1 from pg_trigger
+    where tgrelid = 'public.live_likes'::regclass and tgname = 'live_likes_before_insert_trg')),
+  'trigger live_likes_before_insert_trg presente su live_likes');
+select ok((select prosrc like '%is_active_user%' and prosrc like '%can_see_live%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_likes_before_insert'),
+  'live_likes_before_insert: sanzioni + visibilità (mute/ban ed estranei/kickati fuori)');
+select ok((select prosrc like '%''live''%' and prosrc like '%live_not_likeable%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_likes_before_insert'),
+  'live_likes_before_insert: si lika SOLO in stato live (in pausa/finita no)');
+select ok((select prosrc like '%between 1 and 50%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_likes_before_insert'),
+  'live_likes_before_insert: guardia sul cap del lotto (1..50)');
+select ok((select prosrc like '%>= 15%' and prosrc like '%10 seconds%'
+             and prosrc like '%rate_limited%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'live_likes_before_insert'),
+  'live_likes_before_insert: rate-limit 15 lotti / 10 secondi (accoppiato al flush client, R-2)');
+select ok((select not has_function_privilege('authenticated', 'public.live_likes_before_insert()', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.live_likes_before_insert()', 'EXECUTE')),
+  'live_likes_before_insert: nessuna esecuzione diretta dai ruoli client');
+
+-- sync_live_like_count: delta SOLO su INSERT; il totale è STORICO e monotòno
+-- (purge e cancellazioni non decrementano), congelato a fine live.
+select has_function('public', 'sync_live_like_count', '{}'::name[],
+  'sync_live_like_count() esiste');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'sync_live_like_count'),
+  'sync_live_like_count è security definer con search_path svuotato');
+select ok((select prosrc like '%like_count + new.count%' and prosrc like '%status <> ''ended''%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'sync_live_like_count'),
+  'sync_live_like_count: incremento a delta, congelato a fine live (salta le ended)');
+select ok((select exists (select 1 from pg_trigger
+    where tgrelid = 'public.live_likes'::regclass and tgname = 'live_likes_count_ins_trg')),
+  'trigger live_likes_count_ins_trg presente su live_likes (after insert)');
+select is((select count(*)::int from information_schema.triggers
+    where event_object_schema = 'public' and event_object_table = 'live_likes'
+      and event_manipulation in ('UPDATE', 'DELETE')),
+  0, 'nessun trigger su UPDATE/DELETE di live_likes: il totale è storico, mai decrementato');
+select ok((select not has_function_privilege('authenticated', 'public.sync_live_like_count()', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.sync_live_like_count()', 'EXECUTE')),
+  'sync_live_like_count: nessuna esecuzione diretta dai ruoli client');
+
+-- lives_before_write v2: like_count azzerato all'avvio e MAI forzato in UPDATE
+-- (una sola occorrenza nel corpo = solo nel ramo insert → il delta del sync passa).
+select ok((select prosrc ~ 'like_count\s*:=\s*0'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_before_write'),
+  'lives_before_write v2: like_count azzerato all''insert');
+select ok((select (length(prosrc) - length(replace(prosrc, 'like_count', ''))) / length('like_count') = 1
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_before_write'),
+  'lives_before_write v2: like_count SOLO nel ramo insert (l''update non lo forza)');
+
+-- lives_feed v3: la firma v2 a 4 parametri è stata DROPpata in LR1 (le
+-- invarianti della v3 sono nel blocco M13/P8, aggiornato al nuovo contratto).
+select ok((select not exists (select 1 from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_feed' and p.pronargs = 4)),
+  'lives_feed: la firma v2 a 4 parametri è stata rimossa (LR1)');
+
+-- lives_strip: la porta di lettura delle terminate <24h (striscia, RW-1). Il
+-- tap sul cerchio spento porta al PROFILO (RW-1a): nessun replay da nessun percorso.
+select has_function('public', 'lives_strip', '{}'::name[], 'lives_strip() esiste');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_strip'),
+  'lives_strip è security definer con search_path svuotato');
+select ok((select has_function_privilege('authenticated', 'public.lives_strip()', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.lives_strip()', 'EXECUTE')),
+  'lives_strip: authenticated sì, anon no');
+select ok((select prosrc like '%24 hours%' and prosrc like '%ended_at is not null%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_strip'),
+  'lives_strip: SOLO terminate, finestra 24h (invariante accoppiata alla purge di live_viewers)');
+select ok((select prosrc like '%can_see_live%' and prosrc like '%host_id <> v_uid%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_strip'),
+  'lives_strip: unico predicato di visibilità + la propria live esclusa server-side');
+select ok((select prosrc like '%ended_at desc%' and prosrc like '%limit 20%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_strip'),
+  'lives_strip: ordine ended_at desc, cap 20');
+select ok((select prosrc like '%server_now%' and prosrc like '%not_authenticated%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'lives_strip'),
+  'lives_strip: server_now per il clock calibrato + guardia not_authenticated');
+
+-- Lifecycle (LR3): i lotti di like seguono commenti/spettatori — purge a 24h
+-- dalla fine; lives.like_count SOPRAVVIVE (aggregato anonimo, muore coi 30 gg
+-- della riga lives). Il corpo v8 (riconciliazione anti-drift) è conservato: la
+-- guardia 'is distinct from' del blocco P7 qui sopra resta in vigore su v9.
+select ok((select prosrc like '%delete from public.live_likes%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v9: purge dei lotti like a 24h dalla fine (like_count sopravvive)');
+
+-- GDPR (LR3): art. 17 — le righe like dell'utente spariscono subito; l'aggregato
+-- anonimo resta (stessa posizione dei contatori congelati dei drops).
+select ok((select prosrc like '%delete from public.live_likes where user_id = p_user%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'process_account_deletion'),
+  'process_account_deletion v8: delete dei lotti like propri (aggregato anonimo conservato)');
+
+-- Hardening (LR3): buco chiuso — il revoke originale (20260628210000) era solo
+-- `from public`, e le default privileges dell'hosted lasciavano la RPC
+-- eseguibile dai client con p_user ARBITRARIO. Ora: solo Edge/cron (definer).
+select ok((select not has_function_privilege('authenticated', 'public.process_account_deletion(uuid)', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.process_account_deletion(uuid)', 'EXECUTE')),
+  'process_account_deletion: nessuna esecuzione dai ruoli client (hardening LR3)');
 
 select * from finish();
 rollback;

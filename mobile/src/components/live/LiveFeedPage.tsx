@@ -252,10 +252,19 @@ export const LiveFeedPage = memo(function LiveFeedPage({ live, attiva, altezza, 
         </View>
       ) : null}
 
-      {/* Overlay identità: badge in alto, host + titolo in basso (il numero di
-          spettatori NON esiste qui: anti-vanity §1.2). */}
+      {/* Overlay identità: badge in alto, host + titolo in basso. QA-2
+          (M15/RW-4): accanto al badge la pilla 👁 col viewer_count del feed —
+          statica (si aggiorna con snapshot/reconcile dello store), aiuta a
+          leggere il ranking a engagement. I like NON esistono in preview
+          (vivono solo nello schermo /live/[id], §0.2). */}
       <View style={styles.overlay} pointerEvents="none">
-        <BadgePreview inPausa={inPausa} />
+        <View style={styles.rigaBadge}>
+          <BadgePreview inPausa={inPausa} />
+          <View style={styles.pillaOcchi}>
+            <Ionicons name="eye-outline" size={13} color={colors.ink} />
+            <Text style={styles.pillaOcchiTesto}>{live.viewerCount}</Text>
+          </View>
+        </View>
         <View style={styles.piede}>
           <View style={styles.rigaHost}>
             <Avatar uri={live.host.avatarUrl} name={nomeHost} size={30} />
@@ -320,8 +329,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: spacing.lg,
   },
-  badge: {
+  rigaBadge: {
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  badge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -330,6 +344,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 4,
   },
+  pillaOcchi: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+  },
+  pillaOcchiTesto: { color: colors.ink, fontSize: fontSize.xs, fontFamily: fontFamily.semibold },
   badgePausa: { backgroundColor: colors.elevated },
   badgePunto: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#ffffff' },
   badgeTesto: {

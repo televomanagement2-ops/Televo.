@@ -3,13 +3,17 @@
 // =============================================================================
 // Stessa rotta, ruolo dal token/live_detail (live.md §15.6): l'host (e il
 // co-host attivo) pubblica e controlla i propri media; l'host principale in
-// più governa pausa/fine/inviti/kick e vede il numero di spettatori (SOLO lui,
-// anti-vanity §1.2). Lo spettatore guarda, commenta, silenzia in locale,
-// segnala. La sessione LiveKit e la verità DB vivono in useLiveSession; qui
-// c'è solo la messa in scena. Caricato via lazy dietro il guard Expo Go.
+// più governa pausa/fine/inviti/kick e resta l'unico a vedere la LISTA
+// nominativa degli spettatori. Da M15 (RW-3/RW-4) i CONTATORI sono pubblici:
+// pilla 👁 e pilla ❤ per tutti i visibili, like TikTok illimitati via
+// double-tap sul video o bottone del rail (cuori solo locali, RW-3a). Lo
+// spettatore guarda, lika, commenta, silenzia in locale, segnala. La sessione
+// LiveKit e la verità DB vivono in useLiveSession; qui c'è solo la messa in
+// scena. Caricato via lazy dietro il guard Expo Go.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useNavigation } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,6 +31,7 @@ import { StatoErrore } from '@/components/ui/StatoErrore';
 import { CommentiOverlay } from '@/components/live/CommentiOverlay';
 import { CommentComposer, CommentInput } from '@/components/live/CommentInput';
 import { CoHostSheet } from '@/components/live/CoHostSheet';
+import { CuoriOverlay, type CuoriOverlayHandle } from '@/components/live/CuoriOverlay';
 import { ListaSpettatori } from '@/components/live/ListaSpettatori';
 import { StatoPausa } from '@/components/live/StatoPausa';
 import {
@@ -35,6 +40,7 @@ import {
   type CommentoLive,
   type LiveSessionApi,
 } from '@/hooks/useLive';
+import { useLiveLikes } from '@/hooks/useLiveLikes';
 import { avvisa, conferma, mostraMenu } from '@/lib/dialoghi';
 import { liveErrorMessage } from '@/lib/errors';
 import { segnalaCommentoLive, segnalaLive } from '@/lib/live';
@@ -86,7 +92,43 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
       })),
     [api.hosts],
   );
-  const { commenti, invia } = useLiveComments(liveId, api.fase === 'attiva', identitaNote);
+
+  // --- Like TikTok (M15/LR8, RW-3) ----------------------------------------------
+  // Si lika SOLO in stato 'live' (in pausa gesto e bottone sono spenti; il
+  // trigger server rifiuta comunque, specchio dei commenti). L'handler onLike
+  // entra nel canale condiviso via useLiveComments (UN solo subscribe).
+  const likeAbilitato = api.fase === 'attiva' && api.status === 'live';
+  const { likeTotali, tap, onLike } = useLiveLikes(liveId, likeAbilitato, api.likeCount);
+  const cuoriRef = useRef<CuoriOverlayHandle>(null);
+
+  const { commenti, invia } = useLiveComments(liveId, api.fase === 'attiva', identitaNote, onLike);
+
+  // Origine del root nella finestra: converte i pageX/pageY del bottone cuore
+  // nelle coordinate dell'overlay (che è absoluteFill del root).
+  const rootRef = useRef<View>(null);
+  const origineRootRef = useRef({ x: 0, y: 0 });
+  const misuraRoot = () => {
+    rootRef.current?.measureInWindow((x, y) => {
+      origineRootRef.current = { x, y };
+    });
+  };
+
+  // Double-tap OVUNQUE sul video (RW-3): il detector vive sul CONTENITORE RN
+  // della griglia — mai sulla SurfaceView nativa (rischio R-8, pattern
+  // ViewerMedia). e.x/e.y sono già nel sistema del root (griglia=absoluteFill).
+  const gestoLike = useMemo(
+    () =>
+      Gesture.Tap()
+        .numberOfTaps(2)
+        .enabled(likeAbilitato)
+        .runOnJS(true)
+        .onEnd((e, riuscito) => {
+          if (!riuscito) return;
+          tap();
+          cuoriRef.current?.spawn(e.x, e.y);
+        }),
+    [likeAbilitato, tap],
+  );
 
   // --- Uscita e back hardware ---------------------------------------------------
 
@@ -216,46 +258,56 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
   // --- Diretta attiva -----------------------------------------------------------------
 
   const hostPrincipale = api.hosts[0];
+  // RW-4: il conteggio 👁 resta client-side dai partecipanti LiveKit
+  // (istantaneo, zero costo); lo spettatore aggiunge sé stesso — non è tra i
+  // remoti; host e co-host non si contano (invariato).
+  const spettatoriInStanza =
+    api.idsSpettatori.length + (api.sonoHost || api.sonoCoHost ? 0 : 1);
 
   return (
-    <View style={styles.root}>
+    <View ref={rootRef} style={styles.root} onLayout={misuraRoot}>
       {/* Video: 1 pieno, 2 in colonna, 3–4 a griglia (Co-Live, §4). La cella
           di un host senza traccia (camera spenta) NON sparisce: placeholder
           camera-off al suo posto, la griglia resta stabile (M14R3). La key
-          sulla trackSid ricrea la surface nativa a ogni traccia nuova. */}
-      <View style={styles.griglia}>
-        {api.riquadri.map((r) => (
-          <View key={r.userId} style={cellaStyle(api.riquadri.length)}>
-            {r.trackRef ? (
-              <VideoTrack
-                key={r.trackRef.publication.trackSid}
-                trackRef={r.trackRef}
-                style={styles.video}
-                objectFit="cover"
-                mirror={r.locale && api.fotocameraFrontale}
-              />
-            ) : (
-              <View style={styles.cellaSpenta}>
-                <Avatar uri={r.avatarUrl} name={r.nome} size={api.riquadri.length <= 1 ? 84 : 56} />
-                <View style={styles.cellaSpentaRiga}>
-                  <Ionicons name="videocam-off-outline" size={15} color={colors.muted} />
-                  <Text style={styles.cellaSpentaTesto}>Camera spenta</Text>
+          sulla trackSid ricrea la surface nativa a ogni traccia nuova.
+          Il double-tap like (RW-3) avvolge il contenitore RN della griglia:
+          gli overlay interattivi sopra (bottoni, commenti) restano padroni
+          dei propri tocchi. */}
+      <GestureDetector gesture={gestoLike}>
+        <View style={styles.griglia}>
+          {api.riquadri.map((r) => (
+            <View key={r.userId} style={cellaStyle(api.riquadri.length)}>
+              {r.trackRef ? (
+                <VideoTrack
+                  key={r.trackRef.publication.trackSid}
+                  trackRef={r.trackRef}
+                  style={styles.video}
+                  objectFit="cover"
+                  mirror={r.locale && api.fotocameraFrontale}
+                />
+              ) : (
+                <View style={styles.cellaSpenta}>
+                  <Avatar uri={r.avatarUrl} name={r.nome} size={api.riquadri.length <= 1 ? 84 : 56} />
+                  <View style={styles.cellaSpentaRiga}>
+                    <Ionicons name="videocam-off-outline" size={15} color={colors.muted} />
+                    <Text style={styles.cellaSpentaTesto}>Camera spenta</Text>
+                  </View>
                 </View>
-              </View>
-            )}
-          </View>
-        ))}
-        {api.riquadri.length === 0 ? (
-          <View style={styles.senzaVideo}>
-            <Avatar
-              uri={hostPrincipale?.avatar_url}
-              name={hostPrincipale?.display_name ?? hostPrincipale?.username}
-              size={84}
-            />
-            {api.status === 'live' ? <Text style={styles.senzaVideoTesto}>Camera spenta</Text> : null}
-          </View>
-        ) : null}
-      </View>
+              )}
+            </View>
+          ))}
+          {api.riquadri.length === 0 ? (
+            <View style={styles.senzaVideo}>
+              <Avatar
+                uri={hostPrincipale?.avatar_url}
+                name={hostPrincipale?.display_name ?? hostPrincipale?.username}
+                size={84}
+              />
+              {api.status === 'live' ? <Text style={styles.senzaVideoTesto}>Camera spenta</Text> : null}
+            </View>
+          ) : null}
+        </View>
+      </GestureDetector>
 
       {api.status === 'paused' ? <StatoPausa sonoHost={api.sonoHost} /> : null}
 
@@ -265,18 +317,23 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
           <View style={styles.testataSx}>
             <View style={styles.rigaBadge}>
               <BadgeLive inPausa={api.status === 'paused'} />
-              {/* V6: il numero di spettatori è degli host ATTIVI (quasi-host
-                  per il co-host); la LISTA col kick resta all'host principale. */}
-              {api.sonoHost || api.sonoCoHost ? (
-                <Pressable
-                  style={styles.pillaOcchi}
-                  onPress={api.sonoHost ? () => setSheetSpettatori(true) : undefined}
-                  disabled={!api.sonoHost}
-                >
-                  <Ionicons name="eye-outline" size={14} color={colors.ink} />
-                  <Text style={styles.pillaOcchiTesto}>{api.idsSpettatori.length}</Text>
-                </Pressable>
-              ) : null}
+              {/* M15/RW-4: pilla 👁 per TUTTI i visibili — pubblico è il
+                  NUMERO; la LISTA nominativa col kick resta all'host
+                  principale (unico per cui la pilla è tappabile). */}
+              <Pressable
+                style={styles.pillaOcchi}
+                onPress={api.sonoHost ? () => setSheetSpettatori(true) : undefined}
+                disabled={!api.sonoHost}
+              >
+                <Ionicons name="eye-outline" size={14} color={colors.ink} />
+                <Text style={styles.pillaOcchiTesto}>{spettatoriInStanza}</Text>
+              </Pressable>
+              {/* M15/RW-3b: totale ❤ pubblico, sale in realtime quando
+                  CHIUNQUE lika (baseline snapshot + delta, useLiveLikes). */}
+              <View style={styles.pillaOcchi}>
+                <Ionicons name="heart" size={14} color={colors.danger} />
+                <Text style={styles.pillaOcchiTesto}>{likeTotali}</Text>
+              </View>
             </View>
             <Text style={styles.titolo} numberOfLines={1}>
               {api.titolo}
@@ -328,6 +385,22 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
           </View>
 
           <View style={styles.colonnaControlli}>
+            {/* Like dal rail (RW-3): per spettatori, co-host E host — +1 per
+                tap, nessun toggle; in pausa è spento (il server rifiuta
+                comunque). Il cuore spawna nel punto del press (pagina→root). */}
+            <Pressable
+              onPress={(e) => {
+                tap();
+                cuoriRef.current?.spawn(
+                  e.nativeEvent.pageX - origineRootRef.current.x,
+                  e.nativeEvent.pageY - origineRootRef.current.y,
+                );
+              }}
+              disabled={!likeAbilitato}
+              style={[styles.controllo, !likeAbilitato && styles.spento]}
+            >
+              <Ionicons name="heart" size={22} color={colors.danger} />
+            </Pressable>
             {api.possoPubblicare && api.status === 'live' ? (
               <>
                 <Controllo
@@ -369,6 +442,10 @@ export default function LiveSurface({ liveId }: { liveId: string }) {
           </View>
         </View>
       </SafeAreaView>
+
+      {/* Cuori locali (RW-3a): layer sopra tutto, mai interattivo — i like
+          altrui NON fanno cuori, solo il contatore che sale. */}
+      <CuoriOverlay ref={cuoriRef} />
 
       {/* Fogli dell'host. */}
       {api.sonoHost ? (

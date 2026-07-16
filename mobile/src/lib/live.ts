@@ -14,8 +14,9 @@
 //  · Errori come stringhe-codice: le RPC li sollevano come PostgrestError, le
 //    Edge come `{error: <codice>}` — qui li normalizziamo a `Error(<codice>)`
 //    così `liveErrorMessage` (lib/errors.ts) li traduce in italiano.
-//  · Il numero di spettatori arriva SOLO all'host (anti-vanity R-04): il tipo
-//    LiveDetailRaw ha i contatori opzionali per questo.
+//  · Contatori (M15/LR1, RW-4): viewer_count e like_count sono PUBBLICI a chi
+//    vede la live (eccezione del PO 2026-07-15 a R-04, limitata alle live);
+//    peak_viewers resta privato degli host attivi (opzionale in LiveDetailRaw).
 
 import { callRpc } from '@/lib/rpc';
 import { supabase } from '@/lib/supabase';
@@ -26,6 +27,7 @@ import type {
   LiveHostStatus,
   LiveNotifyMode,
   LivesFeedRaw,
+  LivesStripRaw,
   LiveVisibility,
 } from '@/types/supabase';
 import type { LiveCommentRow } from '@/types';
@@ -118,28 +120,47 @@ export async function esciDalCoLive(liveId: string): Promise<void> {
 // RPC di lettura (LM2)
 // -----------------------------------------------------------------------------
 
-/** Cursore keyset del feed live (M13/P8): interamente derivabile dall'ULTIMA
- *  riga ricevuta — is_top_friend, started_at (ISO verbatim dal server, mai
- *  ricostruito da epoch: la precisione ai microsecondi è parte del cursore) e
- *  live_id. Nessun contatore viaggia nel cursore (anti-vanity R-04). */
+/** Cursore keyset del feed live (M13/P8; QUATERNARIO da M15/LR1): interamente
+ *  derivabile dall'ULTIMA riga RAW ricevuta — is_top_friend, viewer_count
+ *  (intero verbatim: da M15 il contatore è pubblico e viaggia nel cursore),
+ *  started_at (ISO verbatim dal server, mai ricostruito da epoch: la
+ *  precisione ai microsecondi è parte del cursore) e live_id. viewer_count è
+ *  VOLATILE: duplicati/salti tra pagine sono accettati (dedup per id nello
+ *  store + reconcile 60s, live-rework.md §2). */
 export interface CursoreLiveFeed {
   top: boolean;
+  viewers: number;
   before: string;
   beforeId: string;
 }
 
 /** Feed Home (striscia + verticale): live ATTIVE degli amici visibili, già
- *  ordinate server-side a due blocchi (Top Friends del viewer → resto, dentro
- *  recenza — AH-2) senza mai esporre i contatori. Senza cursore = prima
- *  pagina (la VERITÀ a mount/foreground; i delta inbox patchano); col cursore
- *  = pagina successiva (load-more, append allo store). */
+ *  ordinate server-side a engagement (M15/RW-2: Best Friends del viewer SEMPRE
+ *  primi, poi viewer_count desc, recenza a tie-break — l'Aura è fuori dal
+ *  ranking). Senza cursore = prima pagina (la VERITÀ a mount/foreground; i
+ *  delta inbox patchano); col cursore = pagina successiva (load-more, append
+ *  allo store). */
 export async function fetchLivesFeed(cursore?: CursoreLiveFeed): Promise<LivesFeedRaw> {
   return callRpc<LivesFeedRaw>(
     'lives_feed',
     cursore
-      ? { p_top: cursore.top, p_before: cursore.before, p_before_id: cursore.beforeId }
+      ? {
+          p_top: cursore.top,
+          p_viewers: cursore.viewers,
+          p_before: cursore.before,
+          p_before_id: cursore.beforeId,
+        }
       : {},
   );
+}
+
+/** Striscia, seconda metà (M15/LR2, RW-1): le live TERMINATE da <24h visibili
+ *  al chiamante (ended_at desc, cap 20; la propria esclusa server-side). Il
+ *  cerchio spento porta al PROFILO dell'amico (RW-1a): nessun replay da nessun
+ *  percorso. Sparizione a 24h esatte (filtro sul clock calibrato) e dedup
+ *  host-con-live-attiva > terminata sono compiti del client (useLivesStrip). */
+export async function fetchLivesStrip(): Promise<LivesStripRaw> {
+  return callRpc<LivesStripRaw>('lives_strip', {});
 }
 
 // Pre-warm del dettaglio (M13/P11, H2): al press su striscia/feed si scalda
@@ -253,6 +274,31 @@ export function moderaCommentoLive(commentId: string, text: string): void {
       body: { text: t, target_type: 'live_comment', target_id: commentId },
     })
     .catch(() => {});
+}
+
+// -----------------------------------------------------------------------------
+// Like (M15/LR0) — insert diretta validata dal trigger live_likes_before_insert
+// (stato 'live', can_see_live, is_active_user, cap 1..50, rate-limit), stesso
+// pattern dei commenti: il trigger è l'arbitro, il client non tocca user_id
+// -----------------------------------------------------------------------------
+
+/**
+ * Invia un LOTTO di like (RW-3: illimitati, non-toggle — un tap NON è un
+ * insert). Il chiamante (useLiveLikes, LR8) accumula i tap e fa flush ogni
+ * ~800ms con `count` = tap accumulati (cap 50 per riga): cadenza ACCOPPIATA al
+ * rate-limit server di 15 lotti/10s — chi cambia una delle due cifre deve
+ * cambiare l'altra (R-2; il commento gemello sta nel trigger SQL). SENZA
+ * .select(): niente eco ottimistica (i cuori sono solo locali, RW-3a) — il
+ * totale sale via realtime/snapshot. Errori del trigger come codici-stringa
+ * (rate_limited, live_not_likeable, live_not_visible, invalid_like_count,
+ * user_not_active): il lotto va scartato IN SILENZIO, niente retry-loop né
+ * coda (la live è intrinsecamente online, pattern M12).
+ */
+export async function inviaLikeLive(liveId: string, count: number): Promise<void> {
+  const { error } = await supabase
+    .from('live_likes')
+    .insert({ live_id: liveId, count } as never);
+  if (error) throw error;
 }
 
 // -----------------------------------------------------------------------------

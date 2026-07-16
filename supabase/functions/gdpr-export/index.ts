@@ -25,6 +25,12 @@
 // lives a 30 giorni — expire_content v7): l'export fotografa ciò che esiste
 // al momento della richiesta; sezioni vuote = nessuna live recente.
 //
+// v6 (M15 / LR3): aggiunta la sezione live_likes — i lotti di like propri
+// (art. 15). Anch'essi effimeri (purge a 24h dalla fine della live —
+// expire_content v9): l'export fotografa i lotti ancora esistenti. Il totale
+// aggregato lives.like_count NON è un dato dell'interessato (aggregato anonimo),
+// quindi non è una sezione a sé.
+//
 // verify_jwt = true.
 //   POST -> 200 { ok: true, exported_at, data: {...} }
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
@@ -54,7 +60,7 @@ Deno.serve(async (req) => {
     savedMessages, convMemberships, contactHashes, messageReactions,
     dropComments, dropLikes, dropSaves,
     mapPresence, mapEvents, mapSafeZones,
-    lives, liveComments, liveViewers, liveHosts,
+    lives, liveComments, liveViewers, liveHosts, liveLikes,
   ] = await Promise.all([
     db.from("profiles").select("*").eq("id", uid).maybeSingle(),
     db.from("profiles_private").select("*").eq("id", uid).maybeSingle(),
@@ -99,6 +105,8 @@ Deno.serve(async (req) => {
     db.from("live_comments").select("*").eq("author_id", uid),
     db.from("live_viewers").select("*").eq("user_id", uid),
     db.from("live_hosts").select("*").eq("user_id", uid),
+    // M15 (LR3): lotti di like propri (art. 15). Effimeri: purge a 24h dalla fine.
+    db.from("live_likes").select("*").eq("user_id", uid),
   ]);
 
   const data = {
@@ -133,6 +141,7 @@ Deno.serve(async (req) => {
     live_comments: liveComments.data ?? [],
     live_viewers: liveViewers.data ?? [],
     live_hosts: liveHosts.data ?? [],
+    live_likes: liveLikes.data ?? [],
   };
 
   // Marca completate le richieste di export pendenti + audit.

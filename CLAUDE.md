@@ -264,6 +264,36 @@ COESISTE con le Stanze audio `rooms` (L-2). Migrazioni 55–59
   budget R-3), badge mappa LM8. NO moderazione AI sui flussi video (report +
   coda umana); NESSUNA registrazione (il video non è mai persistito).
 
+### M15 — Rework Live (like TikTok, contatori pubblici, striscia terminate) — COMPLETO (LR0–LR9, 2026-07-16)
+Spec+piano `docs/live/live-rework.md` (Rev. 1, decisioni **RW-1..RW-5** del PO
+2026-07-15) — EMENDA `docs/live/live.md` (→ Rev. 2). Migrazioni 69–72
+(`live_likes`, `live_contatori_pubblici`, `lives_strip`,
+`live_likes_lifecycle`):
+- **Like TikTok (RW-3)**: `live_likes` (una riga = un LOTTO; batching client
+  **800ms** ↔ rate-limit server **15 insert/10s** — cifre ACCOPPIATE, R-2;
+  cap 50/riga) + trigger arbitro `live_likes_before_insert` (specchio dei
+  commenti) + `lives.like_count` a delta SOLO su INSERT (totale storico, mai
+  decrementato). Realtime = SECONDO listener sullo stesso canale `live:{id}`
+  dei commenti (zero canali nuovi). Cuori SOLO locali (RW-3a); i like NON
+  danno Aura né notifiche né moderazione.
+- **Contatori pubblici (RW-4)**: grant per-colonna `(viewer_count,
+  like_count)` su `lives`; `lives_feed` **v3** (ranking `is_top desc,
+  viewer_count desc` — l'Aura ESCE dal ranking; keyset QUATERNARIO, firma a
+  5 parametri con default) e `live_detail` **v3** (contatori nel jsonb `live`
+  per TUTTI i visibili; `peak_viewers` SOLO host/co-host).
+- **Striscia (RW-1)**: `lives_strip()` = terminate <24h, tap → PROFILO
+  (RW-1a, mai replay); finestra 24h = INVARIANTE accoppiata alla purge di
+  `live_viewers` in `expire_content`.
+- **Lifecycle/GDPR**: `expire_content` **v9** (purge `live_likes` a 24h) ·
+  `process_account_deletion` **v8** (delete righe proprie; `like_count` resta:
+  aggregato anonimo) · `gdpr-export` **v6** (sezione live_likes, coda owner).
+- **Fine feed (RW-5)**: `FineFeedLive` footer alto una pagina esatta → zero
+  preview connesse sulla pagina di fine (R-3 gratis).
+- **Mobile**: hook `useLivesStrip`/`useLiveLikes` (display ❤ monotòno),
+  `CuoreParticella`/`CuoriOverlay`, double-tap RNGH sul CONTENITORE della
+  griglia video, pille 👁/❤ per tutti in `/live/[id]`, pilla 👁 statica sulla
+  preview del feed (QA-2), `LiveStripAvatarTerminata`.
+
 ---
 
 ## 5. Edge Functions e Cron (riepilogo)
@@ -278,7 +308,7 @@ COESISTE con le Stanze audio `rooms` (L-2). Migrazioni 55–59
 | process-tip | true | tip simbolico attivo |
 | create-vibe-purchase | true | inerte senza STRIPE_SECRET_KEY |
 | stripe-webhook | false | firma Stripe; inerte senza STRIPE_WEBHOOK_SECRET |
-| gdpr-export, gdpr-delete | true | art. 15 / 17 (export v5: incl. drops, mappa e live) |
+| gdpr-export, gdpr-delete | true | art. 15 / 17 (export v6, M15: incl. drops, mappa, live e live_likes) |
 | storage-cleanup | false | x-cron-secret; via dispatch_storage_cleanup (pg_cron+pg_net); svuota storage_cleanup_queue via Storage API (M6/DM6) |
 | live-kick | true | M12/LM4: solo host principale; DB prima (kicked_at/removed), media dopo (removeParticipant) |
 | livekit-webhook | false | M12/LM4: firma **WebhookReceiver** LiveKit (NON x-cron-secret); room_finished → end, participant_left → riconcilia |
@@ -308,15 +338,20 @@ Vincoli di safety minori + GDPR, validi su tutto:
   secret **mai** nel client; vivono in Supabase secrets / Vault.
 - `mute`/`ban` disattivano la creazione contenuti via `is_active_user()`; ogni
   azione di moderazione è in `audit_log`.
-- **Live (M12)**: visibilità SOLO amici accettati via l'unico predicato
+- **Live (M12+M15)**: visibilità SOLO amici accettati via l'unico predicato
   `can_see_live` (unione degli host attivi in Co-Live, L-3) — in caso di
   conflitto risolvere sempre verso il MENO aperto; `canPublish` nel token solo
   per host/co-host attivi, spettatori subscribe-only; il video **non è mai
   persistito** (nessuna registrazione/bucket: il flusso vive solo in LiveKit);
-  contatori spettatori visibili SOLO all'host (anti-vanity R-04); UNA notifica
-  per live (mai su pausa/ripresa, dedup 10 min); le live finite spariscono
-  (nessun archivio); NO moderazione AI sui flussi video/audio (report reattivo
-  + coda umana).
+  **contatori** (EMENDATO M15, PO 2026-07-15): `viewer_count` e `like_count`
+  sono PUBBLICI a chi può vedere la live — ECCEZIONE esplicita a R-04
+  limitata alle live; restano privati `peak_viewers` (host/co-host) e la
+  lista nominativa spettatori + kick (solo host principale); i **drops
+  restano a contatori privati** (R-04 lì è intatta); UNA notifica
+  per live (mai su pausa/ripresa, dedup 10 min; MAI notifiche per i like);
+  le live finite **escono dal feed** (nessun archivio/replay) ma restano 24h
+  come segnaposto in striscia → tap al PROFILO, mai alla live (M15/RW-1);
+  NO moderazione AI sui flussi video/audio (report reattivo + coda umana).
 
 **Convenzioni del repo (seguile alla lettera quando aggiungi codice):**
 - Migrazioni: `supabase/migrations/YYYYMMDDHHMMSS_dominio.sql`, header

@@ -2,8 +2,10 @@
 // liveStore — stato client del dominio Live (M12 / LM5).
 // =============================================================================
 // Le live ATTIVE degli amici (striscia + feed verticale della Home, LM7),
-// indicizzate per id, con l'ORDINE deciso dal server (lives_feed: Top Friends →
-// spettatori reali → Aura host — i contatori ordinano senza essere esposti).
+// indicizzate per id, con l'ORDINE deciso dal server (lives_feed v3, M15/RW-2:
+// Best Friends del viewer SEMPRE primi, poi viewer_count desc — engagement =
+// SOLO spettatori concorrenti — con la recenza a tie-break; l'Aura è fuori dal
+// ranking e da M15/RW-4 il contatore è nel payload, pubblico ai visibili).
 //
 // Stesso modello a due sorgenti della mappa (M7 §13.3): lo SNAPSHOT
 // (`lives_feed`) è la VERITÀ a `server_now` e rimpiazza per intero dizionario e
@@ -53,6 +55,7 @@ export interface LiveAmico {
   startedAt: number; //      epoch ms UTC
   pausedAt: number | null;
   isTopFriend: boolean; //   dal solo snapshot (i delta non lo portano → false)
+  viewerCount: number; //    M15/RW-4: spettatori concorrenti, dal solo snapshot
   host: HostLive;
 }
 
@@ -68,6 +71,7 @@ function normalizzaLive(raw: LiveFeedItemRaw): LiveAmico {
     startedAt: ms(raw.started_at),
     pausedAt: raw.paused_at ? ms(raw.paused_at) : null,
     isTopFriend: raw.is_top_friend,
+    viewerCount: raw.viewer_count,
     host: {
       userId: raw.host.user_id,
       username: raw.host.username,
@@ -93,7 +97,8 @@ interface LiveState {
   /** M13/P8: esiste una pagina successiva sul server (lives_feed keyset). */
   hasMore: boolean;
   /** M13/P8: cursore della prossima pagina, derivato dall'ULTIMA riga RAW
-   *  ricevuta (started_at ISO verbatim: la precisione è parte del cursore). */
+   *  ricevuta (started_at ISO verbatim: la precisione è parte del cursore;
+   *  da M15/LR1 è QUATERNARIO — c'è anche viewer_count, intero verbatim). */
   cursore: CursoreLiveFeed | null;
 
   /** Lo snapshot è la verità: rimpiazza dizionario e ordine, ricalibra il clock.
@@ -117,12 +122,15 @@ interface LiveState {
   reset: () => void; // al logout
 }
 
-/** Cursore keyset dall'ultima riga RAW di una pagina (null = pagina vuota). */
+/** Cursore keyset dall'ultima riga RAW di una pagina (null = pagina vuota).
+ *  Quaternario da M15/LR1: viewer_count è volatile — eventuali duplicati tra
+ *  pagine li assorbe il dedup per id di appendFeed (instabilità accettata §2). */
 function cursoreDaPagina(snap: LivesFeedRaw): CursoreLiveFeed | null {
   const ultima = snap.lives[snap.lives.length - 1];
   if (!ultima) return null;
   return {
     top: ultima.is_top_friend,
+    viewers: ultima.viewer_count,
     before: ultima.started_at,
     beforeId: ultima.live_id,
   };
@@ -187,6 +195,9 @@ export const useLiveStore = create<LiveState>((set) => ({
             startedAt: ms(p.started_at),
             pausedAt: null,
             isTopFriend: nota?.isTopFriend ?? false,
+            // I delta inbox NON portano viewer_count (M15): si conserva il
+            // valore noto, o 0 per una live nuova — lo snapshot riallinea.
+            viewerCount: nota?.viewerCount ?? 0,
             host: {
               userId: p.host.user_id,
               username: p.host.username,

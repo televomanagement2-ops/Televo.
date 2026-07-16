@@ -1,9 +1,11 @@
-# Televo — Live (M12): MANUAL TESTING (regression pre-lancio)
+# Televo — Live (M12+M15): MANUAL TESTING (regression pre-lancio)
 
-> Scenari end-to-end dell'intero modulo Live (M12, milestone LM0–LM8). Da
-> eseguire per intero prima del lancio e dopo ogni modifica trasversale.
-> Spuntare a mano; ogni scenario indica **Passi / Atteso / Device / Rif.** (la
-> sezione di `docs/live/live.md`).
+> Scenari end-to-end dell'intero modulo Live (M12 LM0–LM8 + M15 Rework Live
+> LR0–LR9, §16). Da eseguire per intero prima del lancio e dopo ogni modifica
+> trasversale. Spuntare a mano; ogni scenario indica **Passi / Atteso /
+> Device / Rif.** (la sezione di `docs/live/live.md`). ⚠️ M15 ha EMENDATO
+> alcuni attesi storici (contatori pubblici, striscia con terminate): gli
+> scenari 4.4, 4.5, 5.2, 6.7 e 12.3 sono già riscritti di conseguenza.
 >
 > **Prerequisiti**
 > - **2 device fisici con Dev Build EAS che includa LiveKit/WebRTC** (oltre a
@@ -75,19 +77,25 @@
 4.3 **Pausa nel feed** — A mette in pausa. Atteso: su B la pagina mostra
     "Live in pausa" (nessuna connessione attiva), striscia con etichetta
     PAUSA e anello fermo. [§2]
-4.4 **Fine → sparisce** — A termina. Atteso: la live sparisce da striscia e
-    feed di B (nessun archivio). [§1, §7]
+4.4 **Fine → esce dal feed, resta in striscia (M15/RW-1)** — A termina.
+    Atteso: la live SPARISCE dal feed verticale di B (nessun archivio, nessun
+    replay) e in striscia appare il segnaposto "FINITA" di A (anello grigio
+    statico, avatar spento) dopo le attive; tap → profilo di A (dettagli in
+    16.9). [§1, §7]
 4.5 **Vuoto onesto** — Nessun amico in live. Atteso: "Nessun amico è in live
-    ora" + CTA "Avvia una live" — nessun riempitivo. [§7]
+    ora" + CTA "Avvia una live" — nessun riempitivo; se esistono terminate
+    <24h la striscia resta visibile SOPRA lo stato vuoto (M15/LR6). [§7]
 4.6 **Privacy** — C apre la Home. Atteso: la live di A NON esiste (né feed,
     né striscia). DB: `lives_feed()` di C vuota. [§13]
 
 ## 5. Schermo spettatore + commenti (LM6)
 5.1 **Join** — B entra dal feed (o dalla notifica). Atteso: video full-screen
     di A; DB: riga `live_viewers` (il mint È il join). [§5, §15.3]
-5.2 **Contatore agli host attivi** — Atteso: A vede il numero di spettatori;
-    B (spettatore) NON vede alcun contatore (anti-vanity). Il co-host ATTIVO
-    invece lo vede (dashboard quasi-host, M14/V6 — scenario 6.7). [§1.2, §13]
+5.2 **Contatori pubblici (M15/RW-4 — supera il "solo host" storico)** —
+    Atteso: A, il co-host attivo E B (spettatore) vedono TUTTI la pilla 👁
+    (per B il numero include sé stesso) e la pilla ❤ col totale like; SOLO A
+    può aprire la lista nominativa dal tap sulla pilla (B: pilla non
+    tappabile). [§1.2, §13, §16]
 5.3 **Commenti realtime** — B commenta. Atteso: il commento appare a entrambi
     in basso a sinistra; con flusso fitto ne restano **~7 visibili** e i più
     vecchi ESCONO SCORRENDO (restano raggiungibili scrollando la colonna, fino
@@ -132,8 +140,9 @@
     nulla anche se amico di B). [§4]
 6.7 **Dashboard quasi-host (M14/V6)** — B co-host attivo. Atteso: B vede la
     pillola occhi col numero di spettatori (NON tappabile: la lista col kick
-    resta ad A); B NON ha pausa/fine/inviti/kick. Lo spettatore continua a
-    non vedere alcun contatore (R-04). [VF-1]
+    resta ad A); B NON ha pausa/fine/inviti/kick. (M15: anche lo spettatore
+    vede ora i contatori 👁/❤ — restano privati SOLO lista nominativa e
+    `peak_viewers`.) [VF-1, §16]
 6.8 **Lascia il Co-Live (M14/V6)** — B tocca il controllo exit → conferma.
     Atteso: B torna spettatore SENZA uscire dalla live (riconnessione
     automatica, video suo giù dalla griglia entro ~2s per tutti); DB:
@@ -217,10 +226,12 @@
      token → 403, commenti invisibili (RLS), nessun delta realtime. [§13, §20]
 12.2 **Il bloccato/kickato non rientra** — dopo 7.x: mint → 403 anche a nuova
      apertura dell'app. [§13, §20]
-12.3 **Contatori mai agli spettatori** — `live_detail` a B SPETTATORE senza
-     `viewer_count` (verifica via pooler con JWT simulato); da co-host ATTIVO
-     i contatori arrivano (M14/V6, smoke 3 ruoli già eseguito via pooler).
-     [§1.2, §13, VF-1]
+12.3 **Contatori: pubblici i totali, privato il picco (M15/RW-4)** —
+     `live_detail` a B SPETTATORE contiene `viewer_count` e `like_count` nel
+     jsonb `live` ma NON `peak_viewers` top-level (verifica via pooler con
+     JWT simulato); da host/co-host ATTIVO arriva anche `peak_viewers`;
+     select client diretta di `lives.peak_viewers` → `permission denied`
+     (smoke LR1 già eseguito via pooler). [§1.2, §13, §16]
 
 ## 13. M14 — Fix dell'audit di verifica (V3/V4 + boot offline)
 13.1 **Keep-awake (M14/V3)** — A in diretta, B spettatore, entrambi senza
@@ -294,3 +305,74 @@
      discriminante: A apre il composer `/live/nuovo` → vede il proprio video
      locale? Sì → il guasto è nel compositing del solo pager (riportare
      device e build); No → guasto camera/WebRTC del device.
+
+## 16. M15 — Rework Live (LR0–LR9; richiede build col bundle M15)
+
+> Prerequisiti extra: migrazioni 69–72 LIVE sul remoto (fatte 2026-07-16,
+> pgTAP 622/622); `gdpr-export` v6 in coda deploy owner (16.12 la richiede);
+> per 16.9 serve l'accesso pooler in scrittura (retrodatare `ended_at`).
+> Riferimenti: `docs/live/live-rework.md` (§ citati qui sotto) e live.md
+> §6-bis/§7.
+
+16.1 **Double-tap → cuore nel punto** — B guarda la live di A; double-tap in
+     punti diversi del video (centro, bordi, sopra la colonna commenti dove
+     non ci sono bottoni). Atteso: +1 sulla pilla ❤ e un cuore che nasce NEL
+     punto esatto del tap e sale/scala/sfuma (~900ms, rotazione/deriva
+     casuali); raffica di double-tap = raffica di cuori, MAI un toggle (il
+     contatore non scende). I controlli (chiudi, commenti, rail) restano
+     tutti funzionanti. [RW-3, §3.1]
+16.2 **Bottone cuore nel rail** — B, il co-host attivo E A toccano il cuore
+     del rail (in alto nella colonna controlli). Atteso: +1 per tap e cuore
+     che spawna presso il bottone; disponibile a tutti e tre i ruoli. [§3.1]
+16.3 **Contatore cross-device (realtime)** — B lika a raffica. Atteso: la
+     pilla ❤ sale su A (e su un eventuale spettatore C) a lotti (~1s di
+     ritardo max, batch 800ms); il numero NON regredisce MAI su nessun
+     device (display monotòno); chiudendo e riaprendo lo schermo il totale
+     riparte coerente dallo snapshot `live_detail`. [§3.2]
+16.4 **Cuori altrui invisibili (RW-3a)** — mentre B lika, guardare A e C.
+     Atteso: SOLO il contatore sale; NESSUN cuore appare sui loro schermi
+     (i cuori sono solo di chi tocca). [§3.1]
+16.5 **Pausa blocca i like** — A mette in pausa. Atteso su B: bottone cuore
+     spento (opacità ridotta) e double-tap inerte (nessun cuore, contatore
+     fermo); alla ripresa i like tornano. Controprova server via pooler:
+     insert su `live_likes` con live in pausa → `live_not_likeable`. [§3.1]
+16.6 **Rate-limit con raffica prolungata** — B tiene una raffica continua di
+     tap >10s (quante più possibile). Atteso in UI: nessun errore visibile,
+     cuori fluidi (cap ~20 particelle vive). A DB (pooler): righe con
+     `count ≤ 50` e ≤15 insert per finestra di 10s; i lotti oltre soglia
+     sono scartati IN SILENZIO — il contatore locale può sovrastimare finché
+     il totale reale non lo supera (accettato, §3.2). [§3.2, §3.3]
+16.7 **Pilla 👁 da spettatore** — A in diretta, B e C spettatori. Atteso: B
+     vede 👁=2 (sé stesso incluso), A vede 👁=2; C esce → entrambi scendono a
+     1 in pochi secondi (conteggio LiveKit client-side). La pilla di B NON è
+     tappabile (lista nominativa solo per A, scenario 5.2). [RW-4, §4]
+16.8 **Pilla 👁 sulla preview (QA-2)** — Home → feed live con 2+ live.
+     Atteso: pilla 👁 statica accanto al badge LIVE con il `viewer_count`
+     del feed; si aggiorna al reconcile (~60s) o al refetch, NON in realtime
+     — è un'etichetta di ranking, non un contatore vivo. [QA-2, §7 live.md]
+16.9 **Striscia: terminata → profilo e sparizione 24h simulata** — A termina.
+     Atteso su B: segnaposto di A in striscia DOPO le attive — anello grigio
+     STATICO (mai rosso, mai pulse), avatar spento, etichetta "FINITA",
+     tempo relativo; tap → PROFILO di A (MAI `/live/[id]`). Via pooler:
+     `update lives set ended_at = now() - interval '24 hours 1 minute'` →
+     il segnaposto sparisce da solo al ricalcolo (timer di scadenza), senza
+     riavviare l'app. Se A riapre una live entro 24h: in striscia SOLO il
+     cerchio attivo (dedup per host). C (estraneo) non vede nulla. [RW-1, §1]
+16.10 **Fine feed che snappa** — con 1–2 live attive, B scorre oltre
+     l'ultima. Atteso: pagina piena "Sei in pari" (badge ✓ verde) con CTA
+     "Avvia una live", snap di paging pulito; su quella pagina NESSUNA
+     preview connessa (dashboard LiveKit: zero subscriber di B). Con più
+     pagine (`has_more`) il footer NON appare e il load-more continua. Feed
+     completamente vuoto → stato onesto invariato (striscia sopra se
+     esistono terminate, 4.5). [RW-5, §5]
+16.11 **Ranking a engagement** — 3+ live attive con spettatori diversi
+     (0, 1, 2+), host NON top-friend di B tranne uno. Atteso: prima le live
+     dei Top Friends di B, poi le altre per spettatori concorrenti
+     decrescenti; l'ordine si aggiorna al reconcile (~60s), mai a metà
+     swipe. [RW-2, §2]
+16.12 **GDPR like (dopo deploy owner `gdpr-export` v6)** — B ha messo like a
+     una live in corso. Export art. 15 di B: sezione `live_likes` con le sue
+     righe. Live finita da >24h (o `ended_at` retrodatato + giro di
+     `expire_content`): righe like sparite, `lives.like_count` INVARIATO
+     (totale storico); delete account di B → righe sue rimosse, `like_count`
+     resta. [§3.5]

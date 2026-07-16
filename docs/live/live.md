@@ -1037,7 +1037,8 @@ SEMPRE da `public`+`anon`+`authenticated` prima dei grant):
   best-effort), `pause_live`/`resume_live` v2 (fan-out `live_status`),
   `end_live` v2 (fan-out `live_ended`); trigger premio Aura su `ended`
   (criterio §10, formula `1/n`); RPC di lettura `lives_feed` e
-  `live_detail` (anti-vanity: `viewer_count` solo host).
+  `live_detail` (anti-vanity: `viewer_count` solo host — poi SUPERATO da
+  M14/V6 per il co-host e da M15/RW-4 per tutti i visibili, v. §0.2).
 - **Dipendenze**: LM0, LM1 (l'attach esiste); esistenti:
   `enqueue_notification`, `emit_aura`, `map_fanout` pattern.
 - **File**: 1 migrazione (`…_live_social.sql`); pgTAP.

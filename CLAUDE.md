@@ -245,7 +245,8 @@ COESISTE con le Stanze audio `rooms` (L-2). Migrazioni 55–59
   `live_started`/`live_status`/`live_ended` via `live_fanout` sull'inbox privata
   M7 `map:u:{uid}`; Aura `participation` 1/n SOLO per live qualificate (≥5 min,
   ≥1 spettatore reale); porte di lettura `lives_feed()`/`live_detail()`
-  (contatori SOLO all'host, anti-vanity).
+  (contatori SOLO all'host, anti-vanity — SUPERATO da M15: contatori pubblici
+  ai visibili, v. voce M15 sotto e §6).
 - **Mappa**: `map_events.live_id` + `map_attach_live`/`map_detach_live`
   (opt-in, masked-aware) + trigger di chiusura → **Echo 3h** (vs 12h stanze);
   in `paused` il badge resta pieno. Client: anello rosso + callout "LIVE"

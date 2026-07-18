@@ -5,7 +5,7 @@
 -- Supabase). Verifica le invarianti fondamentali del backend Fase 1-8 + GDPR.
 
 begin;
-select plan(622);
+select plan(669);
 
 -- Tabelle core
 select has_table('public', 'schools', 'schools esiste');
@@ -2285,6 +2285,196 @@ select ok((select prosrc like '%delete from public.live_likes where user_id = p_
 select ok((select not has_function_privilege('authenticated', 'public.process_account_deletion(uuid)', 'EXECUTE')
              and not has_function_privilege('anon', 'public.process_account_deletion(uuid)', 'EXECUTE')),
   'process_account_deletion: nessuna esecuzione dai ruoli client (hardening LR3)');
+
+-- =============================================================================
+-- M16 · Classifica Aura (AC0–AC1) — flag visibilità, porta di lettura, motore
+-- =============================================================================
+-- docs/aura/classifica.md (Rev. 1, decisioni PO AC-1..AC-5 del 2026-07-16).
+-- La classifica è un'eccezione R-04 perimetrata (rank tra amici, mai globale);
+-- qui le invarianti strutturali di AC0 (flag + aura_leaderboard) e AC1
+-- (snapshot + notifiche retention). Le prove FUNZIONALI (envelope, opt-out
+-- reciproco, tie-break, diff podio/sorpasso, guardia atomica del recap,
+-- idempotenza) sono negli smoke via pooler.
+
+-- AC0 — profiles.show_in_leaderboard: default true (listed by default), con
+-- l'ASIMMETRIA di grant voluta (§13.1): UPDATE per-colonna sì (opt-out a un
+-- tap), SELECT NO — un estraneo non deve poter enumerare chi si nasconde; lo
+-- stato proprio viaggia come `listed` nell'envelope della RPC.
+select has_column('public', 'profiles', 'show_in_leaderboard',
+  'profiles.show_in_leaderboard esiste (opt-out reciproco, AC-2)');
+select col_not_null('public', 'profiles', 'show_in_leaderboard',
+  'show_in_leaderboard è not null');
+select col_default_is('public', 'profiles', 'show_in_leaderboard', 'true',
+  'show_in_leaderboard: default true (si nasce listed)');
+select ok((select has_column_privilege('authenticated', 'public.profiles',
+    'show_in_leaderboard', 'UPDATE')),
+  'show_in_leaderboard: UPDATE per-colonna ad authenticated (RLS limita alla propria riga)');
+select ok((select not has_column_privilege('authenticated', 'public.profiles',
+    'show_in_leaderboard', 'SELECT')),
+  'show_in_leaderboard: FUORI dal grant SELECT (anti-enumerazione dell''opt-out)');
+select ok((select not has_column_privilege('anon', 'public.profiles',
+      'show_in_leaderboard', 'SELECT')
+    and not has_column_privilege('anon', 'public.profiles',
+      'show_in_leaderboard', 'UPDATE')),
+  'anon a zero su show_in_leaderboard');
+
+-- aura_leaderboard(): l'UNICA porta di lettura della classifica — UI e motore
+-- notifiche derivano dagli stessi filtri di partecipazione.
+select has_function('public', 'aura_leaderboard', '{}'::name[],
+  'aura_leaderboard() esiste (porta di lettura unica)');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'aura_leaderboard'),
+  'aura_leaderboard è security definer con search_path svuotato');
+select ok((select has_function_privilege('authenticated', 'public.aura_leaderboard()', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.aura_leaderboard()', 'EXECUTE')),
+  'aura_leaderboard: authenticated sì, anon no (revoke default-privileges applicato)');
+select ok((select prosrc like '%not_authenticated%' and prosrc like '%''listed'', false%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'aura_leaderboard'),
+  'aura_leaderboard: guardia auth + cancello chiamante (non listed ⇒ envelope corto)');
+select ok((select prosrc like '%show_in_leaderboard%' and prosrc like '%friendships%'
+             and prosrc like '%''accepted''%' and prosrc like '%deleted_at is null%'
+             and prosrc like '%banned_at%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'aura_leaderboard'),
+  'aura_leaderboard: filtri partecipanti §2.1 (solo amici accepted, listed, non cancellati/bannati)');
+select ok((select prosrc like '%row_number%' and prosrc like '%aura_score desc%'
+             and prosrc like '%created_at asc%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'aura_leaderboard'),
+  'aura_leaderboard: ordinamento totale §2.2 (score desc, anzianità, id) con row_number');
+select ok((select prosrc like '%200%' and prosrc like '%has_more%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'aura_leaderboard'),
+  'aura_leaderboard: cap difensivo 200 + has_more (me sticky calcolato prima del cap)');
+
+-- AC1 — i tre valori enum delle notifiche retention (migrazione separata,
+-- vincolo ADD VALUE).
+select ok((select exists (select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'notification_type' and e.enumlabel = 'aura_podio')),
+  'notification_type ha il valore aura_podio');
+select ok((select exists (select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'notification_type' and e.enumlabel = 'aura_sorpasso')),
+  'notification_type ha il valore aura_sorpasso');
+select ok((select exists (select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'notification_type' and e.enumlabel = 'aura_recap')),
+  'notification_type ha il valore aura_recap');
+
+-- aura_rank_snapshots: tabella di SISTEMA (il rank vivo arriva SOLO da
+-- aura_leaderboard; questa la leggono cron e GDPR). RLS senza policy + revoke.
+select has_table('public', 'aura_rank_snapshots', 'aura_rank_snapshots esiste');
+select ok((select relrowsecurity from pg_class where oid = 'public.aura_rank_snapshots'::regclass),
+  'RLS attiva su aura_rank_snapshots');
+select is((select count(*)::int from pg_policies
+    where schemaname = 'public' and tablename = 'aura_rank_snapshots'),
+  0, 'aura_rank_snapshots: zero policy (tabella di sistema, nessuna lettura client)');
+select ok((select not has_table_privilege('authenticated', 'public.aura_rank_snapshots', 'SELECT')
+             and not has_table_privilege('anon', 'public.aura_rank_snapshots', 'SELECT')),
+  'aura_rank_snapshots: revoke totale dai ruoli client');
+select col_is_pk('public', 'aura_rank_snapshots', array['user_id', 'computed_on'],
+  'aura_rank_snapshots: PK (user_id, computed_on) — upsert idempotente per giorno');
+select ok((select exists (select 1 from pg_constraint
+    where conrelid = 'public.aura_rank_snapshots'::regclass
+      and contype = 'f' and confdeltype = 'c')),
+  'aura_rank_snapshots: FK verso profiles ON DELETE CASCADE (hard-delete coperto)');
+
+-- aura_recap_of_week: il dosaggio del recap (clone di drop_prompt_of_day).
+select has_table('public', 'aura_recap_of_week', 'aura_recap_of_week esiste');
+select ok((select relrowsecurity from pg_class where oid = 'public.aura_recap_of_week'::regclass),
+  'RLS attiva su aura_recap_of_week');
+select is((select count(*)::int from pg_policies
+    where schemaname = 'public' and tablename = 'aura_recap_of_week'),
+  0, 'aura_recap_of_week: zero policy');
+select ok((select not has_table_privilege('authenticated', 'public.aura_recap_of_week', 'SELECT')
+             and not has_table_privilege('anon', 'public.aura_recap_of_week', 'SELECT')),
+  'aura_recap_of_week: revoke totale dai ruoli client');
+
+-- aura_rank_daily(): il motore notturno (03:30 UTC, dopo il ricalcolo Aura).
+select has_function('public', 'aura_rank_daily', '{}'::name[], 'aura_rank_daily() esiste');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'aura_rank_daily'),
+  'aura_rank_daily è security definer con search_path svuotato');
+select ok((select not has_function_privilege('authenticated', 'public.aura_rank_daily()', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.aura_rank_daily()', 'EXECUTE')),
+  'aura_rank_daily: nessuna esecuzione dai ruoli client (solo cron)');
+select ok((select prosrc like '%partition by%' and prosrc like '%on conflict%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'aura_rank_daily'),
+  'aura_rank_daily: rank PERSONALE (partition by owner) + upsert idempotente');
+select ok((select prosrc like '%rank > 3%' and prosrc like '%rank <= 3%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'aura_rank_daily'),
+  'aura_rank_daily: condizione podio §7.1 (ieri fuori, oggi dentro)');
+select ok((select prosrc like '%s.rank > prev.rank%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'aura_rank_daily'),
+  'aura_rank_daily: condizione sorpasso §7.2 (solo ex-podio che perde posizioni)');
+select ok((select prosrc like '%>= 4%' and prosrc like '%read_at is null%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'aura_rank_daily'),
+  'aura_rank_daily: soglia friends_total >= 4 (QA-3) + dedup non-letti');
+select ok((select prosrc like '%computed_on < s.computed_on%' and prosrc like '%lateral%'
+             and prosrc like '%is_active_user%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'aura_rank_daily'),
+  'aura_rank_daily: diff col più recente PRIMA di oggi + destinatari attivi');
+
+-- notify_aura_recap(): broadcast dosato settimanale (clone di notify_drop_prompt).
+select has_function('public', 'notify_aura_recap', '{}'::name[], 'notify_aura_recap() esiste');
+select ok((select prosecdef and proconfig::text like '%search_path=%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'notify_aura_recap'),
+  'notify_aura_recap è security definer con search_path svuotato');
+select ok((select not has_function_privilege('authenticated', 'public.notify_aura_recap()', 'EXECUTE')
+             and not has_function_privilege('anon', 'public.notify_aura_recap()', 'EXECUTE')),
+  'notify_aura_recap: nessuna esecuzione dai ruoli client (solo cron)');
+select ok((select prosrc like '%notified_at is null%' and prosrc like '%not found%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'notify_aura_recap'),
+  'notify_aura_recap: guardia atomica anti-doppio invio (vince un solo tick)');
+select ok((select prosrc like '%send_after%' and prosrc like '%Europe/Rome%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'notify_aura_recap'),
+  'notify_aura_recap: orario semi-random per settimana, giornata di Roma (QA-6)');
+select ok((select prosrc like '%>= 3%' and prosrc like '%show_in_leaderboard%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'notify_aura_recap'),
+  'notify_aura_recap: soglia friends_total >= 3 (QA-2) + destinatari listed');
+
+-- Cron: schedulati una sola volta, orari accoppiati al ricalcolo Aura (03:00)
+-- e alla finestra 17:00–19:30 Roma (15–19 UTC copre CET e CEST).
+select ok((select count(*)::int from cron.job where jobname = 'aura-rank-daily') = 1,
+  'cron aura-rank-daily schedulato');
+select is((select schedule from cron.job where jobname = 'aura-rank-daily'),
+  '30 3 * * *', 'aura-rank-daily alle 03:30 UTC (dopo aura-recompute-daily)');
+select ok((select count(*)::int from cron.job where jobname = 'aura-recap-weekly') = 1,
+  'cron aura-recap-weekly schedulato');
+select is((select schedule from cron.job where jobname = 'aura-recap-weekly'),
+  '*/15 15-19 * * 0', 'aura-recap-weekly: tick domenicali in finestra 15–19 UTC');
+
+-- Lifecycle (AC2): le tabelle di sistema di AC1 entrano nel ciclo di vita —
+-- purge snapshot oltre 14 giorni (il diff usa solo ieri: minimizzazione) e
+-- righe di dosaggio del recap oltre 60. I corpi precedenti sono conservati
+-- (regola verbatim+add): le guardie v9/v8 qui sopra restano in vigore su v10/v9.
+select ok((select prosrc like '%delete from public.aura_rank_snapshots%'
+             and prosrc like '%current_date - 14%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v10: purge degli snapshot di rank oltre i 14 giorni (minimizzazione)');
+select ok((select prosrc like '%delete from public.aura_recap_of_week%'
+             and prosrc like '%current_date - 60%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'expire_content'),
+  'expire_content v10: purge del dosaggio recap oltre i 60 giorni');
+
+-- GDPR (AC2): art. 17 — gli snapshot dell'utente spariscono SUBITO (la FK
+-- cascade coprirebbe solo l'hard-delete a 30 giorni).
+select ok((select prosrc like '%delete from public.aura_rank_snapshots where user_id = p_user%'
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'process_account_deletion'),
+  'process_account_deletion v9: delete immediato degli snapshot di rank propri');
 
 select * from finish();
 rollback;

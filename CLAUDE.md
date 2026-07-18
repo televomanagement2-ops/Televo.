@@ -295,6 +295,50 @@ Spec+piano `docs/live/live-rework.md` (Rev. 1, decisioni **RW-1..RW-5** del PO
   griglia video, pille 👁/❤ per tutti in `/live/[id]`, pilla 👁 statica sulla
   preview del feed (QA-2), `LiveStripAvatarTerminata`.
 
+### M16 — Classifica Aura (solo-amici, opt-out reciproco) — COMPLETO (AC0–AC6, 2026-07-18)
+Spec+piano `docs/aura/classifica.md` (Rev. 1, decisioni PO **AC-1..AC-5** del
+2026-07-16) + `docs/aura/MANUAL-TESTING.md`. Il tab Aura della Home diventa la
+**classifica dell'Aura SOLO tra amici accettati** (mai globale: la classifica
+di A e quella di B sono insiemi diversi). Migrazioni 73–76 (`aura_classifica`,
+`…_notifiche_enum`, `…_notifiche`, `…_lifecycle`):
+- **Dominio**: flag `profiles.show_in_leaderboard` (default true; grant UPDATE
+  per-colonna, **FUORI dal grant SELECT** — nessuna enumerazione di chi si
+  nasconde; lo stato proprio viaggia come `listed` nell'envelope) · RPC
+  **`aura_leaderboard()`** = UNICA porta di lettura (cancello chiamante:
+  non-listed ⇒ envelope corto `{listed:false}`; partecipanti = io + amici
+  `accepted` non cancellati/bannati e listed — i MUTATI restano; `row_number()`
+  su `aura_score desc, created_at asc, id asc` — pari merito = anzianità;
+  cap difensivo 200 + `me` sticky).
+- **Notifiche retention (AC-4)**: enum `aura_podio`/`aura_sorpasso`/
+  `aura_recap` · tabelle di sistema `aura_rank_snapshots` (fotografia
+  giornaliera del rank personale, retention 14gg) + `aura_recap_of_week`
+  (dosaggio, clone di `drop_prompt_of_day`) · `aura_rank_daily()` (cron 03:30
+  UTC, dopo il ricalcolo Aura: upsert idempotente + diff con ieri → podio
+  `old>3→≤3`, sorpasso SOLO ex-podio `old≤3` che peggiora, sorpassante
+  **ANONIMO**, soglia ≥4 partecipanti, dedup non-letti, primo snapshot
+  silenzioso) · `notify_aura_recap()` (broadcast dosato domenicale 17:00–19:30
+  Roma, guardia atomica, soglia ≥3).
+- **Lifecycle/GDPR**: `expire_content` **v10** (purge snapshot >14gg, righe
+  dosaggio >60gg) · `process_account_deletion` **v9** (delete immediato degli
+  snapshot propri; quelli altrui non citano l'utente) · `gdpr-export` **v7**
+  (sezione `aura_rank_snapshots` + flag nel profilo).
+- **Mobile**: tab Aura reale in `home.tsx` (ramo tutta-altezza) ·
+  `useClassificaAura`/`useClassificaVisibile` (flip ottimistico su `listed`,
+  `.update()` SENZA `.select()`) · `components/aura/classifica/`
+  (`ClassificaAura` podio 2/1/3 + lista + menu ⋮ + stati vuoto/non-listed,
+  `PodioAura`, `RigaClassifica` con DM per riga, `MenuClassifica`,
+  `StatoNonVisibile`) · **share card 9:16** (`ShareCardClassifica` off-screen
+  360×640 + `useCondividiClassifica`: `captureRef` PNG 1080×1920 →
+  `expo-sharing`, fallback `Share.share` testuale — import dinamici = guard
+  Expo Go; SOLO dati del mittente, AC-5) · `INVITE_URL` in
+  `constants/config.ts` (unica fonte outbound, QA-7) · deep link
+  `?categoria=aura` (validato su `FeedCategoryKey`, consumato una volta via
+  `setParams`) + `dynamicRoutes.homeCategoria` + rami in `rottaPerNotifica` ·
+  **bonifica school-rank** (rimossi `useMyRank`/`useSchoolRank`/
+  `Classifica.tsx` e i tipi `leaderboard_school`; la MV resta a DB, round
+  futuro). Dipendenze native NUOVE `react-native-view-shot`+`expo-sharing` →
+  serve una nuova Dev Build EAS (gate AC4).
+
 ---
 
 ## 5. Edge Functions e Cron (riepilogo)
@@ -309,7 +353,7 @@ Spec+piano `docs/live/live-rework.md` (Rev. 1, decisioni **RW-1..RW-5** del PO
 | process-tip | true | tip simbolico attivo |
 | create-vibe-purchase | true | inerte senza STRIPE_SECRET_KEY |
 | stripe-webhook | false | firma Stripe; inerte senza STRIPE_WEBHOOK_SECRET |
-| gdpr-export, gdpr-delete | true | art. 15 / 17 (export v6, M15: incl. drops, mappa, live e live_likes) |
+| gdpr-export, gdpr-delete | true | art. 15 / 17 (export v7, M16: incl. drops, mappa, live, live_likes e aura_rank_snapshots) |
 | storage-cleanup | false | x-cron-secret; via dispatch_storage_cleanup (pg_cron+pg_net); svuota storage_cleanup_queue via Storage API (M6/DM6) |
 | live-kick | true | M12/LM4: solo host principale; DB prima (kicked_at/removed), media dopo (removeParticipant) |
 | livekit-webhook | false | M12/LM4: firma **WebhookReceiver** LiveKit (NON x-cron-secret); room_finished → end, participant_left → riconcilia |
@@ -318,7 +362,9 @@ Spec+piano `docs/live/live-rework.md` (Rev. 1, decisioni **RW-1..RW-5** del PO
 (5 min), `streak-rollover-daily`, `dispatch-push-minutely`,
 `vibes-weekly-allowance`, `gdpr-retention-daily`, `storage-cleanup-15min`,
 `drop-prompt-pick-daily` (00:05 UTC: sceglie il tema del giorno),
-`drop-prompt-notify` (`*/15 13-18 * * *`: broadcast dosato dopo `send_after`).
+`drop-prompt-notify` (`*/15 13-18 * * *`: broadcast dosato dopo `send_after`),
+`aura-rank-daily` (`30 3 * * *`: snapshot rank + notifiche podio/sorpasso, M16),
+`aura-recap-weekly` (`*/15 15-19 * * 0`: recap classifica dosato dopo `send_after`, M16).
 
 ---
 
@@ -353,6 +399,20 @@ Vincoli di safety minori + GDPR, validi su tutto:
   le live finite **escono dal feed** (nessun archivio/replay) ma restano 24h
   come segnaposto in striscia → tap al PROFILO, mai alla live (M15/RW-1);
   NO moderazione AI sui flussi video/audio (report reattivo + coda umana).
+- **Classifica Aura (M16, PO 2026-07-16)**: visibile SOLO tra amici accettati
+  via l'UNICO predicato/porta `aura_leaderboard()` — mai classifica globale,
+  mai rank fuori dal grafo (se un'altra superficie dovrà mostrare rank, DEVE
+  passare da lì, mai un secondo predicato); il rank tra amici è un'**eccezione
+  a R-04 dichiarata e perimetrata** (è reputazione di qualità, non
+  vanity-count; i **drops restano a contatori privati**); opt-out
+  **RECIPROCO** enforced a DB (chi si nasconde non appare E non vede; il flag
+  `show_in_leaderboard` è FUORI dal grant SELECT: nessuna enumerazione di chi
+  si nasconde); la classifica **LEGGE l'Aura, non la scrive** (nessun evento
+  nuovo: guardarla/condividerla/vincerla non dà Aura); notifiche rarefatte e a
+  soglia (recap dosato 1/settimana, podio, sorpasso SOLO ex-podio e **ANONIMO**;
+  MAI notifiche nominative di sorpasso); la card condivisa contiene SOLO dati
+  del mittente + `INVITE_URL` configurabile — mai identità di amici in
+  artefatti che escono dall'app.
 
 **Convenzioni del repo (seguile alla lettera quando aggiungi codice):**
 - Migrazioni: `supabase/migrations/YYYYMMDDHHMMSS_dominio.sql`, header

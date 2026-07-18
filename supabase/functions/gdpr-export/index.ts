@@ -31,6 +31,13 @@
 // aggregato lives.like_count NON è un dato dell'interessato (aggregato anonimo),
 // quindi non è una sezione a sé.
 //
+// v7 (M16 / AC2): aggiunta la sezione aura_rank_snapshots — le fotografie
+// giornaliere del rank personale nella Classifica Aura (art. 15). Effimere:
+// retention 14 giorni (expire_content v10); sezione vuota = utente non listed
+// o modulo appena partito. Il flag show_in_leaderboard (opt-out reciproco,
+// AC-2) è GIÀ nella sezione profilo: il select("*") con service_role legge
+// tutte le colonne, inclusa quella fuori dal grant SELECT dei client.
+//
 // verify_jwt = true.
 //   POST -> 200 { ok: true, exported_at, data: {...} }
 import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
@@ -61,6 +68,7 @@ Deno.serve(async (req) => {
     dropComments, dropLikes, dropSaves,
     mapPresence, mapEvents, mapSafeZones,
     lives, liveComments, liveViewers, liveHosts, liveLikes,
+    auraRankSnapshots,
   ] = await Promise.all([
     db.from("profiles").select("*").eq("id", uid).maybeSingle(),
     db.from("profiles_private").select("*").eq("id", uid).maybeSingle(),
@@ -107,6 +115,10 @@ Deno.serve(async (req) => {
     db.from("live_hosts").select("*").eq("user_id", uid),
     // M15 (LR3): lotti di like propri (art. 15). Effimeri: purge a 24h dalla fine.
     db.from("live_likes").select("*").eq("user_id", uid),
+    // M16 (AC2): fotografie giornaliere del rank nella Classifica Aura (art. 15).
+    // Solo le righe PROPRIE: gli snapshot altrui non citano l'utente (il rank è
+    // un intero personale). Retention 14 giorni — sezione spesso corta.
+    db.from("aura_rank_snapshots").select("*").eq("user_id", uid),
   ]);
 
   const data = {
@@ -142,6 +154,7 @@ Deno.serve(async (req) => {
     live_viewers: liveViewers.data ?? [],
     live_hosts: liveHosts.data ?? [],
     live_likes: liveLikes.data ?? [],
+    aura_rank_snapshots: auraRankSnapshots.data ?? [],
   };
 
   // Marca completate le richieste di export pendenti + audit.

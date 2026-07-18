@@ -31,3 +31,9 @@ export const FEED_CATEGORIES: readonly FeedCategory[] = [
 
 /** Categoria selezionata all'apertura della Home. */
 export const DEFAULT_FEED_CATEGORY: FeedCategoryKey = 'discover';
+
+/** Type guard per il deep link `?categoria=` della Home (M16/AC5): un param
+ *  invalido NON è un errore, semplicemente si ignora (resta il default). */
+export function isFeedCategoryKey(v: string): v is FeedCategoryKey {
+  return FEED_CATEGORIES.some((c) => c.key === v);
+}

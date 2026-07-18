@@ -8,7 +8,49 @@
 > costruzione. Aggiornare a ogni milestone. Compagno di `CLAUDE.md` (che resta la
 > mappa del backend) e del piano fondante `vai-curried-canyon.md`.
 >
-> **Ultimo aggiornamento:** 2026-07-16 (**M15 — Rework Live: MODULO COMPLETO
+> **Ultimo aggiornamento:** 2026-07-18 (**M16 — Classifica Aura: MODULO
+> COMPLETO lato sviluppo (AC0–AC6)** — spec+piano `docs/aura/classifica.md`,
+> Rev. 1, decisioni PO
+> AC-1..AC-5 del 2026-07-16. **AC0+AC1 backend** (migrazioni **73–75 LIVE**
+> via pooler): flag `profiles.show_in_leaderboard` (UPDATE per-colonna,
+> FUORI dal grant SELECT — anti-enumerazione) + RPC `aura_leaderboard()`
+> (UNICA porta di lettura solo-amici: cancello chiamante, row_number con
+> tie-break anzianità, cap 200 + `me` sticky) · 3 valori enum + tabelle di
+> sistema `aura_rank_snapshots`/`aura_recap_of_week` + `aura_rank_daily()`
+> (diff podio/sorpasso, soglie QA-2/QA-3, dedup) + `notify_aura_recap()`
+> (broadcast dosato domenicale) + 2 cron. **AC2 lifecycle+GDPR** (migrazione
+> **76 LIVE**: `20260717130000_aura_classifica_lifecycle`): `expire_content`
+> **v10** (corpo v9 verbatim + purge snapshot >14gg e dosaggio recap >60gg)
+> · `process_account_deletion` **v9** (delete immediato snapshot propri,
+> art. 17) · `gdpr-export` **v7** nel repo (sezione aura_rank_snapshots; il
+> flag viaggia già nella sezione profilo) → **coda deploy-owner: v7 supera
+> la v6** accodata da M15. pgTAP **669/669** sul remoto (+3 AC2); smoke
+> pooler AC2 **11/11** rolled-back (purge 14/60gg selettiva, art. 17
+> immediato con snapshot altrui intatti, service_role legge/authenticated
+> no). **AC3 mobile**: tab Aura REALE in Home (ramo tutta-altezza) —
+> `useClassificaAura`/`useClassificaVisibile` (ottimistica su `listed`,
+> update SENZA select) · `ClassificaAura` (header+kebab, FlatList, stati
+> SWR/vuoto/non-listed) · `PodioAura` 2/1/3 (solo il 1° respira, slot
+> tratteggiati) · `RigaClassifica` (anello still, pulsante DM via
+> `useApriDm`) · `MenuClassifica` (Switch + copy reciprocità) ·
+> `StatoNonVisibile` (CTA rientro). **AC4 share card** (2026-07-18):
+> `react-native-view-shot`+`expo-sharing` installate (dipendenze NATIVE →
+> gate nuova Dev Build EAS) · `INVITE_URL` in `constants/config.ts` (QA-7:
+> valore placeholder `https://televo.app`, da confermare col PO) ·
+> `ShareCardClassifica` off-screen 360×640 SOLO-dati-propri (§6.1) ·
+> `useCondividiClassifica` (captureRef PNG 1080×1920 → shareAsync, fallback
+> Share testuale; import dinamici = guard Expo Go) · 3 punti d'ingresso
+> (riga propria, slot podio proprio, menu ⋮). **AC5 deep link**: rami
+> `aura_podio`/`aura_sorpasso`/`aura_recap` in `rottaPerNotifica` →
+> `dynamicRoutes.homeCategoria('aura')`; `?categoria=` validato su
+> `FeedCategoryKey` e CONSUMATO una volta (setParams) in `home.tsx`.
+> **AC6 docs+bonifica**: `docs/aura/MANUAL-TESTING.md` (7 sezioni, 2 device)
+> · CLAUDE.md §4/§5/§6 (voce M16, 2 cron, regola d'oro classifica) ·
+> bonifica school-rank (rimossi `useMyRank`/`useSchoolRank`/`Classifica.tsx`
+> e i tipi `leaderboard_school`; la MV resta a DB, round futuro). tsc+eslint
+> verdi. ⏭️ Restano SOLO azioni owner: deploy `gdpr-export` v7, nuova build
+> EAS con view-shot/sharing, MANUAL-TESTING su 2 device, INVITE_URL dal PO.)
+> Precedente: 2026-07-16 (**M15 — Rework Live: MODULO COMPLETO
 > lato sviluppo (LR0–LR9).** Spec+piano `docs/live/live-rework.md` (decisioni
 > **RW-1..RW-5** del PO 2026-07-15, EMENDA live.md → Rev. 2). **Backend
 > LR0–LR4** (migrazioni **69–72 LIVE** sul remoto, applicate via pooler):
@@ -1488,6 +1530,86 @@ live — `peak_viewers`, lista+kick e drops INTATTI) · fine feed (RW-5).
   `send-push` v4; serve `supabase login` televo.management2) · esecuzione
   **MANUAL-TESTING §16 su 2 device** con una build che includa il bundle M15
   (nessuna dipendenza nativa nuova: basta la build EAS già in coda da M14).
+
+### ✨ M16 — Classifica Aura — ✅ MODULO COMPLETO lato sviluppo (AC0–AC6, 2026-07-18)
+Spec+piano ufficiale: **`docs/aura/classifica.md`** (Rev. 1, decisioni PO
+AC-1..AC-5 del 2026-07-16). La classifica dell'Aura SOLO tra amici accettati,
+inline nel tab Aura della Home: podio 2/1/3 + lista + chat per riga, opt-out
+RECIPROCO server-enforced, notifiche retention (recap dosato + podio +
+sorpasso solo ex-podio ANONIMO), share card con `INVITE_URL` configurabile.
+Eccezione R-04 dichiarata e perimetrata (rank tra amici, mai globale; i drops
+restano a contatori privati). La classifica LEGGE l'Aura, non la scrive.
+- ✅ **AC0 backend** (migrazione **73** live): `profiles.show_in_leaderboard`
+  (default true; UPDATE per-colonna, FUORI dal grant SELECT) +
+  `aura_leaderboard()` (porta di lettura UNICA: cancello chiamante, filtri
+  §2.1 — mutati DENTRO, bannati/cancellati FUORI —, `row_number` con
+  tie-break anzianità, cap 200 + `me` sticky). Smoke pooler 19/19.
+- ✅ **AC1 backend** (migrazioni **74–75** live): enum
+  `aura_podio`/`aura_sorpasso`/`aura_recap` · `aura_rank_snapshots` +
+  `aura_recap_of_week` (RLS senza policy + revoke) · `aura_rank_daily()`
+  (fotografia set-based `partition by owner` + diff + notifiche con soglie
+  ≥4, dedup non-letti, primo-snapshot silenzioso) · `notify_aura_recap()`
+  (clone dosato di notify_drop_prompt, guardia atomica, soglia ≥3) · cron
+  `aura-rank-daily` 03:30 UTC + `aura-recap-weekly` `*/15 15-19 * * 0`.
+  Smoke pooler 13/13.
+- ✅ **AC2 lifecycle+GDPR** (migrazione **76** live,
+  `20260717130000_aura_classifica_lifecycle`): `expire_content` **v10**
+  (corpo v9 VERBATIM + purge snapshot >14gg e righe dosaggio >60gg, stessa
+  transazione) · `process_account_deletion` **v9** (delete IMMEDIATO degli
+  snapshot propri; gli snapshot altrui non citano l'utente) · `gdpr-export`
+  **v7** nel repo (sezione `aura_rank_snapshots`; `show_in_leaderboard` già
+  nella sezione profilo via `select("*")` service_role). pgTAP **669/669**
+  sul remoto (+3); smoke AC2 **11/11** rolled-back.
+- ✅ **AC3 mobile** (nessuna dipendenza nativa: gira anche in Expo Go): tab
+  Aura collegato ai dati reali in `home.tsx` (ramo tutta-altezza accanto a
+  drops/map/live) · `useClassificaAura` (RPC, staleTime 60s) +
+  `useClassificaVisibile` (flip ottimistico su `listed`, `.update()` SENZA
+  `.select()` — il flag non ha grant di lettura) · componenti
+  `components/aura/classifica/`: `ClassificaAura` (header+kebab ⋮, FlatList
+  con podio come header, caption «Si aggiorna ogni giorno», pull-to-refresh,
+  stati SWR + vuoto + non-listed), `PodioAura` (2/1/3, scritte N° sugli
+  scalini, solo il 1° respira, slot tratteggiati), `RigaClassifica` (anello
+  SEMPRE still, N° tabulare, DM via `useApriDm` → `dynamicRoutes.chat`,
+  propria riga evidenziata senza chat), `MenuClassifica` (Switch + copy
+  reciprocità), `StatoNonVisibile` (CTA «Rientra in classifica»).
+  tsc+eslint verdi.
+- ✅ **AC4 share card** (2026-07-18): dipendenze NATIVE
+  `react-native-view-shot@4.0.3` + `expo-sharing@~14.0.8` installate via
+  `expo install` (→ **GATE: serve una nuova Dev Build EAS**; in Expo Go la
+  voce degrada al fallback testuale senza crash — import dinamici nel try) ·
+  `constants/config.ts` con `INVITE_URL` (UNICA fonte outbound; ⚠️ **QA-7:
+  placeholder `https://televo.app`, valore definitivo dal PO**) ·
+  `ShareCardClassifica` (card 9:16 off-screen 360×640 → PNG 1080×1920,
+  INVARIANTE §6.1: SOLO dati del mittente — wordmark, avatar+anello still,
+  nome/@username, % grande, badge «N° tra i miei amici» omesso se <2
+  partecipanti, claim, blocco invito) · `useCondividiClassifica` (monta
+  on-demand → onLayout+pausa immagini → `captureRef` → `shareAsync`;
+  QUALSIASI inciampo → `Share.share` testuale) · punti d'ingresso: icona
+  sulla propria riga, sul proprio slot del podio (quando in top-3 la riga
+  non esiste) e voce menu ⋮ (spenta se non listed/senza dati).
+- ✅ **AC5 deep link** (2026-07-18): rami `aura_podio`/`aura_sorpasso`/
+  `aura_recap` in `rottaPerNotifica` → `dynamicRoutes.homeCategoria('aura')`
+  (`/home?categoria=aura`); in `home.tsx` il param è validato col type guard
+  `isFeedCategoryKey` e CONSUMATO subito (`router.setParams`): un re-focus
+  non lo ri-applica, un secondo tap sulla stessa notifica sì (undefined →
+  'aura' ri-innesca l'effect); param invalido ignorato (resta Discover).
+  Nessuna modifica a `useNotificaTap`/`NotificaRow` (mappa unica condivisa).
+- ✅ **AC6 docs+bonifica** (2026-07-18): `docs/aura/MANUAL-TESTING.md`
+  (7 sezioni 2-device: porta di lettura, reciprocità end-to-end, podio
+  parziale/pari merito, chat, leak-check card, notifiche seminate + deep
+  link, offline) · CLAUDE.md §4 (voce M16) §5 (cron `aura-rank-daily` +
+  `aura-recap-weekly`, `gdpr-export` → v7) §6 (regola d'oro classifica:
+  eccezione R-04 datata e perimetrata) · **bonifica school-rank** (scuola
+  fuori dal progetto, PO 2026-07-05): rimossi `useMyRank`/`useSchoolRank`
+  (+ chiavi `auraKeys.rank`/`schoolRank`), `components/aura/Classifica.tsx`
+  e i tipi `leaderboard_school` — SOLO lato UI: la vista materializzata
+  resta a DB (round futuro). tsc + eslint verdi.
+- ⚠️ **Restano SOLO azioni owner**: deploy `gdpr-export` **v7** (supera la
+  v6 di M15; si somma a `send-push` v4 — serve `supabase login`
+  televo.management2) · **nuova Dev Build EAS** con view-shot/sharing (gate
+  AC4) · `docs/aura/MANUAL-TESTING.md` su 2 device (incl. leak-check card e
+  anello SVG nello snapshot Android, rischio noto AC4) · **QA-7**: valore
+  definitivo di `INVITE_URL` dal PO (oggi placeholder).
 
 ### ♻️ Trasversale (continuo)
 Componenti UI residui (`Badge`, `BottomSheet`) · font (Inter, Clash Display) ·

@@ -44,6 +44,14 @@ export function rottaPerNotifica(data: Record<string, unknown>): string | null {
   if (data.type === 'achievement') {
     return ROUTES.profilo;
   }
+  // M16/AC5: le notifiche della Classifica Aura (podio, sorpasso anonimo,
+  // recap settimanale) atterrano sulla Home APERTA SUL TAB AURA (deep link
+  // ?categoria=, validato e consumato una volta in home.tsx). Un utente che
+  // si è nascosto DOPO l'invio atterra sullo stato «Sei fuori dalla
+  // classifica»: coerente, nessun errore (§10.16).
+  if (data.type === 'aura_podio' || data.type === 'aura_sorpasso' || data.type === 'aura_recap') {
+    return dynamicRoutes.homeCategoria('aura');
+  }
   // M13/P6: "nuovo accesso al tuo account" → tab Notifiche della bottombar.
   // Il banner sul device che ha appena fatto login è soppresso a monte da
   // installNotificationHandler.

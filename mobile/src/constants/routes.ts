@@ -6,6 +6,8 @@
 // app/. Con typedRoutes attivo (app.json) Expo genera comunque i tipi, ma questi
 // helper restano comodi per le route dinamiche e per leggibilità.
 
+import type { FeedCategoryKey } from '@/constants/feed';
+
 export const ROUTES = {
   // --- Auth (gruppo (auth)) ---
   welcome: '/welcome',
@@ -55,6 +57,9 @@ export const dynamicRoutes = {
   profiloUtente: (id: string) => `/profilo/${id}` as const,
   drop: (id: string) => `/drop/${id}` as const, // S3 dettaglio (DM3)
   live: (id: string) => `/live/${id}` as const, // schermo live host/spettatore (M12 LM6)
+  // M16 (AC5): Home su una categoria specifica (deep link notifiche → tab
+  // Aura). Il param è validato e CONSUMATO una volta in home.tsx.
+  homeCategoria: (cat: FeedCategoryKey) => `/home?categoria=${cat}` as const,
 };
 
 export type AppRoute = (typeof ROUTES)[keyof typeof ROUTES];

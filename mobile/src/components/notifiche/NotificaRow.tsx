@@ -29,6 +29,9 @@ const ICONE: Record<NotificationType, keyof typeof Ionicons.glyphMap> = {
   live_started: 'videocam-outline',
   live_cohost_invite: 'people-circle-outline',
   new_login: 'shield-checkmark-outline',
+  aura_podio: 'podium-outline', // M16: sei entrato nel podio della classifica
+  aura_sorpasso: 'swap-vertical-outline', // M16: un amico (anonimo) ti ha superato
+  aura_recap: 'sparkles-outline', // M16: recap settimanale della classifica
 };
 
 /** Body leggibile: il tratto grezzo dei prop diventa l'etichetta IT. */

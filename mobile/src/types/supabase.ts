@@ -45,7 +45,10 @@ export type NotificationType =
   | 'drop_prompt' // DM7: "tema del giorno" (§16.2, notifica broadcast dosata)
   | 'live_started' // M12: un amico ha avviato una live (default TUTTI, L-4)
   | 'live_cohost_invite' // M12: invito co-host
-  | 'new_login'; // M13/P6: nuovo accesso al tuo account (Edge login-alert)
+  | 'new_login' // M13/P6: nuovo accesso al tuo account (Edge login-alert)
+  | 'aura_podio' // M16/AC1: sei entrato nel podio (ieri rank >3, oggi <=3)
+  | 'aura_sorpasso' // M16/AC1: un amico ANONIMO ti ha superato (solo ex-podio, AC-4)
+  | 'aura_recap'; // M16/AC1: recap settimanale della classifica (broadcast dosato)
 export type ModerationTarget =
   | 'user'
   | 'room'
@@ -305,6 +308,35 @@ export interface LivesStripRaw {
   ended: LiveStripEndedRaw[];
 }
 
+// --- M16 (AC0) — Classifica Aura: envelope di aura_leaderboard() --------------
+
+/** Una riga della classifica: un partecipante (io o un amico accettato) con
+ *  rank personale 1-based SEMPRE sequenziale (row_number; pari merito risolto
+ *  per anzianità su Televo, §2.2). */
+export interface ClassificaAuraRigaRaw {
+  rank: number;
+  id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  aura_score: number;
+  aura_color: string | null;
+  is_me: boolean;
+}
+
+/** Envelope di aura_leaderboard(). Se `listed` è false (opt-out reciproco,
+ *  AC-2) arriva SOLO {server_now, listed}: niente righe, niente me — il
+ *  client mostra lo stato dedicato con la CTA di rientro. `me` è calcolato
+ *  sull'insieme PIENO (visibile anche oltre il cap difensivo di 200 righe). */
+export interface ClassificaAuraEnvelope {
+  server_now: string;
+  listed: boolean;
+  friends_total?: number; // partecipanti, me incluso
+  me?: { rank: number; aura_score: number; aura_color: string | null } | null;
+  rows?: ClassificaAuraRigaRaw[];
+  has_more?: boolean;
+}
+
 // --- Payload dei delta live sull'inbox privata `map:u:{uid}` ------------------
 // (live_fanout, LM2). A differenza dei delta mappa, `live_started` PORTA
 // l'identità dell'host (denormalizzata al momento dell'invio): nessun refetch
@@ -512,6 +544,11 @@ export interface Database {
           expo_push_token?: string | null;
           show_last_seen?: boolean; // grant update (show_last_seen, show_read_receipts)
           show_read_receipts?: boolean;
+          // M16 (AC0): opt-out reciproco della Classifica Aura. SOLO update
+          // (mai in Row: è FUORI dal grant SELECT — anti-enumerazione §13.1;
+          // .update() SENZA .select(), lo stato proprio arriva come `listed`
+          // nell'envelope di aura_leaderboard).
+          show_in_leaderboard?: boolean;
         };
       };
       profiles_private: {
@@ -1039,17 +1076,9 @@ export interface Database {
           score: number;
         };
       };
-      // Classifica per scuola (aggregati). `members` è un conteggio (bigint →
-      // arriva come number via PostgREST js).
-      leaderboard_school: {
-        Row: {
-          school_id: string;
-          school_name: string;
-          members: number;
-          total_aura: number;
-          avg_aura: number;
-        };
-      };
+      // M16/AC6: `leaderboard_school` RIMOSSA dai tipi client (scuola fuori
+      // dal progetto, PO 2026-07-05 — la vista materializzata resta a DB per
+      // la bonifica backend di un round futuro, ma il mobile non la legge più).
     };
     Functions: {
       // Onboarding / inviti (vedi migrazione onboarding_oauth)
@@ -1299,6 +1328,12 @@ export interface Database {
       // (RW-1). Ritorna { server_now, ended: [LiveStripEndedRaw] } — niente
       // aura, niente contatori: il cerchio spento è una scorciatoia al profilo.
       lives_strip: { Args: Record<string, never>; Returns: Json };
+      // M16 (AC0) — l'UNICA porta di lettura della Classifica Aura (solo
+      // amici accettati, AC-1). Ritorna ClassificaAuraEnvelope: se il
+      // chiamante è non listed l'envelope è CORTO ({server_now, listed:false},
+      // reciprocità AC-2); altrimenti righe ordinate (score desc, anzianità,
+      // id), cap 200 + has_more, con `me` sempre presente (sticky).
+      aura_leaderboard: { Args: Record<string, never>; Returns: Json };
     };
     Enums: {
       aura_event_type: AuraEventType;

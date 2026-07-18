@@ -1,10 +1,13 @@
 // =============================================================================
-// useAura — l'Aura del profilo: anello vivo, breakdown, classifiche, prop.
+// useAura — l'Aura del profilo: anello vivo, breakdown, prop.
 // =============================================================================
 // L'Aura NON è popolarità: è la qualità della presenza. `aura_score`/`aura_color`
 // su `profiles` sono CACHE ricalcolate settimanalmente da recompute_aura() (cron
 // del lunedì); il breakdown settimanale vive in `aura_snapshots`. Tutto in sola
 // lettura lato client: l'Aura la scrive solo il backend (ledger aura_events).
+// La classifica solo-amici vive in useClassificaAura (M16); gli hook legacy
+// sulle viste globali (useMyRank/useSchoolRank) sono stati RIMOSSI in M16/AC6
+// (scuola fuori dal progetto, PO 2026-07-05).
 
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
@@ -22,8 +25,8 @@ export const auraKeys = {
   mine: (uid: string) => ['aura', uid] as const,
   history: (uid: string) => ['aura', uid, 'history'] as const,
   receivedProps: (uid: string) => ['aura', uid, 'props'] as const,
-  rank: (uid: string, trait: AuraTrait) => ['aura', uid, 'rank', trait] as const,
-  schoolRank: (uid: string) => ['aura', uid, 'school-rank'] as const,
+  // M16 (AC3): la Classifica Aura solo-amici del tab Home (useClassificaAura).
+  classifica: (uid: string) => ['aura', uid, 'classifica'] as const,
 };
 
 // --- Helper: tratto dominante dal colore cache (reverse-map di vibe_color) ----
@@ -181,86 +184,6 @@ export function useReceivedProps(userId: string | undefined) {
         }
       }
       return counts;
-    },
-  });
-}
-
-// --- Posizione in classifica -------------------------------------------------
-
-export interface RankInfo {
-  /** posizione 1-based; null se l'utente non è in classifica per quel tratto */
-  rank: number | null;
-  /** punteggio dell'utente per quel tratto (0 se assente) */
-  score: number;
-}
-
-/**
- * Posizione dell'utente nella classifica per carattere. `leaderboard_character`
- * non ha un rank pre-calcolato: leggiamo il nostro score e contiamo quanti ci
- * stanno davanti (rank = #score_maggiori + 1).
- */
-export function useMyRank(trait: AuraTrait) {
-  const { uid } = useAuth();
-
-  return useQuery({
-    queryKey: uid ? auraKeys.rank(uid, trait) : ['aura', 'anon', 'rank', trait],
-    enabled: !!uid,
-    queryFn: async (): Promise<RankInfo> => {
-      const { data: mineRaw, error: e1 } = await supabase
-        .from('leaderboard_character')
-        .select('score')
-        .eq('user_id', uid as string)
-        .eq('type', trait)
-        .maybeSingle();
-      if (e1) throw e1;
-      const mine = mineRaw as { score: number } | null;
-      if (!mine) return { rank: null, score: 0 };
-
-      const myScore = Number(mine.score);
-      const { count, error: e2 } = await supabase
-        .from('leaderboard_character')
-        .select('*', { count: 'exact', head: true })
-        .eq('type', trait)
-        .gt('score', myScore);
-      if (e2) throw e2;
-      return { rank: (count ?? 0) + 1, score: myScore };
-    },
-  });
-}
-
-export interface SchoolRankInfo {
-  rank: number | null;
-  schoolName: string | null;
-}
-
-/**
- * Posizione della scuola dell'utente nella classifica per scuola (per total_aura).
- * Richiede lo `school_id` del profilo; null se l'utente non ha una scuola.
- */
-export function useSchoolRank(
-  userId: string | undefined,
-  schoolId: string | null | undefined,
-) {
-  return useQuery({
-    queryKey: userId ? auraKeys.schoolRank(userId) : ['aura', 'anon', 'school-rank'],
-    enabled: !!userId && !!schoolId,
-    queryFn: async (): Promise<SchoolRankInfo> => {
-      const { data: mineRaw, error: e1 } = await supabase
-        .from('leaderboard_school')
-        .select('total_aura, school_name')
-        .eq('school_id', schoolId as string)
-        .maybeSingle();
-      if (e1) throw e1;
-      const mine = mineRaw as { total_aura: number; school_name: string } | null;
-      if (!mine) return { rank: null, schoolName: null };
-
-      const myTotal = Number(mine.total_aura);
-      const { count, error: e2 } = await supabase
-        .from('leaderboard_school')
-        .select('*', { count: 'exact', head: true })
-        .gt('total_aura', myTotal);
-      if (e2) throw e2;
-      return { rank: (count ?? 0) + 1, schoolName: mine.school_name };
     },
   });
 }
